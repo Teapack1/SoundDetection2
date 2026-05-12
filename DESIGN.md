@@ -1,385 +1,286 @@
-# Design Notes
+# Design
 
-This document explains the technical decisions in the codebase, especially
-the ones tuned for **minimising false positives even at the cost of recall**.
+SoundDetection2 is a venue-specific sound event detection system for interactive
+lighting. It records real target sounds and negative/background sounds, trains a
+per-venue model, calibrates thresholds for low false positives, and runs CPU
+inference on an edge PC that can trigger ArtNet/DMX.
 
-## Configuration layering and snapshots
+| Document | Purpose |
+| --- | --- |
+| [README.md](README.md) | Overview and documentation entrypoint. |
+| [SETUP.md](SETUP.md) | Machine setup, audio devices, edge PC, and ArtNet networking. |
+| [WORKFLOW.md](WORKFLOW.md) | Operational reference for project creation through deployment. |
+| [DESIGN.md](DESIGN.md) | Design rationale plus recording and training guidance. |
 
-Settings live in two layers and a snapshot:
+## System Design
 
-1. **`configs/default.toml`** — defaults for every knob (~80 settings).
-   Edited rarely; changes apply to *new* training runs.
-2. **`projects/<id>/project.toml`** — per-venue overrides: classes, ArtNet
-   target, target → channel/value mapping, calibrated thresholds, per-class
-   SNR floors. `load_config(project_id)` deep-merges (1) ← (2).
-3. **`projects/<id>/models/training_config.json`** — full effective config
-   snapshot written by `clinkd train` immediately before `Trainer.fit()`.
-   This is the **contract**: it records exactly what the model was trained
-   against so subsequent inference is reproducible against the same
-   parameters, even if `default.toml` is later edited.
+### Tech Stack
 
-`clinkd run` calls `load_config_for_inference(project_id)`, which prefers
-the snapshot over the live config when present. Operational settings
-(`[artnet]`, `[audio]`, `[thresholds]`, `[logging]`) are still re-read from
-`project.toml` on top of the snapshot so the lighting console IP or audio
-device can change post-deployment without retraining.
+| Area | Project choice | Why |
+| --- | --- | --- |
+| Language/runtime | [Python](https://www.python.org/) 3.11-3.12, managed by [uv](https://docs.astral.sh/uv/) | Fast iteration, simple deployment, reproducible environments. |
+| CLI and operator UI | [Typer](https://typer.tiangolo.com/) + [Rich](https://rich.readthedocs.io/) | Typed commands, readable tables, live terminal diagnostics. |
+| Config/schema | [Pydantic](https://docs.pydantic.dev/) + TOML | Validated project configs with clear defaults. |
+| Audio capture | [python-sounddevice](https://python-sounddevice.readthedocs.io/) / PortAudio | Cross-platform low-latency microphone input. |
+| Audio files/features | [SoundFile](https://python-soundfile.readthedocs.io/), [librosa](https://librosa.org/doc/latest/index.html), NumPy/SciPy | Reliable WAV I/O, resampling, and DSP utilities. |
+| Training | [PyTorch](https://pytorch.org/), [Lightning](https://lightning.ai/docs/pytorch/stable/), TorchMetrics | Standard fine-tuning loop with GPU support and metrics. |
+| Pretrained audio model | [EfficientAT](https://github.com/fschmid56/EfficientAT) submodule | Efficient AudioSet-pretrained CNN embeddings for small venue datasets. |
+| Augmentation | [audiomentations](https://iver56.github.io/audiomentations/) plus project overlay recipes | Mix real targets with realistic venue backgrounds. |
+| Export/inference | [ONNX](https://onnx.ai/), [OpenVINO](https://docs.openvino.ai/), [NNCF](https://github.com/openvinotoolkit/nncf) | Portable export, CPU inference, optional quantization path. |
+| Control output | [PyZMQ](https://pyzmq.readthedocs.io/) + [stupidArtnet](https://pypi.org/project/stupidArtnet/) | Decoupled detection events plus ArtNet/DMX triggering. |
 
-This closes the silent-failure mode where editing `default.toml` after
-training (say, bumping `n_mels` from 64 to 128) would produce a shape
-mismatch or accuracy drop at inference. The runtime now uses the
-trained-against values, full stop.
+### Design Priorities
 
-The OpenVINO `models/manifest.json` is the second half of the contract: it
-records feature parameters (sample_rate, mel config) AND an
-`inference_baseline` block (smoothing, gates, refractory) so the runtime
-loads the model with the same downstream behaviour calibration was tuned
-against. Per-class thresholds remain in `project.toml [thresholds]` —
-they're venue-tuned and *should* change without retraining.
+| Priority | Project choice |
+| --- | --- |
+| Low false positives | Conservative classes, explicit `_negative`, runtime gates, calibration by FP/hour. |
+| Venue fit | One project under `projects/<id>` per room/use case. |
+| Reusable data | Shared clip library; project-specific dataset selections. |
+| Edge reliability | OpenVINO CPU runtime; no PyTorch required in production. |
+| Traceability | WAV sidecars, config snapshots, dataset snapshots, model bundles. |
 
-Tests: `tests/test_config_snapshot.py` covers round-trip, snapshot-wins-
-over-live, operational-overrides-still-apply, and fallback-when-no-snapshot.
+### Shared Library, Project Datasets
 
-## False-positive minimization stack
+Recordings live in `data_library/sounds/<label>/` as WAV files with JSON
+sidecars. The sidecars preserve provenance: label, project, density,
+microphone/channel data, tags, review state, and recording details.
 
-Five independent layers, each tightening the gate:
+Projects compose datasets from that shared library through
+`dataset_selection.json` and generated `train.csv`, `val.csv`, and `test.csv`
+files. This keeps clips reusable while allowing each venue to define its own
+model classes and training set.
 
-### 1. Loss function: asymmetric focal loss (softened)
+### Workstation And Edge
 
-`src/sed/train/model.py :: AsymmetricFocalLoss`
+The project separates model-building work from production inference. The
+workstation owns the mutable work: recording, inspection, augmentation,
+training, evaluation, calibration, and export. It installs the heavy training
+stack such as PyTorch, Lightning, EfficientAT, and export tools.
 
-Per-class focal loss with **γ_neg = 2, γ_pos = 1** plus a **1.5× weight on
-the `_negative` class**. The asymmetry is real but deliberately mild:
-- when the model is confidently wrong on a negative, the loss is amplified
-  (modulator p² vs p¹) but not extreme
-- when it's wrong on a positive (missing a fine quiet clink), the loss
-  retains enough gradient that the model continues to learn the positive
-  decision boundary
-- the optimiser is biased toward "miss a clink" over "false positive on
-  cutlery", but only by a factor of ~2× — not 8× as it was in iteration 1
+The edge PC runs the selected bundle in place. It uses OpenVINO for CPU
+inference and does not need PyTorch, which keeps production deployment smaller
+and easier to maintain.
 
-**Why softened** (changed from γ_neg=4, neg_weight=2.0 in iteration 1): a fine
-wine-glass clink at -5 dB SNR has only a few correctly-classifiable frames in
-its window. With γ_neg=4 the gradient was so dominated by negatives that
-those rare correctly-detected positive frames were getting essentially zero
-backward signal — the model learned to be confident about silence and
-ambivalent about real clinks. γ_neg=2 keeps the FP-prevention bias while
-preserving learning signal on quiet positives. The runtime gates (negative
-gate, margin, calibrated thresholds) handle the rest.
+### Model And Features
 
-### 2. No class-balanced batches
+| Part | Default | Why |
+| --- | --- | --- |
+| Backbone | EfficientAT `mn10_as`: MobileNetV3 width 1.0, AudioSet-pretrained, about 4.88M params / 0.54B MACs | Strong small-audio features from limited venue data. |
+| Head | Project-specific classifier | Each venue owns its own class list. |
+| Window | 0.4 s | The target transients are ~0.2 s; a longer window dilutes them in background. |
+| Model rate | 32 kHz mono | Matches the pretrained EfficientAT contract. |
+| Frontend | `efficientat` log-mel | Keeps training, export, and runtime feature shapes aligned. |
 
-`src/sed/train/datamodule.py :: SedDataModule.train_dataloader`
+| Feature value | Default | Reason |
+| --- | ---: | --- |
+| `n_fft` | 1024 | Enough frequency detail for glass, speech, crowd, and music transients. |
+| `win_length` | 800 samples | 25 ms at 32 kHz; standard short-time audio analysis window. |
+| `hop_length` | 320 samples | 10 ms frame spacing; matches EfficientAT-style preprocessing. |
+| `n_mels` | 128 | Good resolution without making the model input too large. |
+| `fmin` / `fmax` | 0 / 15000 Hz | Covers most useful venue cues at 32 kHz sample rate. |
 
-`shuffle=True`, no `WeightedRandomSampler`. The natural distribution
-(heavily-negative) is preserved, so the model sees realistic class proportions
-during training and the focal loss receives genuine gradient signal on
-negatives. Class-balanced sampling would *over-sample* positives, which
-inflates F1 in lab metrics but hurts deployed FP rate.
+The feature contract is intentionally strict for pretrained EfficientAT models.
+Changing sample rate, mel count, frequency range, or window geometry changes
+the input distribution the pretrained backbone expects. When those values must
+change, the safer design is to train without the pretrained contract.
 
-### 3. Multi-class model with explicit `_negative` head
+### Recording
 
-`src/sed/train/lit_module.py`
+| Mechanism | Typical value | Purpose |
+| --- | --- | --- |
+| Clip length | 1.0 s | Saved clip, deliberately longer than the 0.4 s model window so one library serves projects at any window. |
+| Preroll | 300 ms or random 100-700 ms | Captures lead-in and adds timing variety. |
+| Onset detector | Superflux / spectral flux | Finds transient events better than loudness alone. |
+| Onset floor | `min_flux_db`, often -80 to -60 dB | Rejects tiny background motion. |
+| Cooldown | ~1500 ms | Avoids near-duplicate clips from one event. |
+| Multi-mic merge | ~30-500 ms | Collapses the same physical event across mics. |
+| Trigger mode | `any` for multi-mic venues | Lets each mic detect independently. |
 
-Multi-label sigmoid (BCE) over all classes, but `_negative` is one of them.
-At inference:
-- the per-class smoother produces a smoothed score for `_negative` like any
-  other class
-- the arbiter (next layer) uses it as a **gate**: if smoothed `_negative` >
-  `negative_max` (default 0.5), trigger is suppressed regardless of any
-  positive score
+The saved clip is longer than the model window on purpose. `record_seconds`
+keeps generous context so the same library can train projects at different
+window lengths, and the model window is cropped out of it around the detected
+onset — never around the clip centre, which would discard the transient in most
+recordings once the window is shorter than the clip. The onset sits
+`min(preroll_ms, 30% of the window)` into the window, and the live onset-gated
+runtime scores exactly that geometry, so training and production frame the same
+event the same way.
 
-This is more discriminative than a closed-set softmax: it lets the model say
-"I see *something* but it doesn't match any target — go find another match."
+Onset triggering records only acoustically interesting moments. Superflux uses
+spectral change, so a quiet glass transient can trigger even when its absolute
+loudness is low. The adaptive MAD baseline follows slow room changes; the
+`min_flux_db` floor prevents tiny continuous background motion from becoming
+recordings.
 
-### 4. Smoothing chain: median → EMA → optional consensus
+`any` is the preferred multi-mic trigger mode because a transient may be clear
+on one microphone and masked on another. `mix` is cheaper but can dilute
+single-mic events. `ch0` is useful only when one channel is the trusted source.
 
-`src/sed/runtime/smooth.py :: ClassSmoother`
+### Runtime
 
-```
-raw probs  →  median(window=3)  →  EMA(α=0.4)  →  ≥ N consec above threshold
-                                                  ↓
-                                           hysteresis_low arms re-fire
-```
+The live path is:
 
-A real wine-glass clink lasts 300–800 ms and lives in 3–8 inference windows
-at hop=100 ms. The median + EMA already removes single-frame spikes from
-music transients. By default we use **`consecutive_frames=1`** (immersive,
-single-frame trigger) so a fine quiet clink fires immediately the first
-window the smoothed score crosses threshold.
-
-**Why the relaxed default** (was 2 in iteration 1): at consec=2 the user
-perception was "too slow / sometimes missed" for fine clinks, because a
-soft clink may only have 1-2 frames where its smoothed score actually clears
-threshold before decaying. consec=1 restores that immersive feel; the
-margin-to-second-best gate, the negative gate, and per-venue threshold
-calibration carry the FP defence. Crank back to consec=2 in the project
-TOML if a venue's specific FP profile demands it.
-
-### 5. Arbiter gates — margin + negative gate + global refractory
-
-`src/sed/runtime/smooth.py :: TriggerArbiter`
-
-For a trigger to fire, ALL of these must hold simultaneously:
-
-| Gate | Default | Purpose |
-|------|---------|---------|
-| smoothed score ≥ threshold | per-class, calibrated (~0.7–0.85) | basic confidence |
-| `_negative` score ≤ `negative_max` | 0.5 | explicit "not other stuff" gate |
-| winner ≥ runner-up + margin | margin = 0.08 | reject ambiguous events |
-| consecutive_frames hit | 1 (immersive) | single-frame trigger |
-| no fire in last `refractory_ms` | 300 ms | one event = one trigger |
-
-Crucially, the smoother and arbiter are **decoupled**: an arbiter rejection
-does NOT consume the smoother's "armed" state. Only an actual emitted
-TriggerEvent disarms the smoother (via `consume_fire()`). This means a margin
-rejection on frame N doesn't prevent a clean fire on frame N+1.
-
-### 6. In-venue threshold calibration
-
-`src/sed/runtime/calibrate.py`
-
-The per-class thresholds in `project.toml` are NOT defaults — they are
-**measured** by running the trained model over real recorded ambience and
-sweeping thresholds to find the lowest per-class threshold that yields ≤ N
-false-positives-per-hour. This is the single biggest contributor to deployed
-FP rate.
-
-Because the model has the asymmetric-focal training prior, calibrated
-thresholds typically end up at 0.7–0.85 (not 0.6) for an FP/h target of 1.
-
-## Multi-glass discrimination
-
-The model learns each glass type as a separate class. Discrimination quality
-depends on:
-
-1. **Spectral separability** of the glass types. A thin wine glass vs. a thick
-   tumbler differ a lot (peak frequency, decay shape). A thin wine vs.
-   thin-walled water glass may not — accept this and treat them as one class.
-2. **Inter-class margin** (`margin_to_second_best`). Default 0.10 — when two
-   glass classes both score above threshold and are within 0.10 of each other,
-   no fire. Increase to 0.15 if you keep seeing wrong-class triggers; recall
-   drops accordingly.
-3. **Consistent labelling**. The composer splits by session_id; if session A
-   was "wine_thin" but the operator accidentally clinked a wine_thick once,
-   that single mislabel poisons val. The HTML inspector + UMAP scatter
-   surfaces these.
-
-Realistic accuracy for 3-class wine discrimination in a noisy bar with
-~500 positives per class:
-- per-class F1 0.78–0.90 (the harder pairs lower)
-- inter-class confusion 5–15 %
-- false-positive rate 0.5–3 / hour at calibrated thresholds
-
-## Domain mixing — the augmentation that matters most (now with masking check)
-
-`src/sed/data/augment.py :: WaveformAugmenter`
-
-For every training positive, with 95 % probability:
-
-```
-augmented_positive = clean_positive + ambience_clip * scale_factor(SNR_dB)
+```text
+PortAudio capture -> ring buffer -> onset-centred windows -> resample/features
+-> OpenVINO CPU model -> probabilities -> multi-mic aggregation
+-> smoother/arbiter -> ZMQ/ArtNet
 ```
 
-with SNR drawn uniformly from [-2, +25] dB. The negative side is the random
-ambience clip drawn from `data_library/ambience/` (project-agnostic) plus
-the project's own ambience.
+The runtime reads one model window (0.4 s by default), resamples it to the model rate,
+extracts log-mel features, and runs the exported OpenVINO model. Multi-mic
+inference can combine channels with `max`, `best`, `mean`, or `single` behavior.
 
-This synthesises **unlimited** in-situ-realistic positives from a small pool
-of clean recordings. It's the difference between "model works in a quiet
-office" and "model works in a busy bar".
+Before a trigger is emitted, probabilities pass through median smoothing, EMA,
+hysteresis, consecutive-frame checks, per-class thresholds, `_negative` gating,
+margin-to-second-best gating, and a global refractory period. These gates are
+intentional: they trade some recall for lower false-positive risk.
 
-A second mix (~20 %) adds an external negative from
-`data_library/negatives_external/` — this teaches the model that
-"clink + cutlery in the same window = still target", which is a real
-scenario at peak hours.
+| Runtime gate | Default | Why |
+| --- | ---: | --- |
+| Inference hop | 300 ms | Frequent enough for lighting, low CPU cost. |
+| Smoothing median | 3 frames | Removes isolated probability spikes. |
+| EMA alpha | 0.4 | Stabilizes confidence without hiding real events for too long. |
+| Consecutive frames | 3 | Requires persistence before firing. |
+| Default threshold | 0.90 | Conservative until per-class calibration exists. |
+| `_negative` max | 0.50 | Blocks positives when the no-trigger class is strong. |
+| Class margin | 0.08 | Avoids firing when two positive classes are too close. |
+| Refractory | 300 ms | Prevents double triggers on one event tail. |
 
-### Masking-aware safety net
+With multiple inference microphones, `max` takes the per-class maximum so any
+good mic can win, `best` forwards the whole probability vector of the mic that
+heard the target loudest, `mean` requires broader agreement, and `single` is for
+one trusted channel. With an explicit `_negative` class, `max` lets the quietest
+off-axis mic's negative score veto a fire another mic is confident about, so
+`best` is the better default for rooms with separated pickup zones; `max` remains
+the safe choice for models without a `_negative` output.
 
-A naive uniform-SNR mix has a pathological failure mode: if the clean
-positive is a fine, quiet clink (a thin wine glass, soft strike) and the
-ambience clip is loud crowd-talking, the talking can completely mask the
-target. The label still says "positive" but the audio has no clink-like
-content for the model to learn — over thousands of such samples the model
-learns "loud talking = positive class", and you've destroyed your training
-distribution from the inside.
+### Bundles And Calibration
 
-Two defences, both on by default:
+Each training run creates a self-contained bundle under
+`projects/<id>/models/<model_id>/` with config snapshots, class order, dataset
+artifacts, checkpoints, exports, reports, and runtime settings.
 
-1. **Per-class minimum SNR floor** (`per_class_min_snr_db` in config). For
-   fragile classes (fine glass, soft tap), set a higher floor than the
-   global -2 dB minimum. Set in the project TOML:
-   ```toml
-   [augmentation.per_class_min_snr_db]
-   clink_wine_thin = 3.0      # thin wine: ≥ +3 dB SNR
-   clink_champagne = 1.0      # bigger transient, ≥ +1 dB OK
-   ```
+Calibration sweeps class thresholds against venue or library negative material
+and writes the selected thresholds into runtime settings. The goal is practical:
+meet a target false-positive rate per hour before lighting output is enabled.
 
-2. **Online masking check** (`masking_check = true` in config). Every domain
-   mix is scored with `masking_score_db()` — a transient-dominance metric
-   that finds the target's brightest time-frequency cell, then measures how
-   much that band sticks above the median band-energy in the mixed frame at
-   the same time. Higher = better (the target's transient survived).
-   Threshold: `masking_min_db = 3.0` dB. If the score is below floor, the
-   mix is **skipped** and the clean target is used instead. The augmenter
-   tracks `mixes_skipped_masking` in stats so you can see if a class is
-   producing too many bad mixes (re-record cleaner positives or raise the
-   per-class SNR floor).
+### Avoided Choices
 
-Both layers are visible in the dataset HTML report: `clinkd inspect` includes
-an "Augmentation Preview" section that renders ~12 augmented samples per
-target class, with side-by-side spectrograms (clean vs mixed), masking
-score color-coded green/yellow/red, and audible WAV playback. If >30% of
-samples are flagged red, a warning banner appears with concrete advice
-(record more positives, raise the SNR floor, expand ambience pool).
+| Avoided choice | Reason |
+| --- | --- |
+| Automatic gain control | Moves the train/live level distribution and can hide useful loudness cues. |
+| Runtime adaptive thresholds | Can drift during sudden crowd or music changes; calibration is more stable. |
+| Noise suppression | Often damages the exact transients the model should detect. |
+| Pure loudness trigger | Fails on quiet but spectrally sharp events and noisy rooms. |
+| Transformer backbone on edge | Higher compute/memory cost than the EfficientAT CNN path. |
+| Positive-heavy training set | Real venues are mostly no-trigger audio; overbalanced positives raise FP risk. |
 
-## Multi-microphone inference
+## Venue Recording Strategy
 
-`src/sed/runtime/infer.py :: RealtimeInference`
+### Class Semantics
 
-Up to 4 microphones can stream simultaneously. The default in `default.toml`
-is single-mic (`record_channels = 1`), but a venue with multiple zones can
-configure 2–4 channels and they're all processed every frame:
+Keep classes small and tied to lighting behavior.
 
-1. Read `N_channels × window_samples` from the ring buffer per cycle.
-2. Stack mel features into a batch of size N (one OpenVINO call, batched
-   inference is cheap on Intel CPUs — INT8 mn10 batch=4 still fits in the
-   100 ms hop budget on a CL260).
-3. Pool per-class probabilities across mics by `multi_mic_mode`:
-   - `"max"` (default) — any mic clearly hearing the target wins. Best for
-     "any mic detects → trigger ArtNet" semantics.
-   - `"mean"` — average; more conservative, requires multiple mics to agree.
-   - `"single"` — only `inference_channel` is used; back-compat single-mic.
-4. The single arbiter sees the maxed (or meaned) per-class probabilities and
-   makes one decision per frame.
+| Class type | Good shape | Avoid |
+| --- | --- | --- |
+| Negative | `_negative` = anything that must not fire | Treating background as an afterthought. |
+| Intensity | `cheers_quiet`, `cheers_medium`, `cheers_loud` | Too many subtle levels nobody can label reliably. |
+| Object/event | `glass_clink`, `table_hit`, `applause` | Splitting labels that trigger the same cue. |
+| Venue rule | One meaning an operator can explain | Labels based only on ML convenience. |
 
-Per-mic stats are tracked (`per_mic_max_prob` EMA, `per_mic_triggers`) and
-shown in the live runtime table — a dead mic shows up as 💀 instead of 🎤
-within a few minutes. Useful for catching unplugged or failing microphones
-without watching the audio interface.
+### Microphone Geometry
 
-## Library system: factory clean ↔ on-site reality
+| Venue shape | Mic plan | Data emphasis |
+| --- | --- | --- |
+| Quiet installation | 1 close mic, low threshold | HVAC, footsteps, speech as negatives. |
+| Bar / club | 2-4 mics near action zones | Music, crowd, cutlery, bar work, peak density. |
+| Stage / crowd | 1-2 audience-facing mics | Applause/cheer range, PA bleed, host speech. |
+| Wide room | Multiple fixed zones | Per-zone metadata; split mono clips for training. |
 
-The library (`data_library/`) is the persistence layer for sounds that are
-**not** project-specific:
+`record_channels` is the physical capture set. `inference_channels` is the
+production evaluation set. Keep channel order stable, and tag mic type/position
+whenever channels differ.
 
-- `glasses_clean/` — studio recordings of physical glasses; reused across
-  every venue that uses the same glassware.
-- `ambience/` — bar/restaurant ambience from any venue; pooled at training
-  time as the domain-mixing source. More variety → better generalisation.
-- `negatives_external/` — cutlery, ice, music, AudioSet samples; project
-  agnostic.
+### Recording Pass Shape
 
-A new venue typically composes its dataset from:
-- 100 % of its on-site positives (small pool, ~200–500 per class)
-- 100 % of its on-site hard-negatives + ambience
-- ~50–100 library glass clips per class (provides spectral variety)
-- the entire library ambience pool, used at augmentation time only
+| Item | Practical target |
+| --- | --- |
+| Positive pass | 30-60 accepted clips per class/position/density. |
+| Pass length | 5-15 min for positives; 10-30 min for background negatives. |
+| Positions | 3-5 useful distances/angles per venue zone. |
+| Levels | Loudest targets below clipping; typical peaks around -18 to -6 dBFS. |
+| Review loss | Expect to reject 10-30% for handling noise, speech, bad labels, or duplicates. |
+| Metadata | Always keep density, mic/channel, position, object/state, and session context. |
 
-This mirrors the human intuition: the spectral signature of "wine_thin
-clinking" comes from the glass (library), the realism of "wine_thin clinking
-in this venue" comes from on-site recording.
+### Positive Examples
 
-## The empty-venue reality and why this workflow is sound
+| Target | Minimum pilot | Reliable venue | Notes |
+| --- | ---: | ---: | --- |
+| Positive clips per class | 80-150 | 200-400 | Record one class at a time. |
+| Distinct sessions | 2-3 | 4-8 | Different days, positions, and densities. |
+| Density coverage | empty/quiet/normal | empty through peak | Avoid a model that only works in rehearsal. |
+| Hard variants | 20-40/class | 50-100/class | Weak, distant, masked, or unusual examples. |
+| Frozen test positives | 20-40/class | 50-100/class | Never train on these. |
 
-System install almost always happens **before the venue opens**: HVAC on,
-dim lights, no crowd, music off. Nothing about that environment resembles
-the deployed conditions the model will face. Anyone proposing "just record
-during a busy night and train on that" hasn't tried to schedule install
-around a venue's revenue hours.
+Short onset-centered clips teach transient plus decay. Randomized preroll keeps
+the event from always landing at the same frame.
 
-The pipeline takes this constraint as the default case, not a fallback:
+### Negative Examples
 
-1. **At the venue (one short visit, before opening)**: clean on-site
-   positives anchored in the venue's actual reverb, plus 20–40 minutes of
-   empty-venue acoustics — room tone, HVAC, whatever's running with no
-   crowd. That's all that needs to come from the venue itself.
-2. **Off-site, ahead of time, anywhere with permission**: build a library
-   of busy ambience and hard-negatives by recording at other bars,
-   restaurants, cafés you visit normally. This pool is shared across every
-   future project — record it deeply once.
-3. **At training time**: domain-mixing combines clean positives with
-   randomly drawn library ambience at SNRs in [-2, +25] dB, gated by the
-   masking-aware safety net.
-4. **At calibration time**: `--ambience-source simulated_busy` mixes the
-   empty-venue room tone with library busy-ambience at SNRs in [-3, +12] dB
-   to synthesise a 30-minute peak-hour stream, then sweeps thresholds
-   against it. Realistic FP/h estimates without ever recording a real busy
-   night at the target venue.
-5. **After deployment** (optional second visit during real busy hours):
-   recapture an hour of actual ambience and re-run `clinkd calibrate
-   --ambience-source venue` to refine. The model is unchanged; only the
-   thresholds shift, typically downward.
+| Negative source | Minimum pilot | Reliable venue | Why |
+| --- | ---: | ---: | --- |
+| Background clips | 300-600 | 800-2000 | Main defense against false positives. |
+| Hard negatives | >= positives | 1-3x positives | Similar to target but should not fire. |
+| Frozen test negatives | 80-150 | 200-500 | Honest FP check. |
+| Calibration audio | 20-60 min | 1-3 h | Needed for believable FP/hour estimates. |
 
-The closest analogue is far-field speech recognition: nobody records every
-speaker in every café where Alexa might be deployed. Instead clean speech
-is captured in studios, reverb impulse responses and crowd noise are
-captured separately, and the training pipeline composes them stochastically.
-The same logic applies to glass clink detection — the clink's transient is
-the spectral signature, the venue contributes reverb and noise floor, and
-the pool of library ambiences contributes the variability that makes the
-model generalise to peak hours it never directly heard.
+Good negatives match production density and mic placement: room tone, music,
+speech, crowd beds, bar work, cutlery, glass handling, setup noise, and peak
+distractions.
 
-What makes this work without producing garbage training data is the
-masking-aware safety net (per-class SNR floors + transient-dominance
-check) — the augmenter cannot silently produce a "loud talking labelled
-positive clink" sample even if the random ambience draw is unfortunate.
-Combined with the dataset HTML report's augmentation preview (clean vs
-mixed spectrograms with masking-score color coding), the operator can
-visually verify that synthesis is producing audible targets before
-training starts.
+### Test Discipline
 
-## Why log-mel and not PCEN
+| Split | Practical target |
+| --- | --- |
+| Train | Most accepted clips, balanced by class where possible. |
+| Validation | 10-20% for model selection and early stopping. |
+| Frozen test | Separate representative clips; never used for training decisions. |
+| Failure response | Add similar new training material; keep test coverage honest. |
 
-PCEN (per-channel energy normalisation) is excellent for stationary noise,
-documented to reduce FAR 5–50× in bioacoustics. But:
-- bars have non-stationary music + speech; PCEN's adaptive AGC can compress
-  transient onsets (the very thing we want)
-- EfficientAT is pretrained with log-mel; switching front-ends throws away
-  the pretrained weights' usefulness
-- the domain-mixing augmentation already covers most of what PCEN provides
+### Augmentation And Composition
 
-If a specific venue is dominated by stationary HVAC noise and FP/h is high,
-PCEN as a second branch is a future experiment — not a default.
+| Technique | Use | Limit |
+| --- | --- | --- |
+| Background overlay | Best default; teaches targets under masking | Use real venue backgrounds. |
+| Pitch/time variation | Small robustness gain | Do not create impossible sounds. |
+| Channel splitting | Useful for multi-mic mono training | Keep parent/channel provenance. |
+| Generated amount | 2-5x raw positives | More is not better if negatives are weak. |
 
-## Why EfficientAT and not the alternatives
+Composition is a design step: the shared library is broad, but each project
+selects only the clips that represent its venue.
 
-| Model | Why it's not the default |
-|-------|-------------------------|
-| YAMNet | mAP 0.31 too low; TF dependency awkward on Linux+OpenVINO |
-| PANNs CNN14 | 80M params, slow on CL210 |
-| AST / PaSST / BEATs | 86–90M params, attention layers don't quantise to INT8 cleanly, fragile to fine-tune on small data |
-| BirdNET | non-commercial license |
+### Model Selection And Calibration
 
-EfficientAT `mn10_as` (4.9M params, ~0.47 mAP, MobileNetV3-based, distilled
-from a PaSST teacher) is the Pareto frontier. INT8-quantises cleanly,
-fine-tunes well on small datasets, MIT-licensed, runs in 10–30 ms on Intel.
+| Training choice | Good default |
+| --- | --- |
+| Backbone | Pretrained `mn10_as` unless there is a measured reason to change. |
+| Objective | `cross_entropy` with explicit `_negative` for single active class decisions. |
+| Epochs | 60 default; rely on validation behavior, not just final epoch. |
+| Precision | `16-mixed` on capable training hardware. |
+| Class balance | Keep negatives deep; avoid a positive-heavy training set for real venues. |
 
-## Latency budget
+| Decision | Prefer |
+| --- | --- |
+| Best model | Low false positives on hard negatives before high aggregate accuracy. |
+| Positive recall | Good on clear events; acceptable misses on weak/ambiguous events. |
+| Thresholds | Per-class calibration from venue-like negatives. |
+| FP target | 0.1-0.5/h for disruptive cues; 0.5-1/h normal; 1-3/h subtle ambient cues. |
+| Recalibrate when | Mic placement, acoustics, classes, dataset, or model bundle changes. |
 
-| Stage | Typical | Worst |
-|-------|---------|-------|
-| Mic acoustic flight (overhead → diaphragm) | 5–10 ms | 15 ms |
-| ADC + USB mic buffer | 10–20 ms | 30 ms |
-| ALSA period (1024 samples @ 48 kHz input) | 21 ms | 21 ms |
-| Wait for next 100 ms inference tick | 50 ms (avg) | 100 ms |
-| Mel spectrogram | 5–10 ms | 15 ms |
-| OpenVINO INT8 mn10 forward | 10–25 ms | 50 ms |
-| Smoothing + arbiter | <1 ms | <1 ms |
-| ZMQ + ArtNet UDP send | 1–5 ms | 10 ms |
-| DMX fixture latency | 25–50 ms | 100 ms |
-| **Total** | **140–200 ms** | **350 ms** |
+### Production Feedback
 
-Sits comfortably under the 500 ms target.
-
-## Things this design intentionally does NOT do
-
-- **No real-time noise suppression / RNNoise**: would compress transients,
-  defeating the point. The model is trained on noisy audio.
-- **No automatic gain control**: SNR variability is part of the training
-  distribution; AGC would shift the test distribution.
-- **No two-stage cascade** (cheap detector → fancy classifier): adds latency
-  and complexity. The model is small enough to run on every window.
-- **No adaptive runtime threshold** based on recent ambience: tested in
-  earlier iterations; unstable. The static-threshold + calibration approach
-  is more reliable. If a venue's ambience drifts (new music system, new menu
-  with different cutlery), recalibrate.
+| Production signal | Dataset response |
+| --- | --- |
+| False trigger | Promote or record as hard negative. |
+| Missed valid event | Add similar positives from the same acoustic condition. |
+| Confused intensity | Merge labels or collect cleaner boundary examples. |
+| New season/layout/show | Treat as a new venue condition and recalibrate. |

@@ -1,0 +1,12 @@
+{
+  "settings": {
+    "targets": {},
+    "thresholds": {},
+    "inference": {
+      "min_dbfs": null,
+      "default_threshold": 0.9,
+      "consecutive_frames": 3,
+      "hop_ms": 300
+    }
+  }
+}

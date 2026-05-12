@@ -1,348 +1,345 @@
-"""Threshold calibration against ambience.
+"""Threshold calibration against batches of recorded negative clips.
 
 The procedure:
-  1. Get ambience material — venue-recorded, library-pooled, or *simulated*
-     by mixing empty-venue room tone with library "busy" ambience.
-  2. Run the trained model over it offline (the full inference pipeline,
-     including smoothing + arbiter).
-  3. For each target class, find the lowest threshold that yields
-     ≤ target FP/h.
-  4. Write the calibrated thresholds back to project.toml.
+  1. Get the project's or library's negative/background clips.
+  2. Score each one through the deployed engine.
+  3. Relax all target thresholds together until the system reaches its
+     false-alarm budget, expressed as **false fires per 1000 clips**.
+  4. Write the calibrated thresholds into runtime_settings.json.
 
-This is the single biggest contributor to a low false-positive rate in
-production. Calibrated thresholds typically end up at 0.7–0.85.
+Why per 1000 clips and not per hour
+-----------------------------------
+The material is recorded the way the venue is worked: onset-triggered batches
+captured while the room is busy, not continuous audio. Each clip is therefore
+*already* a gate survivor — the window production would have scored — so the
+observable denominator is "clips", not "hours". "1 false fire in 1000 samples"
+is a number this corpus can actually support; FP/hour is not, because nothing
+here records how many hours those clips were drawn from.
 
-## Ambience sources
+That also means the onset detector must NOT be re-run here. It needs about a
+second of audio to establish its adaptive baseline, so re-detecting on a 1 s
+clip finds nothing and the clip would be silently dropped from the sweep.
 
-In practice, system setup almost always happens BEFORE the venue opens —
-HVAC running, dim lights, no crowd. Real busy-hour ambience can't be
-recorded on-site at install time. The three modes solve this:
+Each clip is one independent decision opportunity, so the cross-clip refractory
+does not apply: two clips are two separate moments in the venue, not two
+windows a refractory would collapse.
 
-  - ``venue`` (default if recordings exist): use whatever ambience was
-    recorded at the venue. Fine if the team came back during peak hours
-    or if the install includes a sound system playing crowd noise.
-  - ``library``: use the shared library ambience pool only — assumes the
-    library has crowd/restaurant recordings representative of the venue.
-  - ``simulated_busy``: combine venue-recorded *empty* ambience (room
-    tone, HVAC, reverb signature) with library *busy* ambience, mixed at
-    randomised SNRs that bracket realistic peak conditions. This lets you
-    calibrate against a plausible peak-hour soundscape even when only
-    empty-venue recordings exist.
-
-After deployment, recapture an hour of real busy-hour ambience and
-re-run ``clinkd calibrate --ambience-source venue`` to refine.
+Record room tone, crowd beds and distractors into ``data_library/sounds/``,
+assign the labels to ``_negative``, and this sweeps against them. The same
+batches can be assigned to the frozen test so one corpus serves both.
 """
 
 from __future__ import annotations
 
 import logging
-import random
 from pathlib import Path
 from typing import Literal
 
 import numpy as np
-import soundfile as sf
 
-from sed.audio.features import MelExtractor
-from sed.audio.resample import resample_audio
-from sed.config import LIBRARY_DIR, Config, ProjectLayout
-from sed.data.augment import _load_wav_resampled, mix_at_snr
-from sed.runtime.manifest import load_manifest, resolve_model_path
-from sed.runtime.smooth import TriggerArbiter
+from sed.audio.features import build_feature_extractor
+from sed.config import (
+    LIBRARY_DIR,
+    Config,
+    ProjectLayout,
+    dump_runtime_settings,
+    load_runtime_settings,
+    resolve_active_model_dir,
+    runtime_settings_from_config,
+)
 
 log = logging.getLogger(__name__)
 
 
-AmbienceSource = Literal["venue", "library", "simulated_busy"]
+NegativeSource = Literal["venue", "library"]
 
 
-def _iter_windows(wave: np.ndarray, sr: int, win_s: float, hop_ms: int):
-    win_n = int(sr * win_s)
-    hop_n = int(sr * hop_ms / 1000.0)
-    for start in range(0, len(wave) - win_n + 1, hop_n):
-        yield wave[start:start + win_n]
-
-
-def _gather_ambience_files(
+def _gather_negative_files(
     layout: ProjectLayout,
-    source: AmbienceSource,
-    ambience_dir: Path | None,
-) -> tuple[list[Path], list[Path]]:
-    """Return (primary_files, busy_overlay_files) depending on source.
+    source: NegativeSource,
+    negative_dir: Path | None,
+    cfg: Config | None = None,
+) -> list[Path]:
+    """Return calibration negative/background files for the selected source."""
+    if negative_dir is not None:
+        return sorted(negative_dir.rglob("*.wav"))
 
-    For ``simulated_busy`` we need both: primary = empty-venue room tone,
-    overlay = library busy ambience.
-    """
-    if source == "venue":
-        primary = (
-            sorted(ambience_dir.rglob("*.wav")) if ambience_dir is not None
-            else sorted(layout.ambience_dir.rglob("*.wav"))
-        )
-        return primary, []
+    if source == "venue" and cfg is not None:
+        from sed.data.compose import _library_clips_for_class, load_dataset_selection
 
-    library_amb = sorted((LIBRARY_DIR / "ambience").rglob("*.wav"))
+        selection = load_dataset_selection(layout)
+        return [
+            Path(clip.path)
+            for clip in _library_clips_for_class(
+                cfg, layout.id, "_negative", split="train", selection=selection
+            )
+        ]
 
     if source == "library":
-        return library_amb, []
+        return sorted((LIBRARY_DIR / "sounds").rglob("*.wav"))
 
-    if source == "simulated_busy":
-        venue_files = (
-            sorted(ambience_dir.rglob("*.wav")) if ambience_dir is not None
-            else sorted(layout.ambience_dir.rglob("*.wav"))
-        )
-        # Fall back to library-only if the venue has no recordings — strictly
-        # less realistic but better than refusing to calibrate.
-        if not venue_files:
-            log.warning(
-                "simulated_busy: no venue ambience found, using library-only"
-            )
-            return library_amb, []
-        return venue_files, library_amb
+    if source == "venue":
+        return []
 
-    raise ValueError(f"unknown ambience source: {source}")
-
-
-def _generate_simulated_window(
-    primary_wave: np.ndarray,
-    overlay_pool: list[np.ndarray],
-    win_n: int,
-    rng: random.Random,
-    snr_range_db: tuple[float, float] = (-3.0, 12.0),
-) -> np.ndarray:
-    """Build a single 'simulated busy' window: empty-venue tone + busy overlay.
-
-    SNR is the busy-overlay-relative-to-empty ratio: higher = louder crowd.
-    The default range (-3 to +12 dB) brackets realistic peak conditions:
-    -3 dB = quiet evening, +12 dB = packed Friday night.
-    """
-    if len(primary_wave) < win_n:
-        primary = np.tile(primary_wave, win_n // max(1, len(primary_wave)) + 1)[:win_n]
-    else:
-        start = rng.randint(0, len(primary_wave) - win_n)
-        primary = primary_wave[start:start + win_n].copy()
-
-    if not overlay_pool:
-        return primary
-
-    overlay_full = rng.choice(overlay_pool)
-    if len(overlay_full) < win_n:
-        overlay = np.tile(overlay_full, win_n // max(1, len(overlay_full)) + 1)[:win_n]
-    else:
-        ostart = rng.randint(0, len(overlay_full) - win_n)
-        overlay = overlay_full[ostart:ostart + win_n].copy()
-
-    # mix_at_snr(signal, noise, snr_db): the busy overlay is the signal we
-    # want at the given SNR over the empty-venue tone (which is the noise
-    # floor). Higher SNR → louder crowd over the room tone.
-    snr_db = rng.uniform(*snr_range_db)
-    return mix_at_snr(signal=overlay, noise=primary, snr_db=snr_db)
+    raise ValueError(f"unknown negative source: {source}")
 
 
 def calibrate(
     cfg: Config,
     project_id: str,
-    ambience_dir: Path | None = None,
-    target_fp_per_hour: float = 1.0,
-    ambience_source: AmbienceSource = "venue",
-    simulated_minutes: float = 30.0,
-    simulated_snr_db_range: tuple[float, float] = (-3.0, 12.0),
-    seed: int = 0,
-) -> dict[str, float]:
+    negative_dir: Path | None = None,
+    target_per_1000: float = 1.0,
+    negative_source: NegativeSource = "venue",
+    model_id: str | None = None,
+) -> dict:
+    """Sweep thresholds against negative clips to hold ≤ N false fires per 1000.
+
+    Returns a result dict — ``thresholds`` (the chosen per-class values, the
+    historical return), plus the achieved rate per class and how many clips were
+    scored, so the UI can show what the calibration actually bought.
+
+    The budget is per 1000 clips because that is the denominator the recorded
+    material supports; see the module docstring.
+    """
     layout = ProjectLayout(project_id)
-    manifest = load_manifest(layout)
-    classes = manifest["classes"]
-    neg_idx = manifest["negative_index"]
+    classes = list(cfg.model.classes)
+    # `model_id` exists for the post-training call: at that point the freshly
+    # trained run is not yet the active model, so resolving "active" would
+    # calibrate the PREVIOUS bundle. Defaulting to None keeps every existing
+    # caller on the active model.
 
-    primary_files, overlay_files = _gather_ambience_files(
-        layout, ambience_source, ambience_dir
-    )
-    if not primary_files:
+    negative_files = _gather_negative_files(layout, negative_source, negative_dir, cfg)
+    if not negative_files:
         raise RuntimeError(
-            f"No ambience clips for source='{ambience_source}'. "
-            "Record some with `clinkd record ambience` (venue) or "
-            "`clinkd library record-ambience` (library)."
+            f"No negative clips for source='{negative_source}'. "
+            "Record/import sounds and assign one or more labels to _negative."
         )
     log.info(
-        "calibration ambience: source=%s primary=%d overlay=%d",
-        ambience_source, len(primary_files), len(overlay_files),
+        "calibration negatives: source=%s files=%d",
+        negative_source, len(negative_files),
     )
 
-    # Compile model (openvino import deferred — keeps pure helpers testable
-    # in environments without the runtime, e.g. CI sandboxes)
-    import openvino as ov
-    core = ov.Core()
-    cm = core.compile_model(
-        core.read_model(str(resolve_model_path(layout, manifest))),
-        "CPU",
-        config={"PERFORMANCE_HINT": "LATENCY"},
-    )
-    req = cm.create_infer_request()
+    # Resolve the runnable artifact (heavy imports deferred — keeps pure
+    # helpers testable in environments without the runtime, e.g. CI sandboxes).
+    # Any engine works: OpenVINO IR, ONNX, or the raw checkpoint, so FP/h
+    # calibration is available even for never-exported runs.
+    from sed.runtime.backends import build_inference_backend
+    model_dir = (layout.model_dir(model_id) if model_id
+                 else resolve_active_model_dir(layout, cfg.deploy.active_model))
+    backend = build_inference_backend(cfg, model_dir, prefer=None, batch_size=1)
+    log.info("calibration model: %s (%s engine)", backend.path, backend.engine)
 
-    mel = MelExtractor(
-        sample_rate=manifest["sample_rate"],
-        n_fft=manifest["n_fft"],
-        win_length=manifest["win_length"],
-        hop_length=manifest["hop_length"],
-        n_mels=manifest["n_mels"],
-        fmin=manifest["fmin"],
-        fmax=manifest["fmax"],
-    )
+    mel = build_feature_extractor(cfg)
 
-    sr = manifest["sample_rate"]
-    win_n = int(sr * manifest["window_seconds"])
-    hop_n = int(sr * cfg.inference.hop_ms / 1000.0)
+    # One scorer, shared with the live runtime (sed.runtime.scoring), so the
+    # windowing and mic pooling being calibrated are the deployed ones.
+    from sed.runtime.scoring import WindowScorer
 
-    # Score every window once, store probabilities per class
-    log.info("scoring ambience ...")
-    all_probs: list[np.ndarray] = []
-    total_seconds = 0.0
-
-    if ambience_source == "simulated_busy" and overlay_files:
-        # Build a synthetic stream of simulated_minutes by drawing windows
-        # at hop_n stride. Pre-load all material once (small RAM footprint
-        # per file, total typically < 200 MB).
-        rng = random.Random(seed)
-        primaries = []
-        for f in primary_files:
-            try:
-                primaries.append(_load_wav_resampled(f, sr))
-            except Exception as e:  # noqa: BLE001
-                log.warning("skip primary %s: %s", f, e)
-        overlays = []
-        for f in overlay_files:
-            try:
-                overlays.append(_load_wav_resampled(f, sr))
-            except Exception as e:  # noqa: BLE001
-                log.warning("skip overlay %s: %s", f, e)
-        if not primaries:
-            raise RuntimeError("no usable primary (empty-venue) clips")
-        if not overlays:
-            log.warning("no usable overlay (library) clips, falling through")
-
-        n_windows = int(simulated_minutes * 60 * sr / hop_n)
-        log.info(
-            "synthesising %d simulated busy windows (%.1f min @ SNR %s dB)",
-            n_windows, simulated_minutes, list(simulated_snr_db_range),
-        )
-        for _ in range(n_windows):
-            primary = rng.choice(primaries)
-            w = _generate_simulated_window(
-                primary, overlays, win_n, rng, simulated_snr_db_range,
-            )
-            spec = mel(w)
-            if hasattr(spec, "numpy"):
-                spec = spec.numpy()
-            x = spec.reshape(1, 1, manifest["n_mels"], -1).astype(np.float32)
-            logits = list(req.infer({0: x}).values())[0][0]
-            all_probs.append(1.0 / (1.0 + np.exp(-logits)))
-        total_seconds = simulated_minutes * 60
-    else:
-        for f in primary_files:
-            try:
-                wave, file_sr = sf.read(str(f), dtype="float32", always_2d=True)
-                wave = wave[:, 0]
-                if file_sr != sr:
-                    wave = resample_audio(wave, orig_sr=file_sr, target_sr=sr)
-            except Exception as e:  # noqa: BLE001
-                log.warning("skip %s: %s", f, e)
-                continue
-            for w in _iter_windows(wave, sr, manifest["window_seconds"],
-                                   cfg.inference.hop_ms):
-                spec = mel(w)
-                if hasattr(spec, "numpy"):
-                    spec = spec.numpy()
-                x = spec.reshape(1, 1, manifest["n_mels"], -1).astype(np.float32)
-                logits = list(req.infer({0: x}).values())[0][0]
-                all_probs.append(1.0 / (1.0 + np.exp(-logits)))
-            total_seconds += len(wave) / sr
-
-    if not all_probs:
-        raise RuntimeError("No usable ambience samples after preprocessing.")
-
-    probs_arr = np.stack(all_probs, axis=0)             # (T, num_classes)
-    log.info(
-        "scored %d windows / %.1f minutes of ambience (source=%s)",
-        len(probs_arr), total_seconds / 60, ambience_source,
+    scorer = WindowScorer(
+        cfg, backend=backend, classes=classes, feature_extractor=mel,
+        record_sample_rate=cfg.model.sample_rate,
     )
 
-    # Sweep threshold per target class
-    chosen: dict[str, float] = {}
+    log.info("scoring %d negative clip(s) ...", len(negative_files))
+    probs = _score_clip_batch(scorer, negative_files)
+    if probs.size == 0:
+        raise RuntimeError("No usable negative samples after preprocessing.")
+    n_clips = int(probs.shape[0])
+    log.info("scored %d/%d clips (source=%s)", n_clips, len(negative_files), negative_source)
+
+    targets = [c for c in classes if c != "_negative"]
     grid = np.linspace(0.30, 0.95, 14)
 
-    for ci, cls in enumerate(classes):
-        if cls == "_negative":
+    def _system_rate(thresholds: dict[str, float]) -> tuple[float, dict[str, int]]:
+        """Fires per 1000 clips with ALL classes armed at once.
+
+        The old sweep pinned every other class at 1.5 and stored max() of the
+        per-class rates. With several targets that under-reports the system
+        rate, which is nearer the sum: a clip where a *different* target scored
+        highest was dropped from the swept class's count instead of being
+        charged to the system.
+        """
+        hits = _count_fires(
+            probs, classes,
+            thresholds={**thresholds, "_negative": cfg.inference.negative_max},
+            negative_max=cfg.inference.negative_max,
+            margin=cfg.inference.margin_to_second_best,
+        )
+        total = sum(hits.values())
+        return total / n_clips * 1000.0, hits
+
+    # Start strict and relax every class together until the SYSTEM budget is
+    # spent, so the rate reported is the one being bought.
+    chosen: dict[str, float] = {c: float(grid[-1]) for c in targets}
+    system_rate, per_class_hits = _system_rate(chosen)
+    for thr in reversed(grid[:-1]):
+        candidate = {c: float(thr) for c in targets}
+        rate, hits = _system_rate(candidate)
+        log.info("  all classes thr=%.2f → %.2f fires/1000 clips (system)", thr, rate)
+        if rate > target_per_1000:
+            break
+        chosen, system_rate, per_class_hits = candidate, rate, hits
+
+    achieved = {c: per_class_hits.get(c, 0) / n_clips * 1000.0 for c in targets}
+    for cls in targets:
+        log.info("→ %s threshold = %.2f (%.2f/1000)", cls, chosen[cls], achieved[cls])
+    log.info(
+        "system false-alarm rate: %.2f per 1000 clips (budget %.2f)",
+        system_rate, target_per_1000,
+    )
+
+    persist_calibrated_thresholds(
+        cfg, project_id, chosen,
+        simulation_mode="clip_batch",
+        target_per_1000=target_per_1000,
+        achieved_per_1000=achieved,
+        clips_scored=n_clips,
+        negative_source=negative_source,
+        system_per_1000=system_rate,
+        model_id=model_id,
+    )
+    return {
+        "thresholds": chosen,
+        "achieved_per_1000": achieved,
+        "system_per_1000": float(system_rate),
+        "target_per_1000": float(target_per_1000),
+        "clips_scored": n_clips,
+        "negative_files": len(negative_files),
+        "negative_source": negative_source,
+        "simulation_mode": "clip_batch",
+    }
+
+
+def _score_clip_batch(scorer, files: list[Path]) -> np.ndarray:
+    """Per-class probabilities for each clip, one row per clip.
+
+    Clips are scored directly rather than re-detected: they were captured by the
+    onset trigger, so each one already IS the window production would score.
+    Re-running the detector would find nothing (it needs ~1 s to establish its
+    baseline) and drop the whole corpus.
+    """
+    import soundfile as sf
+
+    from sed.audio.resample import resample_audio
+
+    rows: list[np.ndarray] = []
+    target_sr = scorer.record_sample_rate
+    for path in files:
+        try:
+            audio, file_sr = sf.read(str(path), dtype="float32", always_2d=True)
+        except Exception as exc:  # noqa: BLE001 — one bad clip must not end the sweep
+            log.warning("skip %s: %s", path, exc)
             continue
-        best_thr = 0.95                                  # safest default
-        for thr in grid:
-            arbiter = TriggerArbiter(
-                classes=classes,
-                thresholds={c: thr if c == cls else 1.5 for c in classes},
-                smoothers_cfg={
-                    "median_window": cfg.inference.smoothing_median_window,
-                    "ema_alpha": cfg.inference.smoothing_ema_alpha,
-                    "default_threshold": thr,
-                    "hysteresis_low": cfg.inference.hysteresis_low,
-                    "consecutive_frames": cfg.inference.consecutive_frames,
-                },
-                negative_index=neg_idx,
-                negative_max=cfg.inference.negative_max,
-                margin_to_second_best=cfg.inference.margin_to_second_best,
-                global_refractory_ms=cfg.inference.trigger_refractory_ms,
-            )
-            triggers = 0
-            now = 0.0
-            dt = cfg.inference.hop_ms / 1000.0
-            for row in probs_arr:
-                ev = arbiter.step({c: float(p) for c, p in zip(classes, row)}, now=now)
-                if ev is not None:
-                    triggers += 1
-                now += dt
-            fp_per_hour = triggers / max(total_seconds, 1.0) * 3600.0
-            log.info("  %s thr=%.2f → %d triggers (%.2f/h)", cls, thr, triggers, fp_per_hour)
-            if fp_per_hour <= target_fp_per_hour:
-                best_thr = float(thr)
-                break
-        chosen[cls] = best_thr
-        log.info("→ %s threshold = %.2f", cls, best_thr)
-
-    # Persist back into project.toml
-    _write_thresholds(layout.project_toml, chosen)
-    return chosen
+        if audio.size == 0:
+            continue
+        channels = [c for c in scorer.active_channels if c < audio.shape[1]] or [0]
+        waves = []
+        for ch in channels:
+            w = audio[:, ch]
+            if file_sr != target_sr:
+                w = resample_audio(w, orig_sr=file_sr, target_sr=target_sr)
+            waves.append(w)
+        try:
+            scored = scorer.score(waves)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("skip %s: %s", path, exc)
+            continue
+        rows.append(np.array([scored.probs[c] for c in scorer.classes], dtype=np.float64))
+    return np.stack(rows) if rows else np.zeros((0, len(scorer.classes)))
 
 
-def _write_thresholds(toml_path: Path, thresholds: dict[str, float]) -> None:
-    """Append/replace [thresholds] block in project.toml. Minimal-diff approach."""
-    toml_path.parent.mkdir(parents=True, exist_ok=True)
-    if not toml_path.exists():
-        toml_path.write_text("")
+def _count_fires(
+    probs: np.ndarray,
+    classes: list[str],
+    *,
+    thresholds: dict[str, float],
+    negative_max: float,
+    margin: float,
+) -> dict[str, int]:
+    """Per-class fire counts over a clip batch, using the runtime's gate order.
 
-    text = toml_path.read_text(encoding="utf-8")
-    new_block = "[thresholds]\n" + "\n".join(
-        f"{k} = {v:.3f}" for k, v in thresholds.items()
-    ) + "\n"
+    Each clip is one independent decision opportunity, so no refractory applies:
+    two clips are two separate moments in the venue, not two windows a
+    refractory would collapse.
+    """
+    neg_idx = classes.index("_negative") if "_negative" in classes else None
+    target_idx = [i for i in range(len(classes)) if i != neg_idx]
+    hits = {classes[i]: 0 for i in target_idx}
+    if not target_idx or probs.size == 0:
+        return hits
 
-    if "[thresholds]" not in text:
-        if text and not text.endswith("\n"):
-            text += "\n"
-        text += "\n" + new_block
-    else:
-        # Replace existing section up to next [section] header
-        lines = text.splitlines()
-        out_lines: list[str] = []
-        in_section = False
-        replaced = False
-        for line in lines:
-            if line.strip() == "[thresholds]":
-                in_section = True
-                if not replaced:
-                    out_lines.append(new_block.rstrip())
-                    replaced = True
-                continue
-            if in_section and line.startswith("[") and line.endswith("]"):
-                in_section = False
-            if not in_section:
-                out_lines.append(line)
-        text = "\n".join(out_lines) + "\n"
+    target_probs = probs[:, target_idx]
+    order = np.argsort(-target_probs, axis=1)
+    winner_col = order[:, 0]
+    winner_val = np.take_along_axis(target_probs, winner_col[:, None], axis=1)[:, 0]
+    runner_val = (
+        np.take_along_axis(target_probs, order[:, 1][:, None], axis=1)[:, 0]
+        if target_probs.shape[1] > 1 else np.zeros(len(probs))
+    )
 
-    toml_path.write_text(text, encoding="utf-8")
-    log.info("thresholds written to %s", toml_path)
+    ok = np.ones(len(probs), dtype=bool)
+    if neg_idx is not None:                       # negative veto
+        ok &= probs[:, neg_idx] <= negative_max
+    ok &= (winner_val - runner_val) >= margin     # margin gate
+    thr = np.array([thresholds.get(classes[target_idx[c]], 1.0) for c in winner_col])
+    ok &= winner_val >= thr                       # per-class threshold
+
+    for row in np.nonzero(ok)[0]:
+        hits[classes[target_idx[winner_col[row]]]] += 1
+    return hits
+
+
+def persist_calibrated_thresholds(
+    cfg: Config,
+    project_id: str,
+    thresholds: dict[str, float],
+    *,
+    simulation_mode: str = "",
+    target_per_1000: float | None = None,
+    achieved_per_1000: dict[str, float] | None = None,
+    clips_scored: int | None = None,
+    negative_source: str | None = None,
+    system_per_1000: float | None = None,
+    model_id: str | None = None,
+) -> Path:
+    """Persist calibrated thresholds into a model's runtime settings.
+
+    The optional achieved-rate arguments are stored as provenance in the
+    ``calibration`` block so the Runs UI can show what the sweep actually bought
+    (peak per-class rate, clips scored) without re-running it.
+    """
+    layout = ProjectLayout(project_id)
+    model_dir = (layout.model_dir(model_id) if model_id
+                 else resolve_active_model_dir(layout, cfg.deploy.active_model))
+    runtime_path = model_dir / "runtime_settings.json"
+    settings = runtime_settings_from_config(cfg)
+    existing = load_runtime_settings(runtime_path)
+    if existing:
+        settings.update(existing)
+    settings.setdefault("thresholds", {})
+    settings["thresholds"].update({k: float(v) for k, v in thresholds.items()})
+    if simulation_mode or achieved_per_1000 is not None:
+        # Provenance only — apply_runtime_settings ignores this block.
+        block: dict = {
+            "mode": "fp_budget",
+            "simulation_mode": simulation_mode,
+            "target_per_1000": target_per_1000,
+        }
+        if achieved_per_1000 is not None:
+            block["achieved_per_1000"] = {
+                k: float(v) for k, v in achieved_per_1000.items() if v is not None
+            }
+            rates = [float(v) for v in achieved_per_1000.values() if v is not None]
+            # Peak per-class rate, kept alongside the system rate: one says which
+            # class is loosest, the other says what the venue actually gets.
+            block["max_per_1000"] = max(rates) if rates else None
+        if system_per_1000 is not None:
+            block["system_per_1000"] = float(system_per_1000)
+        if clips_scored is not None:
+            block["clips_scored"] = int(clips_scored)
+        if negative_source:
+            block["negative_source"] = negative_source
+        settings["calibration"] = block
+    out = dump_runtime_settings(settings, runtime_path)
+    log.info("thresholds written to %s", out)
+    return out

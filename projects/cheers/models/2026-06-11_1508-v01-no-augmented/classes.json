@@ -1,0 +1,14 @@
+{
+  "classes": [
+    "_negative",
+    "cheers_quiet",
+    "cheers_loud",
+    "cheers_medium"
+  ],
+  "class_index": {
+    "_negative": 0,
+    "cheers_quiet": 1,
+    "cheers_loud": 2,
+    "cheers_medium": 3
+  }
+}

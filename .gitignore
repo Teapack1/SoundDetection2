@@ -10,21 +10,21 @@ __pycache__/
 # Build / dist
 build/
 dist/
-
+scratch/
+projects/
+presets/
+resources/
 # Project artefacts
-projects/*/recordings/
-projects/*/dataset/
-projects/*/models/*.ckpt
-projects/*/models/*.onnx
-projects/*/models/*.xml
-projects/*/models/*.bin
-projects/*/reports/
+# projects/
+
+# Ad-hoc inspect reports rendered outside a project dir (`sed dataset inspect`
+# writes into projects/<id>/dataset/inspect/ — anything at the repo root is a
+# one-off debug render).
+/rendered.html
+/*_report.html
 
 # Library audio is large — track with git-lfs or DVC, NOT plain git
-data_library/glasses_clean/
-data_library/ambience/
-data_library/negatives_external/
-data_library/manifest.jsonl
+data_library/
 
 # Local IDE
 .idea/
@@ -33,6 +33,7 @@ data_library/manifest.jsonl
 .DS_Store
 .codex/
 .agents/
+.claude/
 
 # Vendor
 # (vendor/EfficientAT is a git submodule — do NOT add it here, that would

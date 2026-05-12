@@ -22,6 +22,43 @@ class OnsetEvent:
     sample_idx: int          # absolute sample index of the trigger frame
     strength: float
     baseline: float
+    channel: int | None = None  # physical input channel when known
+
+
+class OnsetMerger:
+    """Collapse per-mic onsets into the single global onset stream.
+
+    One physical transient is seen by every mic that can hear it, and often by
+    successive detector frames on the same mic. Production scores it once: the
+    merged stream is what `[inference] onset_gating_enabled` actually feeds to
+    the model, so it is also the stream any offline measurement must reproduce.
+
+    The rule is a strictly-monotonic cooldown against the last *accepted* onset,
+    shared across all mics — not a per-mic refractory, and not the grouping
+    `recorder._group_onset_events` does (that one groups for recording, keeping
+    every channel that fired; this one picks one index and drops the rest).
+
+    Indices are absolute sample positions in whatever timebase the caller uses,
+    and must be pushed in nondecreasing order within a batch.
+    """
+
+    def __init__(self, cooldown_samples: int) -> None:
+        self.cooldown_samples = max(int(cooldown_samples), 0)
+        # Far enough back that the first onset always clears the cooldown.
+        self._last_accepted_idx = -(10**12)
+
+    def reset(self) -> None:
+        self._last_accepted_idx = -(10**12)
+
+    def push(self, onset_indices: list[int]) -> list[int]:
+        """Accept the onsets that clear the cooldown; return them in order."""
+        accepted: list[int] = []
+        for idx in sorted(int(i) for i in onset_indices):
+            if idx - self._last_accepted_idx < self.cooldown_samples:
+                continue
+            self._last_accepted_idx = idx
+            accepted.append(idx)
+        return accepted
 
 
 class StreamingSuperflux:

@@ -1,0 +1,78 @@
+# SoundEventDetection project config.
+# Edit project-specific values here; omitted keys use defaults from sed.config.
+# Dataset UI: uv run sed dataset inspect --project temna --serve
+# Inspect state: projects/temna/dataset/dataset_selection.json
+
+[project]
+id = "temna"
+name = "temna"
+created_at = "2026-06-04T14:45:57.064264+00:00"
+description = ""
+
+[dataset]
+target_classes = ["_negative", "cheers_quiet", "cheers_loud", "cheers_medium"]
+
+[deploy]
+active_model = ""
+record_device = "default"
+verbose = "none" # none | info | live
+
+[audio]
+record_sample_rate = 48000
+record_channels = [0] # ordered physical input channels, e.g. [0, 3, 1]
+microphone_type = "generic"
+
+[onset]
+min_flux_db = -66
+record_seconds = 1.0
+preroll_ms = 300
+recording_cooldown_ms = 1500
+randomize_preroll = true
+preroll_ms_range = [100, 700]
+multi_mic_trigger = "any" # any | mix | ch0 (multichannel: which channels can trigger)
+cross_channel_merge_ms = 30
+
+[model]
+backbone = "mn10_as" # mn01 | mn10_as | mn20_as | mn40_as
+pretrained = true
+sample_rate = 32000
+
+[features]
+frontend = "efficientat" # efficientat | legacy_torchaudio_db
+
+[training]
+epochs = 60
+loss = "cross_entropy" # cross_entropy | asymmetric_focal | bce_logits
+precision = "16-mixed"
+auto_export = true
+auto_test = true
+
+[inference]
+inference_channels = [0]
+multi_mic_mode = "max" # max | mean | single
+smoothing_enabled = true
+default_threshold = 0.9
+margin_to_second_best = 0.08
+negative_max = 0.5
+min_dbfs = "off" # "off" or dBFS number
+
+[thresholds]
+# cheers_loud = 0.90
+
+[targets]
+# cheers_loud = { enabled = true, channel = 1, value = 255 }
+# cheers_quiet = { enabled = true, channel = 2, value = 180 }
+
+[artnet]
+enabled = false
+target_ip = ""
+universe = 0
+
+[mining]
+enabled = false
+output_dir = "mined"
+# per_class_min_confidence = { cheers_loud = 0.85 }
+
+[logging]
+level = "INFO"
+log_detections = true

@@ -10,8 +10,9 @@ Why all of this:
   - N-of-N consensus requires multiple consecutive over-threshold frames so
     transients caused by music/cutlery don't get through
 
-Then a global trigger gate: argmax over POSITIVE classes, must beat the
-runner-up by `margin`, and the `_negative` class must be below `negative_max`.
+Then a global trigger gate: argmax over triggerable classes, must beat the
+runner-up by `margin`, and, when configured, the `_negative` class must be
+below `negative_max`.
 """
 
 from __future__ import annotations
@@ -26,6 +27,11 @@ class TriggerEvent:
     class_name: str
     confidence: float
     timestamp: float
+    peak_dbfs: float | None = None
+    rms_dbfs: float | None = None
+    min_dbfs: float | None = None
+    best_channel: int | None = None
+    mined_path: str | None = None
 
 
 class ClassSmoother:
@@ -50,8 +56,10 @@ class ClassSmoother:
         ema_alpha: float = 0.4,
         threshold: float = 0.6,
         hysteresis_low: float = 0.3,
-        consecutive_frames: int = 2,
+        consecutive_frames: int = 3,
+        smoothing_enabled: bool = True,
     ):
+        self.smoothing_enabled = bool(smoothing_enabled)
         self.median_window = max(1, int(median_window))
         self.ema_alpha = float(ema_alpha)
         self.threshold = float(threshold)
@@ -68,7 +76,15 @@ class ClassSmoother:
         `ready_to_fire` is True when the smoothed value has been above
         threshold for `consecutive_frames` AND the smoother is armed
         (hasn't fired since the last hysteresis dip).
+
+        When smoothing is disabled the raw value passes straight through and
+        fires the instant it crosses threshold (no median/EMA/hysteresis/
+        consecutive state).
         """
+        if not self.smoothing_enabled:
+            s = float(raw)
+            return s >= self.threshold, s
+
         self._buf.append(float(raw))
         sorted_buf = sorted(self._buf)
         med = sorted_buf[len(sorted_buf) // 2]
@@ -99,7 +115,7 @@ class TriggerArbiter:
     """Decide at each step which (if any) class fires.
 
     Per the project requirement (minimise FPs even at the cost of recall):
-      - Only POSITIVE classes can fire (the `_negative` class is a gatekeeper).
+      - Only trigger classes can fire (the optional `_negative` class is a gatekeeper).
       - winner.score must be > threshold AND > runner_up.score + margin
       - _negative score must be < negative_max
       - Refractory period after any fire on any class.
@@ -110,17 +126,21 @@ class TriggerArbiter:
         classes: list[str],
         thresholds: dict[str, float],
         smoothers_cfg: dict,
-        negative_index: int,
+        negative_index: int | None,
         negative_max: float,
         margin_to_second_best: float,
         global_refractory_ms: int,
+        trigger_classes: set[str] | None = None,
     ):
         self.classes = classes
         self.neg_idx = negative_index
         self.negative_max = negative_max
         self.margin = margin_to_second_best
         self.global_refractory_s = global_refractory_ms / 1000.0
+        self.trigger_classes = trigger_classes
         self._last_fire_ts = 0.0
+        self.last_smoothed: dict[str, float] = {}
+        smoothing_enabled = bool(smoothers_cfg.get("smoothing_enabled", True))
         self.smoothers: dict[str, ClassSmoother] = {}
         for cls in classes:
             self.smoothers[cls] = ClassSmoother(
@@ -129,6 +149,7 @@ class TriggerArbiter:
                 threshold=thresholds.get(cls, smoothers_cfg["default_threshold"]),
                 hysteresis_low=smoothers_cfg["hysteresis_low"],
                 consecutive_frames=smoothers_cfg["consecutive_frames"],
+                smoothing_enabled=smoothing_enabled,
             )
 
     def step(self, probs: dict[str, float], now: float | None = None) -> TriggerEvent | None:
@@ -139,18 +160,22 @@ class TriggerArbiter:
             ready, s = self.smoothers[cls].update(raw)
             smoothed[cls] = s
             per_class_ready[cls] = ready
+        self.last_smoothed = dict(smoothed)
 
         # Global refractory across classes
         if now - self._last_fire_ts < self.global_refractory_s:
             return None
 
-        # Negative gate: smoothed _negative score must not dominate
-        neg_name = self.classes[self.neg_idx]
-        if smoothed.get(neg_name, 0.0) > self.negative_max:
+        # Negative gate: smoothed _negative score must not dominate, when the
+        # model has an explicit negative output.
+        neg_name = self.classes[self.neg_idx] if self.neg_idx is not None else None
+        if neg_name is not None and smoothed.get(neg_name, 0.0) > self.negative_max:
             return None
 
         positive_smoothed = {
-            c: smoothed[c] for c in self.classes if c != neg_name
+            c: smoothed[c]
+            for c in self.classes
+            if c != neg_name and (self.trigger_classes is None or c in self.trigger_classes)
         }
         if not positive_smoothed:
             return None

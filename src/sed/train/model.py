@@ -1,11 +1,12 @@
-"""EfficientAT backbone wrapper with custom classification head.
+"""SED model: a pluggable backbone + global pool + linear head.
 
-We try to import EfficientAT from `vendor/EfficientAT/` (added as a git
-submodule of `https://github.com/fschmid56/EfficientAT`). If that's not
-present, we fall back to a TIMM MobileNetV3-Large with random init — usable
-for smoke tests but you should set up the submodule for real training.
+The backbone is built by a :mod:`sed.train.backbones` adapter, so the trainer
+supports EfficientAT (the vendored ``mn*`` AudioSet models), any ``timm``
+architecture (ConvNeXt-Tiny, MobileNetV3, …), and user ``module:Class`` nets —
+selected by ``cfg.model.backbone``.
 
-To install the submodule::
+EfficientAT is loaded from `vendor/EfficientAT/`, a git submodule of
+`https://github.com/fschmid56/EfficientAT`::
 
     cd <repo-root>
     git submodule add https://github.com/fschmid56/EfficientAT vendor/EfficientAT
@@ -15,84 +16,19 @@ To install the submodule::
 from __future__ import annotations
 
 import logging
-import os
-import sys
-from contextlib import contextmanager
-from pathlib import Path
 
 import torch
 import torch.nn as nn
 
-from sed.config import REPO_ROOT
+from sed.train.backbones import (
+    EFFICIENTAT_PATH,
+    _load_efficientat,  # re-exported for back-compat (tests import it from here)
+    resolve_adapter,
+)
 
 log = logging.getLogger(__name__)
 
-EFFICIENTAT_PATH = REPO_ROOT / "vendor" / "EfficientAT"
-
-
-@contextmanager
-def _chdir(path: Path):
-    """Temporarily change CWD. Used to satisfy modules that open files via
-    relative paths at import time (EfficientAT's helpers/utils.py loads
-    'metadata/class_labels_indices.csv' that way)."""
-    prev = os.getcwd()
-    os.chdir(str(path))
-    try:
-        yield
-    finally:
-        os.chdir(prev)
-
-
-# ---------------------------------------------------------------------------
-# Backbone loader
-# ---------------------------------------------------------------------------
-
-
-def _load_efficientat(backbone_name: str, pretrained: bool) -> nn.Module:
-    """Try to load from the EfficientAT vendor checkout; raise if not present."""
-    if not EFFICIENTAT_PATH.exists():
-        raise ImportError(
-            f"EfficientAT not found at {EFFICIENTAT_PATH}. Run:\n"
-            "  git submodule add https://github.com/fschmid56/EfficientAT "
-            "vendor/EfficientAT && git submodule update --init"
-        )
-    metadata_csv = EFFICIENTAT_PATH / "metadata" / "class_labels_indices.csv"
-    if not metadata_csv.exists():
-        raise ImportError(
-            f"EfficientAT submodule looks incomplete (missing {metadata_csv}). "
-            "Try: git submodule update --init --recursive"
-        )
-    if str(EFFICIENTAT_PATH) not in sys.path:
-        sys.path.insert(0, str(EFFICIENTAT_PATH))
-
-    # EfficientAT's helpers/utils.py opens 'metadata/class_labels_indices.csv'
-    # with a relative path at module-import time, so we must chdir into the
-    # submodule directory while the import resolves. Once cached in
-    # sys.modules, subsequent imports re-use the populated module globals
-    # and the chdir is no longer needed.
-    with _chdir(EFFICIENTAT_PATH):
-        from models.mn.model import get_model  # type: ignore
-
-    # Pretrained model name format used by EfficientAT (mn10_as etc.)
-    model = get_model(
-        width_mult={"mn01": 0.1, "mn04": 0.4, "mn05": 0.5, "mn10": 1.0,
-                    "mn20": 2.0, "mn30": 3.0, "mn40": 4.0}.get(
-                        backbone_name.split("_")[0].rstrip("_as"), 1.0
-                    ),
-        pretrained_name=backbone_name if pretrained else None,
-    )
-    return model
-
-
-def _load_timm_fallback(backbone_name: str) -> nn.Module:
-    log.warning("Using TIMM MobileNetV3 fallback — accuracy will be much lower.")
-    try:
-        import timm
-    except ImportError as e:
-        raise ImportError("Install `timm` for the fallback backbone, or set up "
-                          "the EfficientAT submodule.") from e
-    return timm.create_model("mobilenetv3_large_100", pretrained=False, num_classes=0,
-                             global_pool="")
+__all__ = ["EFFICIENTAT_PATH", "_load_efficientat", "SedModel", "AsymmetricFocalLoss"]
 
 
 # ---------------------------------------------------------------------------
@@ -101,45 +37,83 @@ def _load_timm_fallback(backbone_name: str) -> nn.Module:
 
 
 class SedModel(nn.Module):
-    """Backbone + global pool + linear head over our classes."""
+    """Backbone (via adapter) + global pool + linear head over our classes."""
 
-    def __init__(self, backbone_name: str, num_classes: int, pretrained: bool = True):
+    def __init__(
+        self,
+        backbone_name: str,
+        num_classes: int,
+        pretrained: bool = True,
+        n_bands: int = 128,
+        n_frames: int = 100,
+        params: dict | None = None,
+        task: str = "clip",
+        input_channels: int | None = None,
+        head_dropout: float = 0.2,
+    ):
         super().__init__()
-        try:
-            self.backbone = _load_efficientat(backbone_name, pretrained)
-            self._is_efficientat = True
-        except ImportError as e:
-            log.error("%s", e)
-            self.backbone = _load_timm_fallback(backbone_name)
-            self._is_efficientat = False
+        self.backbone_name = backbone_name
+        self.adapter = resolve_adapter(backbone_name)
+        self.task = str(task or "clip")
+        self.input_channels = int(
+            input_channels if input_channels is not None
+            else getattr(self.adapter.spec, "input_channels", 1) or 1
+        )
+        self.backbone = self.adapter.build_backbone(
+            pretrained=pretrained,
+            n_bands=n_bands,
+            n_frames=n_frames,
+            input_channels=self.input_channels,
+            **(params or {}),
+        )
 
-        # Determine feature dim by a dummy forward
-        with torch.no_grad():
-            dummy = torch.zeros(1, 1, 128, 100)
-            feat = self._extract_features(dummy)
+        # Determine feature dim by a dummy forward. Backbones are fully
+        # convolutional with global pooling, so feat_dim is independent of the
+        # band count (n_bands) — any feature height (mel n_mels or linear bins)
+        # works without an architecture change. The probe runs in eval mode so a
+        # single zeros batch neither pollutes BatchNorm running stats nor trips
+        # BatchNorm's "expected >1 value per channel" guard for encoders whose
+        # embedding ends in a BatchNorm1d (e.g. the legacy SmallerVGGNet).
+        was_training = self.backbone.training
+        self.backbone.eval()
+        try:
+            with torch.no_grad():
+                dummy = torch.zeros(1, self.input_channels, n_bands, n_frames)
+                feat = self._extract_features(dummy)
+        finally:
+            self.backbone.train(was_training)
         feat_dim = feat.shape[-1]
+        # Head dropout is a training knob (``training.head_dropout``), not part
+        # of the model recipe, and is an identity at eval/export.
         self.head = nn.Sequential(
-            nn.Dropout(0.2),
+            nn.Dropout(float(head_dropout)),
             nn.Linear(feat_dim, num_classes),
         )
         self.num_classes = num_classes
 
     def _extract_features(self, x: torch.Tensor) -> torch.Tensor:
-        """x: (B, 1, n_mels, T) log-mel."""
-        if self._is_efficientat:
-            # EfficientAT returns (logits, embeddings); we discard logits.
-            out = self.backbone(x)
-            if isinstance(out, tuple):
-                _logits, emb = out
-            else:
-                emb = out
-            return emb
-        # TIMM path: pool spatial dims
-        x3 = x.repeat(1, 3, 1, 1)
-        feat = self.backbone(x3)
-        return feat.mean(dim=(-1, -2))
+        """x: (B, C, n_bands, T) feature map → (B, feat_dim) embedding."""
+        return self.adapter.forward_features(self.backbone, x)
+
+    def forward_frames(self, x: torch.Tensor) -> torch.Tensor:
+        """Frame logits ``(B, T, C)`` for frame-capable SED recipes."""
+        feat = self.adapter.forward_frame_features(self.backbone, x).transpose(1, 2)
+        return self.head(feat)
+
+    def backbone_stages(self) -> list[tuple[str, list[nn.Parameter]]]:
+        """Ordered stem→…→last param groups of the backbone (for per-stage LR)."""
+        return self.adapter.stages(self.backbone)
+
+    def backbone_stage_modules(self) -> list[tuple[str, nn.Module]]:
+        """Ordered stem→…→last stage modules of the backbone (for freezing/eval)."""
+        return self.adapter.stage_modules(self.backbone)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if self.task == "frame":
+            # Clip-level reports keep working for frame experiments: a target
+            # is present if any frame fires. Timestamp scoring uses
+            # ``forward_frames`` directly.
+            return self.forward_frames(x).amax(dim=1)
         feat = self._extract_features(x)
         return self.head(feat)
 
@@ -152,27 +126,26 @@ class SedModel(nn.Module):
 class AsymmetricFocalLoss(nn.Module):
     """Per-class focal loss with separate γ for the negative class.
 
-    With γ_neg > γ_pos and an extra weight on the `_negative` class, the
-    optimiser prefers to be wrong on positives (miss a clink) over being wrong
-    on negatives (trigger a false light cue) — exactly the behaviour we want.
+    γ controls hard-example focusing, not class-frequency balance. Frequency
+    imbalance is handled once by the shared training sampler. Defaults mirror
+    ``TrainingCfg.focal_gamma_*``.
     """
 
     def __init__(
         self,
         num_classes: int,
-        negative_index: int,
+        negative_index: int | None,
         gamma_pos: float = 1.0,
-        gamma_neg: float = 4.0,
-        negative_weight: float = 2.0,
+        gamma_neg: float = 2.0,
     ):
         super().__init__()
         self.num_classes = num_classes
         self.neg_idx = negative_index
         self.gamma_pos = gamma_pos
         self.gamma_neg = gamma_neg
-        weights = torch.ones(num_classes)
-        weights[negative_index] = negative_weight
-        self.register_buffer("class_weights", weights)
+        # Retain an all-one buffer for compatibility with historical focal-loss
+        # checkpoints, which persisted this state under the same key.
+        self.register_buffer("class_weights", torch.ones(num_classes))
 
     def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
         """Multi-label: targets ∈ [0, 1]^{B×C}."""
@@ -183,7 +156,8 @@ class AsymmetricFocalLoss(nn.Module):
         # focal modulation per class
         gammas = torch.full((self.num_classes,), self.gamma_pos,
                             device=logits.device, dtype=logits.dtype)
-        gammas[self.neg_idx] = self.gamma_neg
+        if self.neg_idx is not None:
+            gammas[self.neg_idx] = self.gamma_neg
         # for positives in target: focusing factor (1-p)^γ
         # for negatives in target: focusing factor p^γ
         pt = torch.where(targets >= 0.5, prob, 1.0 - prob)

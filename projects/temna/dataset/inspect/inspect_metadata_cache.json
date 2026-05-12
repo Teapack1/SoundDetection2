@@ -1,0 +1,3218 @@
+{
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/talk-test_ch0/20260604T202859.681Z_talk-test_ch0_874069ea_551faf84.wav": {
+    "mtime": 1780604939.6830924,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/talk-test_ch0/20260604T202901.251Z_talk-test_ch0_332d3019_fe33d737.wav": {
+    "mtime": 1780604941.253084,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/talk-test_ch0/20260604T202902.818Z_talk-test_ch0_1d98930a_efb32c46.wav": {
+    "mtime": 1780604942.8200753,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/talk-test_ch0/20260604T202904.586Z_talk-test_ch0_dba5e7e0_23077408.wav": {
+    "mtime": 1780604944.5880659,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/talk-test_ch0/20260604T202914.379Z_talk-test_ch0_2af8eef8_331c048b.wav": {
+    "mtime": 1780604954.3840146,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/talk-test_ch0/20260604T202917.202Z_talk-test_ch0_8df6d8b8_fd1bb64e.wav": {
+    "mtime": 1780604957.2050004,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/talk-test_ch0/20260604T202919.829Z_talk-test_ch0_c056cc3c_b3a0debb.wav": {
+    "mtime": 1780604959.8319871,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/talk-test_ch0/20260604T202925.285Z_talk-test_ch0_38d08258_b6b319c1.wav": {
+    "mtime": 1780604965.2899606,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/talk-test_ch0/20260604T202930.345Z_talk-test_ch0_29a882ac_784f7945.wav": {
+    "mtime": 1780604970.3499365,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/talk-test_ch0/20260604T202931.863Z_talk-test_ch0_7e867e05_460b9294.wav": {
+    "mtime": 1780604971.8639295,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/talk-test_ch0/20260604T202933.683Z_talk-test_ch0_126c402a_d616b44e.wav": {
+    "mtime": 1780604973.683921,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/talk-test_ch0/20260604T202937.112Z_talk-test_ch0_48830cea_5d2c3487.wav": {
+    "mtime": 1780604977.1139054,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/talk-test_ch0/20260604T202939.030Z_talk-test_ch0_7128c2d7_5d94e443.wav": {
+    "mtime": 1780604979.0318968,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/talk-test_ch0/20260604T202943.422Z_talk-test_ch0_afd1e1c8_c6df0032.wav": {
+    "mtime": 1780604983.4238775,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/talk-test_ch0/20260604T202951.858Z_talk-test_ch0_26ea8582_3b26d180.wav": {
+    "mtime": 1780604991.8598416,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/talk-test_ch0/20260604T202956.057Z_talk-test_ch0_1709e2e2_d96bd014.wav": {
+    "mtime": 1780604996.0588243,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/talk-test_ch0/20260604T202957.630Z_talk-test_ch0_dc9265e2_02397dcb.wav": {
+    "mtime": 1780604997.632818,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/talk-test_ch1/20260604T202857.331Z_talk-test_ch1_eb91b1cd_d559b4cf.wav": {
+    "mtime": 1780604937.3411055,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/talk-test_ch1/20260604T202858.117Z_talk-test_ch1_7c36db0f_1c0ff181.wav": {
+    "mtime": 1780604938.126101,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/talk-test_ch1/20260604T202859.681Z_talk-test_ch1_874069ea_0f02e0d3.wav": {
+    "mtime": 1780604939.6860924,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/talk-test_ch1/20260604T202901.251Z_talk-test_ch1_332d3019_0f324a3f.wav": {
+    "mtime": 1780604941.2590837,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/talk-test_ch1/20260604T202902.818Z_talk-test_ch1_1d98930a_6bb66553.wav": {
+    "mtime": 1780604942.8230753,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/talk-test_ch1/20260604T202904.586Z_talk-test_ch1_dba5e7e0_bc909894.wav": {
+    "mtime": 1780604944.591066,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/talk-test_ch1/20260604T202914.379Z_talk-test_ch1_2af8eef8_b15355e7.wav": {
+    "mtime": 1780604954.3900146,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/talk-test_ch1/20260604T202917.202Z_talk-test_ch1_8df6d8b8_0e78e972.wav": {
+    "mtime": 1780604957.2110002,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/talk-test_ch1/20260604T202919.829Z_talk-test_ch1_c056cc3c_7e52e8e4.wav": {
+    "mtime": 1780604959.8369873,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/talk-test_ch1/20260604T202925.285Z_talk-test_ch1_38d08258_2fafcb1e.wav": {
+    "mtime": 1780604965.2939606,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/talk-test_ch1/20260604T202930.345Z_talk-test_ch1_29a882ac_8c7ef439.wav": {
+    "mtime": 1780604970.3529365,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/talk-test_ch1/20260604T202931.863Z_talk-test_ch1_7e867e05_144aeb3e.wav": {
+    "mtime": 1780604971.8709295,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/talk-test_ch1/20260604T202933.683Z_talk-test_ch1_126c402a_5f277dfd.wav": {
+    "mtime": 1780604973.687921,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/talk-test_ch1/20260604T202937.112Z_talk-test_ch1_48830cea_9a521462.wav": {
+    "mtime": 1780604977.1179054,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/talk-test_ch1/20260604T202939.030Z_talk-test_ch1_7128c2d7_d0612c63.wav": {
+    "mtime": 1780604979.0358968,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/talk-test_ch1/20260604T202943.422Z_talk-test_ch1_afd1e1c8_b63a3836.wav": {
+    "mtime": 1780604983.4278774,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/talk-test_ch1/20260604T202951.858Z_talk-test_ch1_26ea8582_5327ac3a.wav": {
+    "mtime": 1780604991.8628414,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/talk-test_ch1/20260604T202956.057Z_talk-test_ch1_1709e2e2_09bb0662.wav": {
+    "mtime": 1780604996.0638242,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/talk-test_ch1/20260604T202957.630Z_talk-test_ch1_dc9265e2_cc65c528.wav": {
+    "mtime": 1780604997.6378179,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test_03/talk-test_03_ch0/20260604T222111.955Z_talk-test_03_ch0_5a7ae29f_2fc65df3.wav": {
+    "mtime": 1780611671.9584644,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test_03/talk-test_03_ch0/20260604T222113.902Z_talk-test_03_ch0_56d6601e_b98d8978.wav": {
+    "mtime": 1780611673.9034731,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test_03/talk-test_03_ch0/20260604T222115.424Z_talk-test_03_ch0_ebaa1fba_6433657d.wav": {
+    "mtime": 1780611675.42648,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test_03/talk-test_03_ch0/20260604T222116.937Z_talk-test_03_ch0_c208fb78_a78d7ccc.wav": {
+    "mtime": 1780611676.939487,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test_03/talk-test_03_ch0/20260604T222118.804Z_talk-test_03_ch0_98844102_f8720a3b.wav": {
+    "mtime": 1780611678.8114955,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test_03/talk-test_03_ch0/20260604T222120.519Z_talk-test_03_ch0_f007b935_62b6d997.wav": {
+    "mtime": 1780611680.5225034,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test_03/talk-test_03_ch0/20260604T222122.691Z_talk-test_03_ch0_2476b795_45054bc8.wav": {
+    "mtime": 1780611682.694513,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test_03/talk-test_03_ch0/20260604T222128.336Z_talk-test_03_ch0_e3335c1e_37586248.wav": {
+    "mtime": 1780611688.338539,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test_03/talk-test_03_ch0/20260604T222130.159Z_talk-test_03_ch0_4b68c68f_78f3f916.wav": {
+    "mtime": 1780611690.1615472,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133639.413Z_riedel_veloce_0001_a7fb7ba5.wav": {
+    "mtime": 1779975399.4253004,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133643.020Z_riedel_veloce_0002_f7f34a70.wav": {
+    "mtime": 1779975403.0300748,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133646.568Z_riedel_veloce_0003_2c2b8a27.wav": {
+    "mtime": 1779975406.5778515,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133648.625Z_riedel_veloce_0004_fa25b8b1.wav": {
+    "mtime": 1779975408.637721,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133650.637Z_riedel_veloce_0005_f26bcf7f.wav": {
+    "mtime": 1779975410.6475935,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133652.754Z_riedel_veloce_0006_c2c68fa6.wav": {
+    "mtime": 1779975412.7684584,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133657.283Z_riedel_veloce_0007_21a6965f.wav": {
+    "mtime": 1779975417.2941685,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133659.956Z_riedel_veloce_0008_e1765680.wav": {
+    "mtime": 1779975419.968996,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133702.078Z_riedel_veloce_0009_5171f36b.wav": {
+    "mtime": 1779975422.0888588,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133704.149Z_riedel_veloce_0010_454588ea.wav": {
+    "mtime": 1779975424.1597245,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133706.415Z_riedel_veloce_0011_5abf8fba.wav": {
+    "mtime": 1779975426.4255772,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133709.614Z_riedel_veloce_0012_e20c7eb7.wav": {
+    "mtime": 1779975429.6173685,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133711.918Z_riedel_veloce_0013_8f914a3e.wav": {
+    "mtime": 1779975431.928217,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133716.185Z_riedel_veloce_0014_c3532883.wav": {
+    "mtime": 1779975436.1949358,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133718.250Z_riedel_veloce_0015_c7ef086d.wav": {
+    "mtime": 1779975438.2667985,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133720.311Z_riedel_veloce_0016_6eb92dbe.wav": {
+    "mtime": 1779975440.323662,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133722.423Z_riedel_veloce_0017_5a6d90e1.wav": {
+    "mtime": 1779975442.4345217,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133725.268Z_riedel_veloce_0018_f9edce1a.wav": {
+    "mtime": 1779975445.2803316,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133727.632Z_riedel_veloce_0019_55e50633.wav": {
+    "mtime": 1779975447.6431735,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133730.062Z_riedel_veloce_0020_0fff21e1.wav": {
+    "mtime": 1779975450.07501,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133733.939Z_riedel_veloce_0021_116127f7.wav": {
+    "mtime": 1779975453.9537487,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133736.105Z_riedel_veloce_0022_c874b9d0.wav": {
+    "mtime": 1779975456.1166024,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133740.268Z_riedel_veloce_0023_09fbc7a3.wav": {
+    "mtime": 1779975460.27932,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133742.643Z_riedel_veloce_0024_e3fdbf38.wav": {
+    "mtime": 1779975462.655158,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133744.922Z_riedel_veloce_0025_843dac54.wav": {
+    "mtime": 1779975464.9330027,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133747.241Z_riedel_veloce_0026_6ee053f4.wav": {
+    "mtime": 1779975467.251844,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133749.425Z_riedel_veloce_0027_c1d6b911.wav": {
+    "mtime": 1779975469.437694,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133751.532Z_riedel_veloce_0028_152a4796.wav": {
+    "mtime": 1779975471.5435493,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133753.968Z_riedel_veloce_0029_69a5adc1.wav": {
+    "mtime": 1779975473.9793816,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133756.442Z_riedel_veloce_0030_77c1230f.wav": {
+    "mtime": 1779975476.4532106,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133758.985Z_riedel_veloce_0031_2a493e3c.wav": {
+    "mtime": 1779975478.9960346,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133801.403Z_riedel_veloce_0032_3e56d547.wav": {
+    "mtime": 1779975481.4188666,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133803.712Z_riedel_veloce_0033_d2e3a680.wav": {
+    "mtime": 1779975483.7237065,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133807.851Z_riedel_veloce_0034_1b4d78ac.wav": {
+    "mtime": 1779975487.861418,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133809.848Z_riedel_veloce_0035_818a97ee.wav": {
+    "mtime": 1779975489.8572786,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133811.922Z_riedel_veloce_0036_237bad02.wav": {
+    "mtime": 1779975491.9341333,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133814.296Z_riedel_veloce_0037_8d424e8a.wav": {
+    "mtime": 1779975494.3069668,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133816.305Z_riedel_veloce_0038_28dc00bb.wav": {
+    "mtime": 1779975496.3198254,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133818.425Z_riedel_veloce_0039_35d7d893.wav": {
+    "mtime": 1779975498.4356766,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133822.654Z_riedel_veloce_0040_d1c0e9f1.wav": {
+    "mtime": 1779975502.6643784,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133824.887Z_riedel_veloce_0041_5c6b7d43.wav": {
+    "mtime": 1779975504.9022202,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133826.946Z_riedel_veloce_0042_ecf360c0.wav": {
+    "mtime": 1779975506.9570746,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133829.010Z_riedel_veloce_0043_20a08318.wav": {
+    "mtime": 1779975509.0209284,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133833.028Z_riedel_veloce_0044_c04929d8.wav": {
+    "mtime": 1779975513.037643,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133835.092Z_riedel_veloce_0045_06910306.wav": {
+    "mtime": 1779975515.1054957,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133838.808Z_riedel_veloce_0046_df63c675.wav": {
+    "mtime": 1779975518.8202305,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133840.966Z_riedel_veloce_0047_41ff1a73.wav": {
+    "mtime": 1779975520.9760764,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133843.179Z_riedel_veloce_0048_03613f60.wav": {
+    "mtime": 1779975523.191918,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133845.406Z_riedel_veloce_0049_43c73c11.wav": {
+    "mtime": 1779975525.419758,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133847.992Z_riedel_veloce_0050_e3c6a6ca.wav": {
+    "mtime": 1779975528.0045726,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133850.103Z_riedel_veloce_0051_711b46ac.wav": {
+    "mtime": 1779975530.113421,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133852.421Z_riedel_veloce_0052_0920483d.wav": {
+    "mtime": 1779975532.433254,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133856.336Z_riedel_veloce_0053_c3192143.wav": {
+    "mtime": 1779975536.345972,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133859.115Z_riedel_veloce_0054_1b990092.wav": {
+    "mtime": 1779975539.124771,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133903.713Z_riedel_veloce_0055_ae1a256f.wav": {
+    "mtime": 1779975543.728438,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133907.306Z_riedel_veloce_0056_e6e709e6.wav": {
+    "mtime": 1779975547.3171778,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133909.683Z_riedel_veloce_0057_5e450b49.wav": {
+    "mtime": 1779975549.695005,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133912.304Z_riedel_veloce_0058_28c731d7.wav": {
+    "mtime": 1779975552.319814,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133914.675Z_riedel_veloce_0059_ac5c7879.wav": {
+    "mtime": 1779975554.6866417,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133916.837Z_riedel_veloce_0060_443b5830.wav": {
+    "mtime": 1779975556.847484,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133919.273Z_riedel_veloce_0061_1717908f.wav": {
+    "mtime": 1779975559.2863061,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133921.587Z_riedel_veloce_0062_64243aeb.wav": {
+    "mtime": 1779975561.5981371,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133923.851Z_riedel_veloce_0063_b63a10bb.wav": {
+    "mtime": 1779975563.8641376,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133926.576Z_riedel_veloce_0064_63c639b3.wav": {
+    "mtime": 1779975566.5874264,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133928.807Z_riedel_veloce_0065_9dbd82f6.wav": {
+    "mtime": 1779975568.8186595,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133930.830Z_riedel_veloce_0066_719e8e68.wav": {
+    "mtime": 1779975570.840868,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133932.903Z_riedel_veloce_0067_954802be.wav": {
+    "mtime": 1779975572.9140792,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133935.090Z_riedel_veloce_0068_ab8d1dee.wav": {
+    "mtime": 1779975575.1022992,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T133937.293Z_riedel_veloce_0069_d490c632.wav": {
+    "mtime": 1779975577.3025174,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test_02/20260604T222008.158Z_talk-test_02_0001_6dfd121b.wav": {
+    "mtime": 1780611608.1621802,
+    "size": 192044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test_02/20260604T222010.036Z_talk-test_02_0002_cfa9ae1c.wav": {
+    "mtime": 1780611610.0391884,
+    "size": 192044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test_02/20260604T222011.762Z_talk-test_02_0003_b6bf8061.wav": {
+    "mtime": 1780611611.769196,
+    "size": 192044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test_02/20260604T222013.336Z_talk-test_02_0004_c67c68b7.wav": {
+    "mtime": 1780611613.3402028,
+    "size": 192044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test_02/20260604T222015.008Z_talk-test_02_0005_595bdea4.wav": {
+    "mtime": 1780611615.0112102,
+    "size": 192044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test_02/20260604T222016.522Z_talk-test_02_0006_b2d92b40.wav": {
+    "mtime": 1780611616.5252168,
+    "size": 192044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test_02/20260604T222018.288Z_talk-test_02_0007_f0e5aa86.wav": {
+    "mtime": 1780611618.2912247,
+    "size": 192044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test_02/20260604T222020.054Z_talk-test_02_0008_f514ddcf.wav": {
+    "mtime": 1780611620.0572324,
+    "size": 192044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test_02/20260604T222021.627Z_talk-test_02_0009_980f92f8.wav": {
+    "mtime": 1780611621.6302395,
+    "size": 192044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test_02/20260604T222023.200Z_talk-test_02_0010_69fd3855.wav": {
+    "mtime": 1780611623.2042463,
+    "size": 192044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test_02/20260604T222028.198Z_talk-test_02_0011_a9801525.wav": {
+    "mtime": 1780611628.2052684,
+    "size": 192044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test_02/20260604T222032.235Z_talk-test_02_0012_98b13065.wav": {
+    "mtime": 1780611632.2382863,
+    "size": 192044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test_02/20260604T222040.864Z_talk-test_02_0013_aae77ed0.wav": {
+    "mtime": 1780611640.8673248,
+    "size": 192044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test_03/talk-test_03_ch1/20260604T222111.955Z_talk-test_03_ch1_5a7ae29f_ba30b1d0.wav": {
+    "mtime": 1780611671.9634645,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test_03/talk-test_03_ch1/20260604T222113.902Z_talk-test_03_ch1_56d6601e_300d3e66.wav": {
+    "mtime": 1780611673.9094732,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test_03/talk-test_03_ch1/20260604T222115.424Z_talk-test_03_ch1_ebaa1fba_b294e900.wav": {
+    "mtime": 1780611675.42948,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test_03/talk-test_03_ch1/20260604T222116.937Z_talk-test_03_ch1_c208fb78_d8aa61c1.wav": {
+    "mtime": 1780611676.942487,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test_03/talk-test_03_ch1/20260604T222118.804Z_talk-test_03_ch1_98844102_d31cc551.wav": {
+    "mtime": 1780611678.8174956,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test_03/talk-test_03_ch1/20260604T222120.519Z_talk-test_03_ch1_f007b935_3fefa35e.wav": {
+    "mtime": 1780611680.5315034,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test_03/talk-test_03_ch1/20260604T222122.691Z_talk-test_03_ch1_2476b795_dace3667.wav": {
+    "mtime": 1780611682.7005131,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test_03/talk-test_03_ch1/20260604T222128.336Z_talk-test_03_ch1_e3335c1e_3c1d49e0.wav": {
+    "mtime": 1780611688.341539,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test_03/talk-test_03_ch1/20260604T222130.159Z_talk-test_03_ch1_4b68c68f_66d8925b.wav": {
+    "mtime": 1780611690.1645472,
+    "size": 96044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T140856.998Z_riedel_veloce_0001_6c1959fb.wav": {
+    "mtime": 1779977337.0108454,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T140901.481Z_riedel_veloce_0002_0d6de3fc.wav": {
+    "mtime": 1779977341.4927862,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T140903.543Z_riedel_veloce_0003_b6cd64d9.wav": {
+    "mtime": 1779977343.5557585,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T140905.756Z_riedel_veloce_0004_2f75030f.wav": {
+    "mtime": 1779977345.7677286,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T140907.932Z_riedel_veloce_0005_263d28e4.wav": {
+    "mtime": 1779977347.946699,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T140910.107Z_riedel_veloce_0006_1f712f21.wav": {
+    "mtime": 1779977350.118669,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T140912.117Z_riedel_veloce_0007_f24be08c.wav": {
+    "mtime": 1779977352.129641,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T140916.019Z_riedel_veloce_0008_22708bed.wav": {
+    "mtime": 1779977356.0305867,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T140919.787Z_riedel_veloce_0009_2fbfc03e.wav": {
+    "mtime": 1779977359.7975333,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T140921.895Z_riedel_veloce_0010_5dbc4314.wav": {
+    "mtime": 1779977361.9075031,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T140923.953Z_riedel_veloce_0011_1eb78116.wav": {
+    "mtime": 1779977363.9654734,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/riedel_veloce/20260528T140928.268Z_riedel_veloce_0012_ae7f54bc.wav": {
+    "mtime": 1779977368.2784107,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T141910.310Z_ambience_temna_0001_330333f7.wav": {
+    "mtime": 1779977950.3233075,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T141912.445Z_ambience_temna_0002_d8dee836.wav": {
+    "mtime": 1779977952.4563375,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T141913.937Z_ambience_temna_0003_945827f6.wav": {
+    "mtime": 1779977953.9523585,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T141915.696Z_ambience_temna_0004_40fb5bf4.wav": {
+    "mtime": 1779977955.708383,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T141917.310Z_ambience_temna_0005_273b3069.wav": {
+    "mtime": 1779977957.3224053,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T141918.901Z_ambience_temna_0006_01a53a55.wav": {
+    "mtime": 1779977958.914427,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T141920.715Z_ambience_temna_0007_a8ffdcab.wav": {
+    "mtime": 1779977960.7254517,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T141922.215Z_ambience_temna_0008_5682fa5e.wav": {
+    "mtime": 1779977962.231472,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T141923.966Z_ambience_temna_0009_89a9fc13.wav": {
+    "mtime": 1779977963.9774954,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T141925.875Z_ambience_temna_0010_f645c7eb.wav": {
+    "mtime": 1779977965.887521,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T141928.090Z_ambience_temna_0011_5f5237b9.wav": {
+    "mtime": 1779977968.1035502,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T141929.945Z_ambience_temna_0012_fa5d5fe7.wav": {
+    "mtime": 1779977969.9545743,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T141931.849Z_ambience_temna_0013_e2e920aa.wav": {
+    "mtime": 1779977971.8595989,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T141933.655Z_ambience_temna_0014_009529b6.wav": {
+    "mtime": 1779977973.668622,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T141935.155Z_ambience_temna_0015_571f41cd.wav": {
+    "mtime": 1779977975.165641,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T141936.699Z_ambience_temna_0016_748e2f90.wav": {
+    "mtime": 1779977976.7116606,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T141939.072Z_ambience_temna_0017_bebad638.wav": {
+    "mtime": 1779977979.0836902,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T141940.938Z_ambience_temna_0018_726bc502.wav": {
+    "mtime": 1779977980.9497135,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T141942.446Z_ambience_temna_0019_f4071fda.wav": {
+    "mtime": 1779977982.461732,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T141944.046Z_ambience_temna_0020_e6045e6d.wav": {
+    "mtime": 1779977984.0587513,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T141946.111Z_ambience_temna_0021_45fda79f.wav": {
+    "mtime": 1779977986.1227763,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T141948.281Z_ambience_temna_0022_522264ef.wav": {
+    "mtime": 1779977988.2858021,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T141949.799Z_ambience_temna_0023_b7f2eec9.wav": {
+    "mtime": 1779977989.80282,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T141951.790Z_ambience_temna_0024_2904fcb2.wav": {
+    "mtime": 1779977991.7958434,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T141953.472Z_ambience_temna_0025_25a89a52.wav": {
+    "mtime": 1779977993.4828632,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T141955.321Z_ambience_temna_0026_75024205.wav": {
+    "mtime": 1779977995.3348844,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T141957.226Z_ambience_temna_0027_fdee30da.wav": {
+    "mtime": 1779977997.2359061,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T141958.722Z_ambience_temna_0028_11121c03.wav": {
+    "mtime": 1779977998.731923,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142000.519Z_ambience_temna_0029_260f2924.wav": {
+    "mtime": 1779978000.5289433,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142002.113Z_ambience_temna_0030_b987db90.wav": {
+    "mtime": 1779978002.125961,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142003.732Z_ambience_temna_0031_385d4a49.wav": {
+    "mtime": 1779978003.744979,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142005.331Z_ambience_temna_0032_b299490f.wav": {
+    "mtime": 1779978005.3419964,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142006.847Z_ambience_temna_0033_d1305f10.wav": {
+    "mtime": 1779978006.8570127,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142010.395Z_ambience_temna_0034_3c86c2cb.wav": {
+    "mtime": 1779978010.4090507,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142012.003Z_ambience_temna_0035_53f042bb.wav": {
+    "mtime": 1779978012.0100677,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142014.159Z_ambience_temna_0036_fe456d66.wav": {
+    "mtime": 1779978014.1740904,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142015.831Z_ambience_temna_0037_6e021297.wav": {
+    "mtime": 1779978015.8401077,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142017.790Z_ambience_temna_0038_2fcccdfa.wav": {
+    "mtime": 1779978017.8031278,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142019.908Z_ambience_temna_0039_45e35c9e.wav": {
+    "mtime": 1779978019.9181492,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142021.466Z_ambience_temna_0040_4decb622.wav": {
+    "mtime": 1779978021.4781647,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142023.580Z_ambience_temna_0041_3eb75e33.wav": {
+    "mtime": 1779978023.5911858,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142025.381Z_ambience_temna_0042_6062286f.wav": {
+    "mtime": 1779978025.3922033,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142027.603Z_ambience_temna_0043_6eaf3e43.wav": {
+    "mtime": 1779978027.616225,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142029.170Z_ambience_temna_0044_f7bfd957.wav": {
+    "mtime": 1779978029.1832402,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142030.767Z_ambience_temna_0045_e2ecc4ef.wav": {
+    "mtime": 1779978030.7782552,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142032.515Z_ambience_temna_0046_72bdb8ba.wav": {
+    "mtime": 1779978032.5252717,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142034.107Z_ambience_temna_0047_89debb80.wav": {
+    "mtime": 1779978034.1202867,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142035.562Z_ambience_temna_0048_919132f2.wav": {
+    "mtime": 1779978035.5723002,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142037.163Z_ambience_temna_0049_f9bc95c1.wav": {
+    "mtime": 1779978037.1763148,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142038.715Z_ambience_temna_0050_ecd1a84c.wav": {
+    "mtime": 1779978038.725329,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142040.472Z_ambience_temna_0051_8ed32a06.wav": {
+    "mtime": 1779978040.4823446,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142042.581Z_ambience_temna_0052_9ce29502.wav": {
+    "mtime": 1779978042.5923636,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142044.114Z_ambience_temna_0053_78b94ca5.wav": {
+    "mtime": 1779978044.1173768,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142045.685Z_ambience_temna_0054_df11e8f8.wav": {
+    "mtime": 1779978045.6953907,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142047.536Z_ambience_temna_0055_a112b227.wav": {
+    "mtime": 1779978047.5464067,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142049.134Z_ambience_temna_0056_026b3ba9.wav": {
+    "mtime": 1779978049.1494203,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142051.146Z_ambience_temna_0057_52e7eec1.wav": {
+    "mtime": 1779978051.1584373,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142053.308Z_ambience_temna_0058_19b18715.wav": {
+    "mtime": 1779978053.3184552,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142055.277Z_ambience_temna_0059_ae97f4d5.wav": {
+    "mtime": 1779978055.2894716,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142057.283Z_ambience_temna_0060_99a2e9ff.wav": {
+    "mtime": 1779978057.294488,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142058.838Z_ambience_temna_0061_0eb4bccb.wav": {
+    "mtime": 1779978058.8495004,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142100.987Z_ambience_temna_0062_4a8889cd.wav": {
+    "mtime": 1779978061.0005174,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142102.642Z_ambience_temna_0063_6417e3a2.wav": {
+    "mtime": 1779978062.6545303,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142104.367Z_ambience_temna_0064_e88eead3.wav": {
+    "mtime": 1779978064.3815439,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142105.915Z_ambience_temna_0065_8d64eb78.wav": {
+    "mtime": 1779978065.9275556,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142107.478Z_ambience_temna_0066_c6be9468.wav": {
+    "mtime": 1779978067.4885676,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142109.187Z_ambience_temna_0067_8f446af3.wav": {
+    "mtime": 1779978069.2015803,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142110.679Z_ambience_temna_0068_f693154a.wav": {
+    "mtime": 1779978070.6895914,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142112.634Z_ambience_temna_0069_d89222fb.wav": {
+    "mtime": 1779978072.6446059,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142114.351Z_ambience_temna_0070_57220fed.wav": {
+    "mtime": 1779978074.3636184,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142115.946Z_ambience_temna_0071_2a9a16d3.wav": {
+    "mtime": 1779978075.9576297,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142117.604Z_ambience_temna_0072_1fba1edd.wav": {
+    "mtime": 1779978077.6156414,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142119.422Z_ambience_temna_0073_3a14dcc5.wav": {
+    "mtime": 1779978079.4326541,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142121.020Z_ambience_temna_0074_6331672a.wav": {
+    "mtime": 1779978081.0366652,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142122.985Z_ambience_temna_0075_bb5d28f1.wav": {
+    "mtime": 1779978082.9986787,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142124.536Z_ambience_temna_0076_dab0cc0b.wav": {
+    "mtime": 1779978084.5476892,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142126.261Z_ambience_temna_0077_c968548a.wav": {
+    "mtime": 1779978086.2727005,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142127.858Z_ambience_temna_0078_bdf3e655.wav": {
+    "mtime": 1779978087.8717113,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142129.513Z_ambience_temna_0079_0ab72e30.wav": {
+    "mtime": 1779978089.523722,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142131.479Z_ambience_temna_0080_28fc9739.wav": {
+    "mtime": 1779978091.4887345,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142133.080Z_ambience_temna_0081_874b8b9e.wav": {
+    "mtime": 1779978093.0907447,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142134.779Z_ambience_temna_0082_ce072452.wav": {
+    "mtime": 1779978094.7897553,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142137.251Z_ambience_temna_0083_423ebf4c.wav": {
+    "mtime": 1779978097.2667706,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142138.967Z_ambience_temna_0084_677078d2.wav": {
+    "mtime": 1779978098.978781,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142140.870Z_ambience_temna_0085_51a64433.wav": {
+    "mtime": 1779978100.8817923,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142142.464Z_ambience_temna_0086_df9150a8.wav": {
+    "mtime": 1779978102.4748015,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142144.315Z_ambience_temna_0087_b8991b9a.wav": {
+    "mtime": 1779978104.3268123,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142146.073Z_ambience_temna_0088_505b9167.wav": {
+    "mtime": 1779978106.0878224,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142147.574Z_ambience_temna_0089_7c085cfe.wav": {
+    "mtime": 1779978107.5838308,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142149.528Z_ambience_temna_0090_9439e0fa.wav": {
+    "mtime": 1779978109.5388417,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142151.385Z_ambience_temna_0091_b5db3346.wav": {
+    "mtime": 1779978111.3968518,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142153.189Z_ambience_temna_0092_20f6428e.wav": {
+    "mtime": 1779978113.2058616,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142154.851Z_ambience_temna_0093_15812889.wav": {
+    "mtime": 1779978114.8628705,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142156.399Z_ambience_temna_0094_6f644899.wav": {
+    "mtime": 1779978116.4108784,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142158.156Z_ambience_temna_0095_61da9260.wav": {
+    "mtime": 1779978118.1678877,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142159.755Z_ambience_temna_0096_f87863a5.wav": {
+    "mtime": 1779978119.7698958,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142201.346Z_ambience_temna_0097_2ef001b8.wav": {
+    "mtime": 1779978121.3579037,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142202.999Z_ambience_temna_0098_9ff146ff.wav": {
+    "mtime": 1779978123.013912,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142204.852Z_ambience_temna_0099_826b0567.wav": {
+    "mtime": 1779978124.863921,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142206.499Z_ambience_temna_0100_cd0b1945.wav": {
+    "mtime": 1779978126.5039287,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142208.170Z_ambience_temna_0101_c712ec4f.wav": {
+    "mtime": 1779978128.1809366,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142209.909Z_ambience_temna_0102_af66ca19.wav": {
+    "mtime": 1779978129.9119446,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142211.657Z_ambience_temna_0103_ae9e0b09.wav": {
+    "mtime": 1779978131.6679525,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142213.202Z_ambience_temna_0104_2ba5f5fa.wav": {
+    "mtime": 1779978133.2129595,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142214.711Z_ambience_temna_0105_80322668.wav": {
+    "mtime": 1779978134.7229662,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142217.275Z_ambience_temna_0106_fe4f6628.wav": {
+    "mtime": 1779978137.2859771,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142219.082Z_ambience_temna_0107_b0a7e3e4.wav": {
+    "mtime": 1779978139.0929847,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142220.805Z_ambience_temna_0108_e5b746c1.wav": {
+    "mtime": 1779978140.818992,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142222.451Z_ambience_temna_0109_2c271c9a.wav": {
+    "mtime": 1779978142.4629986,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142224.310Z_ambience_temna_0110_5d7ab56b.wav": {
+    "mtime": 1779978144.3230062,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142226.362Z_ambience_temna_0111_cb945ae5.wav": {
+    "mtime": 1779978146.375014,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142228.014Z_ambience_temna_0112_2ab432de.wav": {
+    "mtime": 1779978148.0290203,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142229.877Z_ambience_temna_0113_5829abfa.wav": {
+    "mtime": 1779978149.8990273,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142231.424Z_ambience_temna_0114_cf3de930.wav": {
+    "mtime": 1779978151.4370923,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142233.389Z_ambience_temna_0115_8c5cd20a.wav": {
+    "mtime": 1779978153.3990402,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142235.207Z_ambience_temna_0116_c7b43755.wav": {
+    "mtime": 1779978155.2170465,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142238.089Z_ambience_temna_0117_90393aa7.wav": {
+    "mtime": 1779978158.0990565,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142240.302Z_ambience_temna_0118_86f44464.wav": {
+    "mtime": 1779978160.3120637,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142241.951Z_ambience_temna_0119_cf66d599.wav": {
+    "mtime": 1779978161.968069,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142243.770Z_ambience_temna_0120_4b67899a.wav": {
+    "mtime": 1779978163.7840748,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142245.792Z_ambience_temna_0121_7bf1d4ad.wav": {
+    "mtime": 1779978165.805081,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142247.342Z_ambience_temna_0122_9ab30a2a.wav": {
+    "mtime": 1779978167.3540857,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142249.068Z_ambience_temna_0123_6b2aab51.wav": {
+    "mtime": 1779978169.0790908,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142251.193Z_ambience_temna_0124_019b6668.wav": {
+    "mtime": 1779978171.2030969,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142253.368Z_ambience_temna_0125_b8a6c1ee.wav": {
+    "mtime": 1779978173.3741028,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142255.090Z_ambience_temna_0126_1fbfd41e.wav": {
+    "mtime": 1779978175.0941074,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142256.825Z_ambience_temna_0127_ae7a46af.wav": {
+    "mtime": 1779978176.8381119,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142258.822Z_ambience_temna_0128_f569f7b5.wav": {
+    "mtime": 1779978178.832117,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142300.780Z_ambience_temna_0129_c65f79e8.wav": {
+    "mtime": 1779978180.7901218,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142302.481Z_ambience_temna_0130_f5800baf.wav": {
+    "mtime": 1779978182.493126,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142304.292Z_ambience_temna_0131_8c25e168.wav": {
+    "mtime": 1779978184.30713,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142305.955Z_ambience_temna_0132_181c4cb1.wav": {
+    "mtime": 1779978185.9611337,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142307.486Z_ambience_temna_0133_8d790125.wav": {
+    "mtime": 1779978187.4991372,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142309.093Z_ambience_temna_0134_5ec887c0.wav": {
+    "mtime": 1779978189.1051407,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142311.095Z_ambience_temna_0135_a8e85743.wav": {
+    "mtime": 1779978191.1071446,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142313.094Z_ambience_temna_0136_40fb8c98.wav": {
+    "mtime": 1779978193.1041486,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142314.898Z_ambience_temna_0137_173fdf1a.wav": {
+    "mtime": 1779978194.912152,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142316.509Z_ambience_temna_0138_fcf5e757.wav": {
+    "mtime": 1779978196.520155,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142318.263Z_ambience_temna_0139_bfc0317c.wav": {
+    "mtime": 1779978198.273158,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142320.417Z_ambience_temna_0140_ba0866cd.wav": {
+    "mtime": 1779978200.4301617,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142322.282Z_ambience_temna_0141_5f5fe65a.wav": {
+    "mtime": 1779978202.2951646,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142324.247Z_ambience_temna_0142_8faab45c.wav": {
+    "mtime": 1779978204.2521677,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142325.993Z_ambience_temna_0143_541c69a4.wav": {
+    "mtime": 1779978206.0071702,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142327.995Z_ambience_temna_0144_77d0d415.wav": {
+    "mtime": 1779978208.007173,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142329.538Z_ambience_temna_0145_f47947ed.wav": {
+    "mtime": 1779978209.549175,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142332.526Z_ambience_temna_0146_a2da5032.wav": {
+    "mtime": 1779978212.5411787,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142334.380Z_ambience_temna_0147_8052e163.wav": {
+    "mtime": 1779978214.3921807,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142336.087Z_ambience_temna_0148_24d303b4.wav": {
+    "mtime": 1779978216.0981827,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142338.054Z_ambience_temna_0149_d2f4a6df.wav": {
+    "mtime": 1779978218.0661845,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142339.813Z_ambience_temna_0150_d2256029.wav": {
+    "mtime": 1779978219.8251863,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142341.668Z_ambience_temna_0151_bfa19490.wav": {
+    "mtime": 1779978221.6821878,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142343.729Z_ambience_temna_0152_7a574331.wav": {
+    "mtime": 1779978223.7391894,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142345.997Z_ambience_temna_0153_85249ee0.wav": {
+    "mtime": 1779978226.009191,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142348.538Z_ambience_temna_0154_24b9740a.wav": {
+    "mtime": 1779978228.5521927,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142350.188Z_ambience_temna_0155_72d088b9.wav": {
+    "mtime": 1779978230.1981936,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142351.789Z_ambience_temna_0156_ee6e27b0.wav": {
+    "mtime": 1779978231.8011944,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142353.540Z_ambience_temna_0157_453019fd.wav": {
+    "mtime": 1779978233.5511951,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142355.034Z_ambience_temna_0158_fe9cf05b.wav": {
+    "mtime": 1779978235.0461955,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142356.740Z_ambience_temna_0159_dabd94f0.wav": {
+    "mtime": 1779978236.752196,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142358.350Z_ambience_temna_0160_56ecb27c.wav": {
+    "mtime": 1779978238.3641965,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142400.007Z_ambience_temna_0161_ef96adc0.wav": {
+    "mtime": 1779978240.0181968,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142401.612Z_ambience_temna_0162_0cfff901.wav": {
+    "mtime": 1779978241.623197,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142403.487Z_ambience_temna_0163_0bd71ed5.wav": {
+    "mtime": 1779978243.4991972,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142405.234Z_ambience_temna_0164_de3caa08.wav": {
+    "mtime": 1779978245.2401972,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142407.136Z_ambience_temna_0165_c23822f6.wav": {
+    "mtime": 1779978247.147197,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142408.736Z_ambience_temna_0166_41c1b245.wav": {
+    "mtime": 1779978248.7491968,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142410.499Z_ambience_temna_0167_8ce03ab3.wav": {
+    "mtime": 1779978250.5111964,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142412.142Z_ambience_temna_0168_98ecd446.wav": {
+    "mtime": 1779978252.153196,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142413.856Z_ambience_temna_0169_5d9b3394.wav": {
+    "mtime": 1779978253.8661954,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142415.461Z_ambience_temna_0170_67da001d.wav": {
+    "mtime": 1779978255.474195,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142417.476Z_ambience_temna_0171_4d8ee5a3.wav": {
+    "mtime": 1779978257.4921942,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142419.641Z_ambience_temna_0172_c2bf2cde.wav": {
+    "mtime": 1779978259.654193,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142421.869Z_ambience_temna_0173_e0a7c880.wav": {
+    "mtime": 1779978261.8791916,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142423.367Z_ambience_temna_0174_c4d7a879.wav": {
+    "mtime": 1779978263.3781908,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142425.067Z_ambience_temna_0175_a174ceef.wav": {
+    "mtime": 1779978265.0781896,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142426.610Z_ambience_temna_0176_a75506f5.wav": {
+    "mtime": 1779978266.6201885,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142428.616Z_ambience_temna_0177_e7a8876b.wav": {
+    "mtime": 1779978268.6261868,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142430.936Z_ambience_temna_0178_3b6795e2.wav": {
+    "mtime": 1779978270.9501846,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142432.856Z_ambience_temna_0179_0ea419a7.wav": {
+    "mtime": 1779978272.868183,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142434.417Z_ambience_temna_0180_7b30590b.wav": {
+    "mtime": 1779978274.4321814,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142435.975Z_ambience_temna_0181_026e2972.wav": {
+    "mtime": 1779978275.9881797,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142437.621Z_ambience_temna_0182_ccfb4e88.wav": {
+    "mtime": 1779978277.6331778,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142439.218Z_ambience_temna_0183_8a641721.wav": {
+    "mtime": 1779978279.2281759,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142441.554Z_ambience_temna_0184_4a577b6b.wav": {
+    "mtime": 1779978281.5691729,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142443.469Z_ambience_temna_0185_53aa2247.wav": {
+    "mtime": 1779978283.4821703,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142445.013Z_ambience_temna_0186_03a205fe.wav": {
+    "mtime": 1779978285.0231683,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142447.018Z_ambience_temna_0187_b15fe197.wav": {
+    "mtime": 1779978287.0281653,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142448.567Z_ambience_temna_0188_b4d659e4.wav": {
+    "mtime": 1779978288.5711632,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142451.256Z_ambience_temna_0189_822269b3.wav": {
+    "mtime": 1779978291.267159,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142452.820Z_ambience_temna_0190_0908264d.wav": {
+    "mtime": 1779978292.8301563,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142455.571Z_ambience_temna_0191_a0e2db49.wav": {
+    "mtime": 1779978295.5811517,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142457.993Z_ambience_temna_0192_9d4534a4.wav": {
+    "mtime": 1779978298.0031474,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142459.550Z_ambience_temna_0193_99c35e2d.wav": {
+    "mtime": 1779978299.5621445,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142501.097Z_ambience_temna_0194_d7e3c0b8.wav": {
+    "mtime": 1779978301.1101415,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142502.599Z_ambience_temna_0195_aeacfde7.wav": {
+    "mtime": 1779978302.6101387,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142504.326Z_ambience_temna_0196_c56ad6f9.wav": {
+    "mtime": 1779978304.3371353,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142505.875Z_ambience_temna_0197_dfae0c82.wav": {
+    "mtime": 1779978305.888132,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142508.373Z_ambience_temna_0198_3d2c899b.wav": {
+    "mtime": 1779978308.3861268,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142510.037Z_ambience_temna_0199_723a02d8.wav": {
+    "mtime": 1779978310.049123,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142511.838Z_ambience_temna_0200_88452121.wav": {
+    "mtime": 1779978311.8531191,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142513.790Z_ambience_temna_0201_9dae61e2.wav": {
+    "mtime": 1779978313.8001146,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142515.444Z_ambience_temna_0202_5a11b360.wav": {
+    "mtime": 1779978315.4541109,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142518.387Z_ambience_temna_0203_16bb8dec.wav": {
+    "mtime": 1779978318.4001036,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142520.813Z_ambience_temna_0204_610b9ee0.wav": {
+    "mtime": 1779978320.8240976,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142524.531Z_ambience_temna_0205_b426d010.wav": {
+    "mtime": 1779978324.5420878,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142526.387Z_ambience_temna_0206_95fd7dc9.wav": {
+    "mtime": 1779978326.397083,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142528.562Z_ambience_temna_0207_62d93bb2.wav": {
+    "mtime": 1779978328.574077,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142530.104Z_ambience_temna_0208_50018d23.wav": {
+    "mtime": 1779978330.1150727,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142532.573Z_ambience_temna_0209_80f4fd0f.wav": {
+    "mtime": 1779978332.5870655,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142534.330Z_ambience_temna_0210_6b3bf75f.wav": {
+    "mtime": 1779978334.3410604,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142536.183Z_ambience_temna_0211_5de8187c.wav": {
+    "mtime": 1779978336.196055,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142537.840Z_ambience_temna_0212_bbca4210.wav": {
+    "mtime": 1779978337.8520498,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142539.891Z_ambience_temna_0213_5c7d3642.wav": {
+    "mtime": 1779978339.9010437,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142541.601Z_ambience_temna_0214_3727b809.wav": {
+    "mtime": 1779978341.6110382,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142543.344Z_ambience_temna_0215_d26a81a5.wav": {
+    "mtime": 1779978343.3480327,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142545.113Z_ambience_temna_0216_d5db8af6.wav": {
+    "mtime": 1779978345.1170268,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142547.105Z_ambience_temna_0217_57f99438.wav": {
+    "mtime": 1779978347.1080203,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142548.647Z_ambience_temna_0218_d0f7076a.wav": {
+    "mtime": 1779978348.657015,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142550.311Z_ambience_temna_0219_dd693af8.wav": {
+    "mtime": 1779978350.3210094,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142553.191Z_ambience_temna_0220_fdde7d0b.wav": {
+    "mtime": 1779978353.2009995,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142555.610Z_ambience_temna_0221_354bb70a.wav": {
+    "mtime": 1779978355.620991,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142557.198Z_ambience_temna_0222_32a2ca69.wav": {
+    "mtime": 1779978357.2089853,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142558.798Z_ambience_temna_0223_1f839cf7.wav": {
+    "mtime": 1779978358.8069794,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142600.401Z_ambience_temna_0224_99c5aeab.wav": {
+    "mtime": 1779978360.4129734,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142602.459Z_ambience_temna_0225_164107fd.wav": {
+    "mtime": 1779978362.4699657,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142604.532Z_ambience_temna_0226_03833a3c.wav": {
+    "mtime": 1779978364.5419579,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142606.244Z_ambience_temna_0227_7fb6b344.wav": {
+    "mtime": 1779978366.2549512,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142607.786Z_ambience_temna_0228_f7dae81c.wav": {
+    "mtime": 1779978367.7969453,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142609.438Z_ambience_temna_0229_2c083790.wav": {
+    "mtime": 1779978369.4499388,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142611.044Z_ambience_temna_0230_bd1d9eb1.wav": {
+    "mtime": 1779978371.0569324,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142612.571Z_ambience_temna_0231_c251e34c.wav": {
+    "mtime": 1779978372.5849261,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142614.382Z_ambience_temna_0232_5fdd1fe6.wav": {
+    "mtime": 1779978374.391919,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142615.981Z_ambience_temna_0233_5b2207bb.wav": {
+    "mtime": 1779978375.9929123,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142617.624Z_ambience_temna_0234_09da05ae.wav": {
+    "mtime": 1779978377.6369054,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142619.168Z_ambience_temna_0235_d613eb97.wav": {
+    "mtime": 1779978379.1848989,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142620.926Z_ambience_temna_0236_520be724.wav": {
+    "mtime": 1779978380.9348912,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142622.566Z_ambience_temna_0237_2641b102.wav": {
+    "mtime": 1779978382.5798843,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142624.122Z_ambience_temna_0238_377ec5a8.wav": {
+    "mtime": 1779978384.1328776,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142625.722Z_ambience_temna_0239_02c13aea.wav": {
+    "mtime": 1779978385.7378705,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142627.315Z_ambience_temna_0240_e61c7744.wav": {
+    "mtime": 1779978387.3298633,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142629.012Z_ambience_temna_0241_021e5052.wav": {
+    "mtime": 1779978389.0238557,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142630.553Z_ambience_temna_0242_59c5273c.wav": {
+    "mtime": 1779978390.5658488,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142632.104Z_ambience_temna_0243_e806cd07.wav": {
+    "mtime": 1779978392.1188416,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142633.652Z_ambience_temna_0244_a3ae45aa.wav": {
+    "mtime": 1779978393.6638346,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142635.310Z_ambience_temna_0245_3b20775d.wav": {
+    "mtime": 1779978395.3208268,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142636.917Z_ambience_temna_0246_7a173488.wav": {
+    "mtime": 1779978396.9288194,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142638.569Z_ambience_temna_0247_6fb5a5f3.wav": {
+    "mtime": 1779978398.5838115,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142640.062Z_ambience_temna_0248_b34c3863.wav": {
+    "mtime": 1779978400.0758042,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142641.930Z_ambience_temna_0249_fe86d09e.wav": {
+    "mtime": 1779978401.9447954,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142644.815Z_ambience_temna_0250_bd668c31.wav": {
+    "mtime": 1779978404.825781,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142646.362Z_ambience_temna_0251_04e1067e.wav": {
+    "mtime": 1779978406.3727736,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142647.924Z_ambience_temna_0252_0717f1a1.wav": {
+    "mtime": 1779978407.9347658,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142649.834Z_ambience_temna_0253_c7240bc6.wav": {
+    "mtime": 1779978409.8467562,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142651.488Z_ambience_temna_0254_1ef3f312.wav": {
+    "mtime": 1779978411.5007477,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142653.082Z_ambience_temna_0255_8b14a950.wav": {
+    "mtime": 1779978413.0977397,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142654.939Z_ambience_temna_0256_0e0bbf05.wav": {
+    "mtime": 1779978414.94973,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142656.447Z_ambience_temna_0257_aba2a5da.wav": {
+    "mtime": 1779978416.4607222,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142658.829Z_ambience_temna_0258_83d621cf.wav": {
+    "mtime": 1779978418.8397098,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142701.047Z_ambience_temna_0259_43ef3f7e.wav": {
+    "mtime": 1779978421.0576978,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142702.609Z_ambience_temna_0260_01321b0f.wav": {
+    "mtime": 1779978422.6196895,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142704.425Z_ambience_temna_0261_01560463.wav": {
+    "mtime": 1779978424.4426796,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142706.034Z_ambience_temna_0262_35776ec5.wav": {
+    "mtime": 1779978426.0420523,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142707.761Z_ambience_temna_0263_1e256be0.wav": {
+    "mtime": 1779978427.7666614,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142709.692Z_ambience_temna_0264_82b9b75d.wav": {
+    "mtime": 1779978429.6966507,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142712.207Z_ambience_temna_0265_1763d374.wav": {
+    "mtime": 1779978432.2186368,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142715.095Z_ambience_temna_0266_0d7df6d6.wav": {
+    "mtime": 1779978435.1066203,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142716.694Z_ambience_temna_0267_b078af80.wav": {
+    "mtime": 1779978436.710611,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142718.359Z_ambience_temna_0268_dc253bd3.wav": {
+    "mtime": 1779978438.3766015,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142720.011Z_ambience_temna_0269_701cced2.wav": {
+    "mtime": 1779978440.024592,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142721.827Z_ambience_temna_0270_81bfc5a9.wav": {
+    "mtime": 1779978441.8375814,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142723.624Z_ambience_temna_0271_dd13fc80.wav": {
+    "mtime": 1779978443.6375709,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142725.631Z_ambience_temna_0272_39687450.wav": {
+    "mtime": 1779978445.6485589,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142727.535Z_ambience_temna_0273_2e4a8401.wav": {
+    "mtime": 1779978447.5455475,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142729.445Z_ambience_temna_0274_1ef96f12.wav": {
+    "mtime": 1779978449.4555361,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142731.419Z_ambience_temna_0275_228b3010.wav": {
+    "mtime": 1779978451.435524,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142733.127Z_ambience_temna_0276_b05d9039.wav": {
+    "mtime": 1779978453.1315138,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142734.667Z_ambience_temna_0277_291df399.wav": {
+    "mtime": 1779978454.6765041,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142736.872Z_ambience_temna_0278_0b8f35ee.wav": {
+    "mtime": 1779978456.8824906,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142738.529Z_ambience_temna_0279_4f121974.wav": {
+    "mtime": 1779978458.5404801,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142740.134Z_ambience_temna_0280_057f900c.wav": {
+    "mtime": 1779978460.14647,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142741.884Z_ambience_temna_0281_ad0b4ff5.wav": {
+    "mtime": 1779978461.898459,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142743.646Z_ambience_temna_0282_a0780fa3.wav": {
+    "mtime": 1779978463.658448,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142746.676Z_ambience_temna_0283_7a969b0a.wav": {
+    "mtime": 1779978466.6904285,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142748.270Z_ambience_temna_0284_b249b6b4.wav": {
+    "mtime": 1779978468.281418,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142750.497Z_ambience_temna_0285_2b0e8b7e.wav": {
+    "mtime": 1779978470.5084035,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142753.496Z_ambience_temna_0286_28cdc1f6.wav": {
+    "mtime": 1779978473.5073838,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142755.710Z_ambience_temna_0287_98e8db6e.wav": {
+    "mtime": 1779978475.7233691,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142757.884Z_ambience_temna_0288_da39498c.wav": {
+    "mtime": 1779978477.8973546,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142759.591Z_ambience_temna_0289_681c7430.wav": {
+    "mtime": 1779978479.6013432,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142801.400Z_ambience_temna_0290_c89b406c.wav": {
+    "mtime": 1779978481.410331,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142803.663Z_ambience_temna_0291_aeaeeebb.wav": {
+    "mtime": 1779978483.6773155,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142806.130Z_ambience_temna_0292_6740a8e0.wav": {
+    "mtime": 1779978486.1362987,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142807.850Z_ambience_temna_0293_d1a84cb5.wav": {
+    "mtime": 1779978487.8612869,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142810.076Z_ambience_temna_0294_79d4fa12.wav": {
+    "mtime": 1779978490.0852714,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142811.630Z_ambience_temna_0295_955f5a7b.wav": {
+    "mtime": 1779978491.6422603,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142813.227Z_ambience_temna_0296_a85bf166.wav": {
+    "mtime": 1779978493.2382493,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142814.766Z_ambience_temna_0297_6e3e1989.wav": {
+    "mtime": 1779978494.7762384,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142816.573Z_ambience_temna_0298_e3342bbc.wav": {
+    "mtime": 1779978496.5882254,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142818.132Z_ambience_temna_0299_8b8570a5.wav": {
+    "mtime": 1779978498.1422143,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ambience_temna/20260528T142819.885Z_ambience_temna_0300_6712d360.wav": {
+    "mtime": 1779978499.8962018,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/20260604T202856.561Z_talk-test_0001_eb91b1cd.wav": {
+    "mtime": 1780604936.5641096,
+    "size": 192044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/20260604T202858.111Z_talk-test_0002_7c36db0f.wav": {
+    "mtime": 1780604938.1141012,
+    "size": 192044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/20260604T202859.675Z_talk-test_0003_874069ea.wav": {
+    "mtime": 1780604939.6780925,
+    "size": 192044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/20260604T202901.241Z_talk-test_0004_332d3019.wav": {
+    "mtime": 1780604941.246084,
+    "size": 192044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/20260604T202902.811Z_talk-test_0005_1d98930a.wav": {
+    "mtime": 1780604942.8140755,
+    "size": 192044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/20260604T202904.579Z_talk-test_0006_dba5e7e0.wav": {
+    "mtime": 1780604944.5820658,
+    "size": 192044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/20260604T202914.367Z_talk-test_0007_2af8eef8.wav": {
+    "mtime": 1780604954.3730147,
+    "size": 192044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/20260604T202917.192Z_talk-test_0008_8df6d8b8.wav": {
+    "mtime": 1780604957.1970003,
+    "size": 192044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/20260604T202919.819Z_talk-test_0009_c056cc3c.wav": {
+    "mtime": 1780604959.8249872,
+    "size": 192044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/20260604T202925.276Z_talk-test_0010_38d08258.wav": {
+    "mtime": 1780604965.2799606,
+    "size": 192044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/20260604T202930.335Z_talk-test_0011_29a882ac.wav": {
+    "mtime": 1780604970.3379366,
+    "size": 192044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/20260604T202931.851Z_talk-test_0012_7e867e05.wav": {
+    "mtime": 1780604971.8589294,
+    "size": 192044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/20260604T202933.673Z_talk-test_0013_126c402a.wav": {
+    "mtime": 1780604973.6799212,
+    "size": 192044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/20260604T202937.102Z_talk-test_0014_48830cea.wav": {
+    "mtime": 1780604977.1079054,
+    "size": 192044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/20260604T202939.021Z_talk-test_0015_7128c2d7.wav": {
+    "mtime": 1780604979.0268967,
+    "size": 192044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/20260604T202943.412Z_talk-test_0016_afd1e1c8.wav": {
+    "mtime": 1780604983.4158773,
+    "size": 192044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/20260604T202951.847Z_talk-test_0017_26ea8582.wav": {
+    "mtime": 1780604991.8538415,
+    "size": 192044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/20260604T202956.048Z_talk-test_0018_1709e2e2.wav": {
+    "mtime": 1780604996.0508242,
+    "size": 192044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/talk-test/20260604T202957.620Z_talk-test_0019_dc9265e2.wav": {
+    "mtime": 1780604997.623818,
+    "size": 192044,
+    "sample_rate": 48000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.934Z_glasses_0001_5d3dd8b1.wav": {
+    "mtime": 1779198683.2116141,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.935Z_glasses_0001_01516f8c.wav": {
+    "mtime": 1779198684.9106195,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.936Z_glasses_0001_9cf42d16.wav": {
+    "mtime": 1779198686.6706252,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.937Z_glasses_0001_1870d2ca.wav": {
+    "mtime": 1779198688.460631,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.938Z_glasses_0001_69da1921.wav": {
+    "mtime": 1779198689.5756345,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.939Z_glasses_0001_0afab211.wav": {
+    "mtime": 1779198691.7146413,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.940Z_glasses_0001_fa8f7c49.wav": {
+    "mtime": 1779198693.5116472,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.941Z_glasses_0001_7eb2e106.wav": {
+    "mtime": 1779198694.5446506,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.943Z_glasses_0001_aefe20d4.wav": {
+    "mtime": 1779198696.6736574,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.944Z_glasses_0001_cd4a3ef0.wav": {
+    "mtime": 1779198698.0236619,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.946Z_glasses_0001_473ceee3.wav": {
+    "mtime": 1779198699.1606655,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.947Z_glasses_0001_31ee5174.wav": {
+    "mtime": 1779198701.1676722,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.947Z_glasses_0001_850741c7.wav": {
+    "mtime": 1779198702.3156757,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.948Z_glasses_0001_6dfac36a.wav": {
+    "mtime": 1779198704.2686822,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.949Z_glasses_0001_10071c80.wav": {
+    "mtime": 1779198705.3076856,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.950Z_glasses_0001_2be7afc3.wav": {
+    "mtime": 1779198706.4556894,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.951Z_glasses_0001_3db6d577.wav": {
+    "mtime": 1779198707.4926927,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.952Z_glasses_0001_ffbc1930.wav": {
+    "mtime": 1779198708.6856966,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.953Z_glasses_0001_f6246582.wav": {
+    "mtime": 1779198709.8207004,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.954Z_glasses_0001_91e5c2f5.wav": {
+    "mtime": 1779198711.461706,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.955Z_glasses_0001_19c63a0c.wav": {
+    "mtime": 1779198713.058711,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.956Z_glasses_0001_78b5654e.wav": {
+    "mtime": 1779198714.7177167,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.957Z_glasses_0001_975669e8.wav": {
+    "mtime": 1779198716.4207222,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.959Z_glasses_0001_f5cbf3b5.wav": {
+    "mtime": 1779198718.2257283,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.961Z_glasses_0001_8b3195fb.wav": {
+    "mtime": 1779198719.351732,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.962Z_glasses_0001_ffbdf040.wav": {
+    "mtime": 1779198720.4407356,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.963Z_glasses_0001_55e7ed3b.wav": {
+    "mtime": 1779198721.6267397,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.964Z_glasses_0001_0ffb40f0.wav": {
+    "mtime": 1779198722.679743,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.965Z_glasses_0001_2599d0f6.wav": {
+    "mtime": 1779198724.5947497,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.966Z_glasses_0001_3dcd7de4.wav": {
+    "mtime": 1779198726.449756,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.967Z_glasses_0001_7308598e.wav": {
+    "mtime": 1779198727.4797592,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.968Z_glasses_0001_70dba38d.wav": {
+    "mtime": 1779198730.2257686,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.968Z_glasses_0001_b50ed971.wav": {
+    "mtime": 1779198728.879764,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.970Z_glasses_0001_55577cb7.wav": {
+    "mtime": 1779198731.2587721,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.971Z_glasses_0001_03daea21.wav": {
+    "mtime": 1779198732.3557758,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.972Z_glasses_0001_73d3d7dc.wav": {
+    "mtime": 1779198733.3977792,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.973Z_glasses_0001_8aa4c124.wav": {
+    "mtime": 1779198734.6397836,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.974Z_glasses_0001_5ebe893f.wav": {
+    "mtime": 1779198735.985788,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.976Z_glasses_0001_91ec95d1.wav": {
+    "mtime": 1779198736.9707913,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.977Z_glasses_0001_0118f8dc.wav": {
+    "mtime": 1779198738.1567955,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.979Z_glasses_0001_91855f40.wav": {
+    "mtime": 1779198739.2787993,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.980Z_glasses_0001_780a2320.wav": {
+    "mtime": 1779198740.8598046,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.981Z_glasses_0001_0d324e45.wav": {
+    "mtime": 1779198742.2568095,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.982Z_glasses_0001_c4c19d2d.wav": {
+    "mtime": 1779198743.5418139,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.983Z_glasses_0001_13a2e8c9.wav": {
+    "mtime": 1779198744.8888185,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.984Z_glasses_0001_0a976091.wav": {
+    "mtime": 1779198746.9788258,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.984Z_glasses_0001_594deb5e.wav": {
+    "mtime": 1779198745.9878223,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.985Z_glasses_0001_7c1c9440.wav": {
+    "mtime": 1779198748.21783,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.986Z_glasses_0001_b0bdd966.wav": {
+    "mtime": 1779198749.4818344,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.987Z_glasses_0001_d6377ec8.wav": {
+    "mtime": 1779198750.492838,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.988Z_glasses_0001_44dbb239.wav": {
+    "mtime": 1779198751.669842,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.989Z_glasses_0001_26813adf.wav": {
+    "mtime": 1779198753.0498466,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.990Z_glasses_0001_7fefcabc.wav": {
+    "mtime": 1779198754.7538526,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.993Z_glasses_0001_455d46d2.wav": {
+    "mtime": 1779198756.0918574,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.994Z_glasses_0001_073a76dd.wav": {
+    "mtime": 1779198757.698863,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.995Z_glasses_0001_be269f37.wav": {
+    "mtime": 1779198759.155868,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.996Z_glasses_0001_9e53e8c2.wav": {
+    "mtime": 1779198760.7028735,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.997Z_glasses_0001_b16c92cb.wav": {
+    "mtime": 1779198761.684877,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.998Z_glasses_0001_700493f6.wav": {
+    "mtime": 1779198763.0808818,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/glasses/20260528T132623.999Z_glasses_0001_cbe6c6d2.wav": {
+    "mtime": 1779198764.1168854,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ikea_wine/20260528T141657.302Z_ikea_wine_0001_55f52d6c.wav": {
+    "mtime": 1779977817.3148034,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ikea_wine/20260528T141658.933Z_ikea_wine_0002_cc54066a.wav": {
+    "mtime": 1779977818.9438422,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ikea_wine/20260528T141700.528Z_ikea_wine_0003_af00e3eb.wav": {
+    "mtime": 1779977820.53988,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ikea_wine/20260528T141702.120Z_ikea_wine_0004_6bad65f6.wav": {
+    "mtime": 1779977822.1309175,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ikea_wine/20260528T141704.138Z_ikea_wine_0005_c853da51.wav": {
+    "mtime": 1779977824.1519647,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ikea_wine/20260528T141705.947Z_ikea_wine_0006_820bc243.wav": {
+    "mtime": 1779977825.952201,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ikea_wine/20260528T141707.579Z_ikea_wine_0007_aeb5bcbf.wav": {
+    "mtime": 1779977827.583044,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ikea_wine/20260528T141712.393Z_ikea_wine_0010_d6ba3d25.wav": {
+    "mtime": 1779977832.4051542,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  },
+  "/home/om/work/projects/SoundDetection2/data_library/sounds/ikea_wine/20260528T141714.864Z_ikea_wine_0011_1437b257.wav": {
+    "mtime": 1779977834.87421,
+    "size": 64044,
+    "sample_rate": 32000,
+    "duration_s": 1.0
+  }
+}

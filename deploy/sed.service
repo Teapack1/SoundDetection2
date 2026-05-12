@@ -5,22 +5,44 @@ Wants=network-online.target
 
 [Service]
 Type=notify
-User=sed
+# __SED_USER__ and __SED_HOME__ are substituted by deploy/install.sh to the
+# account that owns the cloned repo and the repo path itself (e.g. user "sed"
+# with the repo at /home/sed/SoundDetection2). The system runs in-place from
+# the clone — nothing is copied to /opt.
+User=__SED_USER__
 Group=audio
-WorkingDirectory=/opt/sed
+WorkingDirectory=__SED_HOME__
 EnvironmentFile=-/etc/sed/env
 # PROJECT_ID is set in /etc/sed/env
-ExecStart=/opt/sed/.venv/bin/python -m sed.runtime.run --project ${PROJECT_ID} --no-live
+# Writable caches: ProtectSystem=strict + ProtectHome=read-only make the venv
+# and repo read-only, so numba (used by librosa) and matplotlib must cache
+# outside them, or import fails with "cannot cache function ...". /var/cache/sed
+# is listed in ReadWritePaths below.
+Environment=HOME=/var/cache/sed
+Environment=NUMBA_CACHE_DIR=/var/cache/sed/numba
+Environment=MPLCONFIGDIR=/var/cache/sed/matplotlib
+Environment=XDG_CACHE_HOME=/var/cache/sed
+# Run the console script directly from the uv-managed venv (reliable, no network
+# at boot). `uv sync` created __SED_HOME__/.venv during install.
+ExecStart=__SED_HOME__/.venv/bin/sed inference --project ${PROJECT_ID}
 Restart=always
 RestartSec=3
 StartLimitBurst=10
 StartLimitIntervalSec=300
+# First start compiles numba kernels (slow); give it headroom before timeout.
+TimeoutStartSec=180
 
 # Real-time-ish scheduling for low audio jitter
 LimitRTPRIO=20
 LimitNICE=-10
 Nice=-5
 IOSchedulingClass=realtime
+
+# Keep the command minimal: the project id comes from /etc/sed/env and
+# operational deployment settings (active model, sound card, ArtNet, verbosity,
+# mining, logging) are read from projects/<id>/config.toml. The sed-model.path
+# watcher restarts this service when that config changes, so normal deployment
+# tuning does not require editing this unit.
 
 # Watchdog: the run loop calls sd_notify("WATCHDOG=1") every loop iteration
 WatchdogSec=15
@@ -29,11 +51,14 @@ NotifyAccess=main
 StandardOutput=journal
 StandardError=journal
 
-# Hardening
+# Hardening. The repo lives in the user's home, so ProtectHome is read-only
+# (not yes) — the venv + code stay readable/executable, and the project tree is
+# re-opened read-write via ReadWritePaths so the runtime can write active_model,
+# calibrated runtime_settings, and mined clips.
 ProtectSystem=strict
-ProtectHome=yes
+ProtectHome=read-only
 PrivateTmp=yes
-ReadWritePaths=/opt/sed/projects /var/log/sed
+ReadWritePaths=__SED_HOME__/projects /var/log/sed /var/cache/sed
 NoNewPrivileges=yes
 
 [Install]

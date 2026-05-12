@@ -1,0 +1,47 @@
+{
+  "classes": [
+    "_negative",
+    "cheers_quiet",
+    "cheers_loud",
+    "cheers_medium"
+  ],
+  "matrix": [
+    [
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      2,
+      61,
+      0,
+      3
+    ],
+    [
+      2,
+      0,
+      65,
+      0
+    ],
+    [
+      5,
+      0,
+      0,
+      59
+    ]
+  ],
+  "prediction_mode": "runtime_thresholds",
+  "probability_mode": "softmax",
+  "thresholds": {
+    "_negative": 0.5,
+    "cheers_quiet": 0.9,
+    "cheers_loud": 0.9,
+    "cheers_medium": 0.9
+  },
+  "negative_max": 0.5,
+  "margin_to_second_best": 0.08,
+  "accuracy": 0.9390862944162437,
+  "test_source": "current",
+  "test_set_hash": "sha256:2e1cdbdb3c827d551819ba79951e0ac79d630a6c5ad07875a66aa58b1418b899"
+}
