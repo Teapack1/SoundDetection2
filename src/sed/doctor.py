@@ -17,7 +17,7 @@ from pathlib import Path
 
 import numpy as np
 
-from sed.config import Config, ProjectLayout
+from sed.config import Config, ProjectLayout, resolve_active_model_dir
 
 log = logging.getLogger(__name__)
 
@@ -82,11 +82,11 @@ def doctor_record(cfg: Config, seconds: float = 5.0) -> list[Check]:
         out.append(_ok("audio devices", f"{len(devs)} input device(s) available"))
 
         try:
-            idx = resolve_device(cfg.audio.record_device)
+            idx = resolve_device(cfg.deploy.record_device)
         except ValueError as e:
             out.append(_fail("device resolve",
                              str(e),
-                             "check `[audio] record_device` in your project.toml — "
+                             "check `[deploy] record_device` in projects/<id>/config.toml — "
                              f"available devices: {', '.join(d.name for d in devs[:5])}"))
             return out
 
@@ -96,30 +96,33 @@ def doctor_record(cfg: Config, seconds: float = 5.0) -> list[Check]:
             return out
         out.append(_ok("device selected", f"[{chosen.index}] {chosen.name} "
                                           f"({chosen.max_input_channels}ch max)"))
-        if cfg.audio.record_device == "default":
+        if cfg.deploy.record_device == "default":
             out.append(_warn(
                 "device pinned",
                 "`record_device` is `default`; OS default inputs can change",
-                "set `[audio] record_device` to a stable device name substring "
-                "from `clinkd audio devices`",
+                "set `[deploy] record_device` to a stable device name substring "
+                "from `sed audio devices`",
             ))
 
-        # Channel count sanity
-        if cfg.audio.record_channels > chosen.max_input_channels:
+        # Channel selection sanity. record_channels is an ordered list of
+        # physical channel indexes; we must open at least max(index)+1 channels.
+        req = list(cfg.audio.record_channels)
+        n_open = max(req) + 1
+        if n_open > chosen.max_input_channels:
             out.append(_fail(
-                "channel count",
-                f"asked for {cfg.audio.record_channels} but device has "
+                "channel selection",
+                f"record_channels={req} needs {n_open} channel(s) but device has "
                 f"{chosen.max_input_channels}",
-                f"set [audio] record_channels ≤ {chosen.max_input_channels}",
+                f"use channel indexes < {chosen.max_input_channels} in [audio] record_channels",
             ))
             return out
         else:
-            out.append(_ok("channel count",
-                           f"requested={cfg.audio.record_channels}, "
+            out.append(_ok("channel selection",
+                           f"record_channels={req} (opens {n_open}ch), "
                            f"available={chosen.max_input_channels}"))
         out.append(_ok(
             "sample rates",
-            f"input={cfg.audio.input_sample_rate} Hz -> features={cfg.audio.sample_rate} Hz",
+            f"record={cfg.audio.record_sample_rate} Hz -> features={cfg.model.sample_rate} Hz",
         ))
     except ImportError as e:
         out.append(_fail("portaudio",
@@ -133,9 +136,9 @@ def doctor_record(cfg: Config, seconds: float = 5.0) -> list[Check]:
 
     try:
         rec = sd.rec(
-            int(seconds * cfg.audio.input_sample_rate),
-            samplerate=cfg.audio.input_sample_rate,
-            channels=cfg.audio.record_channels,
+            int(seconds * cfg.audio.record_sample_rate),
+            samplerate=cfg.audio.record_sample_rate,
+            channels=n_open,
             dtype="float32",
             device=idx,
         )
@@ -148,8 +151,8 @@ def doctor_record(cfg: Config, seconds: float = 5.0) -> list[Check]:
 
     out.append(_ok("capture", f"{seconds:.0f}s recorded successfully"))
 
-    # --- (c) per-channel signal analysis ---
-    for c in range(cfg.audio.record_channels):
+    # --- (c) per-channel signal analysis (only the recorded channels) ---
+    for c in req:
         x = rec[:, c]
         rms = float(np.sqrt(np.mean(x ** 2) + 1e-12))
         peak = float(np.max(np.abs(x)))
@@ -188,7 +191,7 @@ def doctor_record(cfg: Config, seconds: float = 5.0) -> list[Check]:
             ))
 
     # --- (d) DC offset ---
-    for c in range(cfg.audio.record_channels):
+    for c in req:
         dc = float(rec[:, c].mean())
         if abs(dc) > 0.005:
             out.append(_warn(
@@ -198,20 +201,21 @@ def doctor_record(cfg: Config, seconds: float = 5.0) -> list[Check]:
                 "enable a high-pass filter on your interface (typ. 80 Hz)",
             ))
 
-    # --- (e) inter-channel correlation: catches "all 4 channels are actually 1 mic" ---
-    if cfg.audio.record_channels >= 2:
-        for c2 in range(1, cfg.audio.record_channels):
-            corr = float(np.corrcoef(rec[:, 0], rec[:, c2])[0, 1])
+    # --- (e) inter-channel correlation: catches "all channels are actually 1 mic" ---
+    if len(req) >= 2:
+        base = req[0]
+        for c2 in req[1:]:
+            corr = float(np.corrcoef(rec[:, base], rec[:, c2])[0, 1])
             if abs(corr) > 0.98:
                 out.append(_warn(
-                    f"corr ch0↔ch{c2}",
+                    f"corr ch{base}↔ch{c2}",
                     f"channels appear identical (r={corr:.3f})",
                     "either the same mic is wired to multiple inputs, "
                     "or the device is summing channels — check interface routing",
                 ))
             else:
                 out.append(_ok(
-                    f"corr ch0↔ch{c2}",
+                    f"corr ch{base}↔ch{c2}",
                     f"r={corr:+.3f} — independent signals",
                 ))
 
@@ -230,7 +234,7 @@ def doctor_train(cfg: Config, project_id: str) -> list[Check]:
 
     if not layout.dataset_dir.exists():
         out.append(_fail("dataset", f"no dataset/ at {layout.dataset_dir}",
-                         "run `clinkd dataset compose --project " + project_id + "`"))
+                         "run `sed dataset compose --project " + project_id + "`"))
         return out
 
     # --- (a) split files exist and parse ---
@@ -240,18 +244,19 @@ def doctor_train(cfg: Config, project_id: str) -> list[Check]:
         p = layout.dataset_dir / f"{name}.csv"
         if not p.exists():
             out.append(_fail(f"{name}.csv", f"missing {p}",
-                             "run `clinkd dataset compose`"))
+                             "run `sed dataset compose`"))
             return out
         with open(p, "r", encoding="utf-8") as f:
             splits[name] = list(csvlib.DictReader(f))
+    test_note = " (frozen)" if len(splits["test"]) else " (empty — no library test clips)"
     out.append(_ok("split files", f"train={len(splits['train'])} "
                                   f"val={len(splits['val'])} "
-                                  f"test={len(splits['test'])}"))
+                                  f"test={len(splits['test'])}{test_note}"))
 
     # --- (b) classes.json + agreement with config ---
     classes_path = layout.dataset_dir / "classes.json"
     if not classes_path.exists():
-        out.append(_fail("classes.json", "missing", "run `clinkd dataset compose`"))
+        out.append(_fail("classes.json", "missing", "run `sed dataset compose`"))
         return out
     with open(classes_path, "r", encoding="utf-8") as f:
         ds_classes = json.load(f)["classes"]
@@ -259,8 +264,8 @@ def doctor_train(cfg: Config, project_id: str) -> list[Check]:
     if ds_classes != cfg.model.classes:
         out.append(_warn(
             "class agreement",
-            f"dataset has {ds_classes} but project.toml says {cfg.model.classes}",
-            "re-run `clinkd dataset compose` after editing project.toml",
+            f"dataset has {ds_classes} but projects/<id>/config.toml says {cfg.model.classes}",
+            "re-run `sed dataset compose` after editing projects/<id>/config.toml",
         ))
     else:
         out.append(_ok("class agreement", f"{len(ds_classes)} classes"))
@@ -271,14 +276,14 @@ def doctor_train(cfg: Config, project_id: str) -> list[Check]:
         train_counts[r["class_name"]] = train_counts.get(r["class_name"], 0) + 1
     for cls, n in train_counts.items():
         if n == 0:
-            # Declared in [model.classes] but no recordings yet → training will
+            # Declared in [dataset] target_classes but no recordings yet → training will
             # fail because the classifier head expects N classes. Either record
-            # some clips for this class, or drop it from project.toml until you do.
+            # some clips for this class, or drop it from projects/<id>/config.toml until you do.
             out.append(_fail(
                 f"count {cls}",
                 "no training samples (class is declared but empty)",
-                f"record with `clinkd record positives --class {cls}` "
-                f"OR remove '{cls}' from [model.classes] in project.toml "
+                f"record with `sed record --class {cls}` "
+                f"OR remove '{cls}' from [dataset] target_classes in projects/<id>/config.toml "
                 "until you're ready",
             ))
         elif n < 50:
@@ -287,28 +292,33 @@ def doctor_train(cfg: Config, project_id: str) -> list[Check]:
         else:
             out.append(_ok(f"count {cls}", f"{n} train samples"))
 
-    # --- (d) val/test must contain every class for meaningful metrics ---
-    for split_name in ("val", "test"):
-        present = {r["class_name"] for r in splits[split_name]}
-        missing = set(ds_classes) - present
-        if missing:
-            out.append(_warn(
-                f"{split_name} coverage",
-                f"missing classes: {sorted(missing)}",
-                "record more sessions per class so the splitter can distribute them",
-            ))
-        else:
-            out.append(_ok(f"{split_name} coverage", "all classes present"))
+    # --- (d) val must contain every class for meaningful metrics. The test
+    # split is the frozen one and is covered by its own
+    # row below — no need to re-check coverage here. ---
+    val_present = {r["class_name"] for r in splits["val"]}
+    val_missing = set(ds_classes) - val_present
+    if val_missing:
+        out.append(_warn(
+            "val coverage",
+            f"missing classes: {sorted(val_missing)}",
+            f"record more clips of {sorted(val_missing)} so the splitter can "
+            "reserve some for val (need ≥ 2-3 clips per class).",
+        ))
+    else:
+        out.append(_ok("val coverage", "all classes present"))
 
     # --- (e) negative ratio sanity ---
+    has_negative_class = "_negative" in ds_classes
     neg = train_counts.get("_negative", 0)
     pos = sum(n for c, n in train_counts.items() if c != "_negative")
-    if pos == 0:
+    if not has_negative_class:
+        out.append(_ok("pos:neg ratio", "_negative class not configured"))
+    elif pos == 0:
         out.append(_warn(
             "pos:neg ratio",
             "no positives in train",
-            "early-state OK while you bootstrap; record positives with "
-            "`clinkd record positives` before training",
+            "early-state OK while you bootstrap; record target clips with "
+            "`sed record --class <label>` before training",
         ))
     else:
         ratio = neg / max(pos, 1)
@@ -316,129 +326,265 @@ def doctor_train(cfg: Config, project_id: str) -> list[Check]:
             out.append(_warn(
                 "pos:neg ratio",
                 f"only {ratio:.1f}x more negatives than positives",
-                "aim for 3-5x; record more ambience and hard-negatives "
+                "aim for 3-5x; record more negative/background clips "
                 "to cut FP rate in production",
             ))
         else:
             out.append(_ok("pos:neg ratio",
                            f"{ratio:.1f}x more negatives than positives"))
 
-    # --- (f) ambience pool for domain mixing ---
-    # An empty/thin pool is NOT fatal — training succeeds; the augmenter just
-    # skips the domain-mix step ([augmentation] domain_mix_prob is also tunable
-    # in the project config). It does reduce noise robustness, which is why we
-    # still surface this as a WARN.
-    from sed.data.augment import AudioPool, resolve_pool_path
-    from sed.data.library import Library
-    amb_path = resolve_pool_path(cfg.augmentation.ambience_pool)
-    pool = AudioPool(amb_path, cfg.audio.sample_rate)
-    if len(pool) == 0:
-        out.append(_warn(
-            "ambience pool",
-            f"empty: {amb_path}",
-            "training will work, but with no domain mixing the model is less "
-            "robust to real venue noise. Record some with "
-            "`clinkd library record-ambience --label <source>` when convenient.",
-        ))
-    else:
-        # Library-level metrics (more reliable than counting raw files because
-        # the library tracks duration in its manifest)
-        try:
-            lib = Library()
-            amb_clips = lib.query(category="ambience")
-            total_min = sum(c.duration_s for c in amb_clips) / 60
-            distinct_labels = len({c.label for c in amb_clips})
-            densities = {
-                t.split(":", 1)[1] for c in amb_clips for t in c.tags
-                if t.startswith("density:")
-            }
-            has_busy = bool(densities & {"busy", "peak"})
-        except Exception:  # noqa: BLE001
-            total_min, distinct_labels, has_busy = 0.0, 0, False
-
-        # Soft warning only — not a blocker. Domain mixing simply reuses
-        # the same ambience often when the pool is thin.
-        if total_min and total_min < 5:
+    # --- (e1) frozen project test set ---
+    if splits["test"]:
+        per_class: dict[str, int] = {c: 0 for c in ds_classes}
+        for row in splits["test"]:
+            cls = row.get("class_name", "")
+            per_class[cls] = per_class.get(cls, 0) + 1
+        total_test = sum(per_class.values())
+        missing = [c for c, n in per_class.items() if n == 0]
+        summary = " ".join(f"{c}={n}" for c, n in per_class.items())
+        if missing:
             out.append(_warn(
-                "ambience pool duration",
-                f"only {total_min:.1f} min — thin pool, augmentation reuses clips",
-                "record at least 30 min across 3+ sources with "
-                "`clinkd library record-ambience` for stronger noise robustness",
+                "frozen test set",
+                f"{total_test} clips — missing classes: {missing}",
+                f"record clips for {missing} with `sed record --project {project_id} "
+                "--test --class <name>` so every class has held-out test material.",
             ))
-        elif total_min < 20:
+        elif total_test < 50:
             out.append(_warn(
-                "ambience pool duration",
-                f"{total_min:.1f} min (recommend ≥ 20)",
-                "augmenter will reuse the same ambience often, reducing "
-                "effective variety; record more or `clinkd library import`",
-            ))
-        elif total_min > 0:
-            out.append(_ok("ambience pool duration", f"{total_min:.1f} min"))
-
-        if total_min > 0 and distinct_labels < 3:
-            out.append(_warn(
-                "ambience pool diversity",
-                f"only {distinct_labels} distinct source label(s)",
-                "aim for 3+ different sources (different bars/restaurants/"
-                "rooms). Diversity matters more than total minutes.",
-            ))
-        elif distinct_labels >= 3:
-            out.append(_ok("ambience pool diversity",
-                           f"{distinct_labels} distinct sources"))
-
-        if total_min > 0 and not has_busy:
-            out.append(_warn(
-                "ambience pool density",
-                "no clips tagged density:busy or density:peak",
-                "the model won't see realistic peak-hour conditions during "
-                "training. Record library ambience during a busy Friday "
-                "night with --density busy",
-            ))
-
-        # Always show the file count as info even when fine
-        if len(pool) < 10:
-            out.append(_warn(
-                "ambience pool clip count",
-                f"only {len(pool)} files",
-                "more variety = better generalisation; aim for 30+ clips",
+                "frozen test set",
+                f"only {total_test} clips ({summary}) — metrics will be noisy",
+                "record/import more with `sed record --test`; aim for ≥30 per class.",
             ))
         else:
-            out.append(_ok("ambience pool clip count", f"{len(pool)} files"))
-
-    # --- (g) hyperparameter sanity ---
-    if cfg.training.balanced_sampler:
+            out.append(_ok("frozen test set", f"{total_test} clips ({summary})"))
+    else:
         out.append(_warn(
-            "balanced_sampler",
-            "enabled — this will inflate val F1 but hurt deployed FP rate",
-            "set [training] balanced_sampler = false",
+            "frozen test set",
+            "no library test clips — post-training evaluation will be skipped",
+            "without a frozen test set you cannot compare model iterations "
+            f"fairly. Record one with `sed record --project {project_id} "
+            "--test --class <label>`.",
         ))
-    else:
-        out.append(_ok("balanced_sampler",
-                       "disabled (preserves natural class distribution)"))
 
-    if cfg.training.focal_gamma_neg < cfg.training.focal_gamma_pos:
-        out.append(_warn(
-            "focal asymmetry",
-            f"γ_neg={cfg.training.focal_gamma_neg} < γ_pos={cfg.training.focal_gamma_pos}",
-            "for FP minimisation γ_neg should be ≥ γ_pos (typical 2-4 vs 1)",
-        ))
-    else:
-        out.append(_ok("focal asymmetry",
-                       f"γ_neg={cfg.training.focal_gamma_neg} γ_pos={cfg.training.focal_gamma_pos}"))
+    # --- (e2) offline augmentation must have produced WAVs if enabled ---
+    aug_cfg = cfg.augmentation
+    any_enabled = aug_cfg.enabled and aug_cfg.overlay_enabled
+    from sed.config import LIBRARY_DIR
+    aug_dir = LIBRARY_DIR / "derived" / project_id / "trainval"
+    if any_enabled:
+        if not aug_dir.exists() or not any(aug_dir.rglob("*.wav")):
+            out.append(_warn(
+                "augmented samples",
+                f"none under {aug_dir}",
+                "run `sed dataset augment --project <id>` before training "
+                "so the augmented WAVs actually land in train.csv (otherwise "
+                "training sees only the raw recordings).",
+            ))
+        else:
+            n_aug = sum(1 for _ in aug_dir.rglob("*.wav"))
+            out.append(_ok("augmented samples", f"{n_aug} files under {aug_dir.name}/"))
 
-    # --- (h) session leakage spot-check: any session_id in train AND val? ---
-    train_sess = {r["session_id"] for r in splits["train"]}
-    val_sess   = {r["session_id"] for r in splits["val"]}
-    test_sess  = {r["session_id"] for r in splits["test"]}
-    overlap    = (train_sess & val_sess) | (train_sess & test_sess) | (val_sess & test_sess)
-    if overlap:
-        out.append(_fail(
-            "session leakage",
-            f"sessions appear in multiple splits: {sorted(overlap)[:5]}...",
-            "this inflates val metrics — fix the splitter or recompose",
+    # --- (f) negative/background pool: single consolidated row.
+    if has_negative_class:
+        neg_summary = _summarise_negatives(layout, cfg)
+        if neg_summary["n_clips"] == 0:
+            out.append(_warn(
+                "negatives",
+                "no negative/background clips found in library mappings",
+                "record/import sounds and assign labels to _negative.",
+            ))
+        else:
+            labels = ", ".join(sorted(neg_summary["labels"])[:5]) or "unlabeled"
+            extra = "" if len(neg_summary["labels"]) <= 5 else f" +{len(neg_summary['labels']) - 5}"
+            density = " ".join(
+                f"{d}={neg_summary['by_density'].get(d, 0.0):.1f}m"
+                for d in ("empty", "quiet", "normal", "busy", "peak", "unknown")
+                if neg_summary['by_density'].get(d, 0.0) > 0
+            )
+            detail = (
+                f"{neg_summary['n_clips']} clips · {len(neg_summary['labels'])} labels "
+                f"({labels}{extra}) · {neg_summary['total_min']:.1f} min"
+                + (f" · {density}" if density else "")
+            )
+            if neg_summary["n_clips"] < 100 or len(neg_summary["labels"]) < 2:
+                out.append(_warn(
+                    "negatives",
+                    detail,
+                    "add more diverse negative labels/clips; aim for at least "
+                    "100 clips across 2+ distractor/background labels.",
+                ))
+            else:
+                out.append(_ok("negatives", detail))
+
+    # Splits are random clip-level (per class). There is no session-aware
+    # splitting any more, so no leakage check is needed.
+
+    return out
+
+
+def _summarise_negatives(layout: ProjectLayout, cfg: Config | None = None) -> dict:
+    """Roll up every negative/background clip into duration + density.
+
+    The reader looks at accepted library clips mapped to ``_negative``.
+    """
+    by_density: dict[str, float] = {}
+    labels: set[str] = set()
+    n_clips = 0
+    total_seconds = 0.0
+
+    if cfg is not None:
+        try:
+            from sed.data.compose import _library_clips_for_class, load_dataset_selection
+            selection = load_dataset_selection(layout)
+            for clip in _library_clips_for_class(
+                cfg, layout.id, "_negative", dataset_role="train", selection=selection
+            ):
+                meta = {}
+                try:
+                    meta = json.loads(Path(clip.path).with_suffix(".json").read_text(encoding="utf-8"))
+                except Exception:  # noqa: BLE001
+                    pass
+                density = meta.get("density") or "unknown"
+                label = meta.get("label") or Path(clip.path).parent.name
+                labels.add(label)
+                n_clips += 1
+                by_density[density] = by_density.get(density, 0.0) + clip.duration_s
+                total_seconds += clip.duration_s
+            if n_clips == 0:
+                from sed.data.library import RAW_CATEGORY, Library
+                for c in Library().query(category=RAW_CATEGORY, review_status="accepted"):
+                    density = c.density or "unknown"
+                    labels.add(c.label)
+                    n_clips += 1
+                    by_density[density] = by_density.get(density, 0.0) + c.duration_s
+                    total_seconds += c.duration_s
+        except Exception:  # noqa: BLE001
+            pass
+    else:
+        try:
+            from sed.data.library import RAW_CATEGORY, Library
+            for c in Library().query(category=RAW_CATEGORY, review_status="accepted"):
+                density = c.density or "unknown"
+                labels.add(c.label)
+                n_clips += 1
+                by_density[density] = by_density.get(density, 0.0) + c.duration_s
+                total_seconds += c.duration_s
+        except Exception:  # noqa: BLE001
+            pass
+
+    return {
+        "total_min": total_seconds / 60.0,
+        "by_density": {d: s / 60.0 for d, s in by_density.items()},
+        "labels": labels,
+        "n_clips": n_clips,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Recommended hyperparameters (advisory, never auto-applied)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class Recommendation:
+    signal: str        # what the recommendation is based on
+    suggestion: str    # what to change
+    current: str = ""  # current value(s) for context
+
+
+def recommend_training_hyperparams(cfg: Config, project_id: str) -> list[Recommendation]:
+    """Heuristic hyperparameter advice derived from dataset stats.
+
+    Returns rows for `sed check train` to render. The advice is intentionally
+    coarse — each rule is an explicit cutoff visible in this file. Nothing here
+    modifies projects/<id>/config.toml; the user decides what to apply.
+    """
+    out: list[Recommendation] = []
+    layout = ProjectLayout(project_id)
+    if not layout.dataset_dir.exists():
+        return out
+
+    import csv as _csv
+    counts: dict[str, dict[str, int]] = {"train": {}, "val": {}, "test": {}}
+    totals: dict[str, int] = {}
+    for split in counts:
+        p = layout.dataset_dir / f"{split}.csv"
+        if not p.exists():
+            return out
+        with open(p, "r", encoding="utf-8") as f:
+            rows = list(_csv.DictReader(f))
+        for r in rows:
+            cls = r["class_name"]
+            counts[split][cls] = counts[split].get(cls, 0) + 1
+        totals[split] = len(rows)
+
+    train_total = totals["train"]
+    if train_total < 500:
+        out.append(Recommendation(
+            f"train_total={train_total} (<500)",
+            "patience: 5, epochs: 30 — small dataset, train short",
+            f"patience={cfg.training.patience}, epochs={cfg.training.epochs}",
+        ))
+    elif train_total < 3000:
+        out.append(Recommendation(
+            f"train_total={train_total} (500-3000)",
+            "patience: 8, epochs: 60 — moderate dataset",
+            f"patience={cfg.training.patience}, epochs={cfg.training.epochs}",
         ))
     else:
-        out.append(_ok("session leakage", "no session in two splits"))
+        out.append(Recommendation(
+            f"train_total={train_total} (≥3000)",
+            "patience: 12, epochs: 80 — larger dataset can train longer",
+            f"patience={cfg.training.patience}, epochs={cfg.training.epochs}",
+        ))
+
+    neg = counts["train"].get("_negative", 0)
+    pos = sum(n for c, n in counts["train"].items() if c != "_negative")
+    if "_negative" in cfg.model.classes and pos > 0:
+        ratio = neg / pos
+        if ratio < 0.3:
+            out.append(Recommendation(
+                f"pos:neg ratio = {ratio:.2f} (heavily positive)",
+                "lower training.negative_weight toward 1.0; record more "
+                "background/distractor sounds and assign them to _negative",
+                f"negative_weight={cfg.training.negative_weight}",
+            ))
+        elif ratio > 5.0:
+            out.append(Recommendation(
+                f"pos:neg ratio = {ratio:.1f} (heavily negative)",
+                "raise training.negative_weight toward 2.0 if FPs aren't "
+                "the bottleneck — otherwise add more positives",
+                f"negative_weight={cfg.training.negative_weight}",
+            ))
+
+    nonneg_train = {c: n for c, n in counts["train"].items() if c != "_negative" and n > 0}
+    if len(nonneg_train) >= 2:
+        nmin, nmax = min(nonneg_train.values()), max(nonneg_train.values())
+        imbalance = nmin / nmax if nmax else 1.0
+        if imbalance < 0.3:
+            weakest = min(nonneg_train, key=nonneg_train.get)
+            out.append(Recommendation(
+                f"class imbalance: min/max = {imbalance:.2f} ('{weakest}' = {nmin})",
+                f"record more of '{weakest}' so train/val/test represent the real venue",
+                "",
+            ))
+
+    if totals["val"] < 100:
+        out.append(Recommendation(
+            f"val rows = {totals['val']} (<100)",
+            "val metric will be noisy — record more, then `sed dataset compose` again",
+            "",
+        ))
+    # Only recommend more test data when SOME test rows exist; absence is
+    # already covered by the "frozen test set" WARN row above, no need to
+    # repeat the same advice in the Recommendations section.
+    if 0 < totals["test"] < 100:
+        out.append(Recommendation(
+            f"test rows = {totals['test']} (<100)",
+            "test signal is weak — record more frozen test material with "
+            "`sed record --project <id> --test --class <label>`",
+            "",
+        ))
 
     return out
 
@@ -453,33 +599,39 @@ def doctor_deploy(cfg: Config, project_id: str) -> list[Check]:
     out: list[Check] = []
     layout = ProjectLayout(project_id)
 
-    # --- (a) model artifacts ---
-    manifest_path = layout.models_dir / "manifest.json"
-    if not manifest_path.exists():
-        out.append(_fail("manifest", f"no manifest.json at {manifest_path}",
-                         "run `clinkd export --project " + project_id + "`"))
+    # --- (a) deployment slot: training_config.json + classes.json + an IR ---
+    try:
+        model_dir = resolve_active_model_dir(layout, cfg.deploy.active_model)
+    except FileNotFoundError as e:
+        out.append(_fail(
+            "deployment slot", str(e),
+            "train a model (`sed train`) or copy a bundle into models/, then "
+            "`sed models select --project " + project_id + " <model_id>`.",
+        ))
         return out
-    with open(manifest_path, "r", encoding="utf-8") as f:
-        manifest = json.load(f)
-    out.append(_ok("manifest", f"classes={manifest['classes']}"))
+    out.append(_ok("deployment slot",
+                   f"{model_dir.name} classes={list(cfg.model.classes)}"))
+    deployed_classes = list(cfg.model.classes)
 
-    int8 = layout.models_dir / manifest.get("model_int8", "")
-    fp32 = layout.models_dir / manifest.get("model_fp32", "")
-    if not int8.exists() and not fp32.exists():
-        out.append(_fail("model files", "no .xml found", "run `sed export`"))
+    int8 = model_dir / "model_int8.xml"
+    fp16 = model_dir / "model_fp16.xml"
+    legacy_fp32 = model_dir / "model_fp32.xml"
+    if not int8.exists() and not fp16.exists() and not legacy_fp32.exists():
+        out.append(_fail("model files", "no .xml found",
+                         f"re-train or re-copy the model bundle for {project_id}"))
         return out
     out.append(_ok("model files",
                    f"INT8={'✓' if int8.exists() else '✗'} "
-                   f"FP32={'✓' if fp32.exists() else '✗'}"))
+                   f"FP16={'✓' if fp16.exists() else '✗'}"))
 
     # --- (b) thresholds calibrated? ---
-    calibrated = [c for c in manifest["classes"] if c != "_negative" and c in cfg.thresholds]
-    needed = [c for c in manifest["classes"] if c != "_negative"]
+    calibrated = [c for c in deployed_classes if c != "_negative" and c in cfg.thresholds]
+    needed = [c for c in deployed_classes if c != "_negative"]
     if not calibrated:
         out.append(_warn(
             "thresholds",
             "no per-class thresholds set; using defaults",
-            "run `clinkd calibrate --project " + project_id + "` against ambience",
+            "run `sed calibrate --project " + project_id + "` against negatives",
         ))
     elif set(calibrated) < set(needed):
         out.append(_warn(
@@ -494,21 +646,29 @@ def doctor_deploy(cfg: Config, project_id: str) -> list[Check]:
     # --- (c) load model & measure latency ---
     try:
         import openvino as ov
-        from sed.runtime.infer import resolve_model_path
+        from sed.runtime.infer import compile_openvino_model
+        from sed.runtime.manifest import resolve_model_path
         core = ov.Core()
-        cm = core.compile_model(
-            core.read_model(str(resolve_model_path(layout, manifest))),
-            "CPU",
+        b = max(1, len(cfg.inference.inference_channels))
+        _model, cm = compile_openvino_model(
+            core,
+            resolve_model_path(model_dir),
+            cfg,
+            batch_size=b,
             config={"PERFORMANCE_HINT": "LATENCY",
                     "INFERENCE_NUM_THREADS": str(cfg.inference.inference_threads)},
         )
         req = cm.create_infer_request()
-        n_mels = manifest["n_mels"]
-        n_frames = int(round(
-            manifest["window_seconds"] * manifest["sample_rate"] / manifest["hop_length"]
-        )) + 1
-        # batch=record_channels for the realistic multi-mic case
-        b = max(1, cfg.audio.record_channels) if cfg.inference.multi_mic_mode != "single" else 1
+        from sed.audio.features import feature_frame_count
+
+        n_mels = cfg.features.n_mels
+        n_frames = feature_frame_count(
+            sample_rate=cfg.model.sample_rate,
+            window_seconds=cfg.features.window_seconds,
+            hop_length=cfg.features.hop_length,
+            n_fft=cfg.features.n_fft,
+            frontend=cfg.features.frontend,
+        )
         x = np.random.randn(b, 1, n_mels, n_frames).astype(np.float32)
         # warm
         for _ in range(10):
@@ -540,12 +700,18 @@ def doctor_deploy(cfg: Config, project_id: str) -> list[Check]:
 
     # --- (d) ArtNet target reachable? ---
     if cfg.artnet.enabled:
-        target = cfg.artnet.target_ip
-        try:
-            socket.inet_aton(target)
-            if target.endswith(".255") or target == "255.255.255.255":
-                out.append(_ok("artnet target", f"{target} (broadcast)"))
-            else:
+        target = cfg.artnet.target_ip.strip()
+        if not target:
+            out.append(_fail("artnet target", "target_ip is not set",
+                             "set [artnet] target_ip to the receiver's unicast IP"))
+        elif target.endswith(".255") or target == "255.255.255.255":
+            out.append(_fail("artnet target",
+                             f"{target} is a broadcast address",
+                             "broadcasting is disabled by design; set the "
+                             "receiver's specific unicast IP"))
+        else:
+            try:
+                socket.inet_aton(target)
                 # quick UDP probe to ArtNet port (we don't expect a reply)
                 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
                 s.settimeout(0.2)
@@ -555,14 +721,13 @@ def doctor_deploy(cfg: Config, project_id: str) -> list[Check]:
                 except OSError as e:
                     out.append(_warn("artnet target",
                                      f"{target}:6454 unreachable: {e}",
-                                     "check the network cable and switch; "
-                                     "broadcast (255.255.255.255) avoids this"))
+                                     "check the network cable and switch"))
                 finally:
                     s.close()
-        except OSError:
-            out.append(_fail("artnet target",
-                             f"invalid IP: {target}",
-                             "set [artnet] target_ip to a valid IPv4 address"))
+            except OSError:
+                out.append(_fail("artnet target",
+                                 f"invalid IP: {target}",
+                                 "set [artnet] target_ip to a valid IPv4 address"))
     else:
         out.append(_ok("artnet", "disabled in config"))
 
@@ -575,15 +740,17 @@ def doctor_deploy(cfg: Config, project_id: str) -> list[Check]:
                          "run `sudo PROJECT_ID=" + project_id + " ./deploy/install.sh`"))
 
     # --- (f) writable output paths ---
-    for p in (layout.reports_dir, layout.models_dir):
-        try:
-            test_file = p / ".doctor_write_test"
-            test_file.touch()
-            test_file.unlink()
-            out.append(_ok(f"writable {p.name}", str(p)))
-        except OSError as e:
-            out.append(_fail(f"writable {p.name}", str(e),
-                             f"chown -R sed:sed {p}"))
+    # Only models/ matters at deploy time (the runtime writes nothing else).
+    # Inspect/training write into dataset/, which the edge doesn't touch.
+    p = layout.models_dir
+    try:
+        test_file = p / ".doctor_write_test"
+        test_file.touch()
+        test_file.unlink()
+        out.append(_ok(f"writable {p.name}", str(p)))
+    except OSError as e:
+        out.append(_fail(f"writable {p.name}", str(e),
+                         f"chown -R sed:sed {p}"))
 
     return out
 
@@ -593,7 +760,19 @@ def doctor_deploy(cfg: Config, project_id: str) -> list[Check]:
 # ---------------------------------------------------------------------------
 
 
-def render(checks: list[Check], title: str) -> None:
+def render(
+    checks: list[Check],
+    title: str,
+    recommendations: "list[Recommendation] | None" = None,
+) -> None:
+    """Print the check table, then optional fix bullets and recommendations.
+
+    The output follows one consistent visual language:
+      • table with status/detail
+      • bullets for non-PASS rows under "Suggested fixes"
+      • bullets for advisory rows under "Recommendations" (advisory; informational)
+      • one-line summary footer (PASS/WARN/FAIL counts)
+    """
     from rich.console import Console
     from rich.table import Table
     console = Console()
@@ -614,6 +793,12 @@ def render(checks: list[Check], title: str) -> None:
             if c.fix:
                 console.print(f"  [{('red' if c.status == 'FAIL' else 'yellow')}]"
                               f"• {c.name}[/]: {c.fix}")
+    if recommendations:
+        console.print("\n[bold]Recommendations:[/bold]"
+                      "  [dim](heuristics from dataset stats — review and apply manually)[/dim]")
+        for r in recommendations:
+            console.print(f"  [cyan]•[/cyan] [bold]{r.signal}[/bold] → {r.suggestion}"
+                          + (f"  [dim](current: {r.current})[/dim]" if r.current else ""))
     fail_count = sum(1 for c in checks if c.status == "FAIL")
     warn_count = sum(1 for c in checks if c.status == "WARN")
     if fail_count:

@@ -1,0 +1,72 @@
+{
+  "schema_version": 2,
+  "total_clips": 0,
+  "by_class": {
+    "_negative": 0,
+    "cheers_quiet": 0,
+    "cheers_loud": 0,
+    "cheers_medium": 0
+  },
+  "by_origin": {
+    "_negative": {
+      "sounds": 0,
+      "derived": 0,
+      "total": 0
+    },
+    "cheers_quiet": {
+      "sounds": 0,
+      "derived": 0,
+      "total": 0
+    },
+    "cheers_loud": {
+      "sounds": 0,
+      "derived": 0,
+      "total": 0
+    },
+    "cheers_medium": {
+      "sounds": 0,
+      "derived": 0,
+      "total": 0
+    }
+  },
+  "excluded": {
+    "manifest": "/home/om/work/projects/SoundDetection2/projects/temna/dataset/excluded_clips.json",
+    "total": 0,
+    "by_origin": {
+      "_negative": {
+        "sounds": 0,
+        "derived": 0
+      },
+      "cheers_quiet": {
+        "sounds": 0,
+        "derived": 0
+      },
+      "cheers_loud": {
+        "sounds": 0,
+        "derived": 0
+      },
+      "cheers_medium": {
+        "sounds": 0,
+        "derived": 0
+      }
+    }
+  },
+  "frozen_test": {
+    "present": false,
+    "by_class": {
+      "_negative": 0,
+      "cheers_quiet": 0,
+      "cheers_loud": 0,
+      "cheers_medium": 0
+    },
+    "total": 0,
+    "hash": ""
+  },
+  "split_modes": {},
+  "splits": {
+    "train": 0,
+    "val": 0,
+    "test": 0
+  },
+  "source_hashes": {}
+}

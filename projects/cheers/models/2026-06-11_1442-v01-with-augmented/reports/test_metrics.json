@@ -1,0 +1,66 @@
+{
+  "threshold": null,
+  "thresholds": {
+    "_negative": 0.5,
+    "cheers_quiet": 0.9,
+    "cheers_loud": 0.9,
+    "cheers_medium": 0.9
+  },
+  "per_class": {
+    "_negative": {
+      "ap": 0.0,
+      "f1": 0.0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "tp": 0,
+      "fp": 9,
+      "fn": 0,
+      "tn": 188,
+      "support": 0
+    },
+    "cheers_quiet": {
+      "ap": 0.9991020831670525,
+      "f1": 0.9606299212598425,
+      "precision": 1.0,
+      "recall": 0.9242424242424242,
+      "tp": 61,
+      "fp": 0,
+      "fn": 5,
+      "tn": 131,
+      "support": 66
+    },
+    "cheers_loud": {
+      "ap": 0.988786749630966,
+      "f1": 0.9848484848484849,
+      "precision": 1.0,
+      "recall": 0.9701492537313433,
+      "tp": 65,
+      "fp": 0,
+      "fn": 2,
+      "tn": 130,
+      "support": 67
+    },
+    "cheers_medium": {
+      "ap": 0.9603139046366469,
+      "f1": 0.9365079365079365,
+      "precision": 0.9516129032258065,
+      "recall": 0.921875,
+      "tp": 59,
+      "fp": 3,
+      "fn": 5,
+      "tn": 130,
+      "support": 64
+    }
+  },
+  "f1_macro_targets": 0.9606621142054212,
+  "ap_macro_targets": 0.9827342458115552,
+  "accuracy": 0.9390862944162437,
+  "n_samples": 197,
+  "prediction_mode": "runtime_thresholds",
+  "probability_mode": "softmax",
+  "negative_max": 0.5,
+  "margin_to_second_best": 0.08,
+  "smoothing_enabled": true,
+  "test_source": "current",
+  "test_set_hash": "sha256:2e1cdbdb3c827d551819ba79951e0ac79d630a6c5ad07875a66aa58b1418b899"
+}

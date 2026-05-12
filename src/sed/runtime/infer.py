@@ -6,7 +6,7 @@ Architecture:
         └─► RingBuffer
                 └─► Inference thread (every hop_ms):
                       read 1 s window → log-mel → OpenVINO compiled model
-                                                   → sigmoid probs
+                                                   → objective-aware probs
                                                    → smoother + arbiter
                                                    → TriggerEvent → callback
 
@@ -16,27 +16,55 @@ during `infer_request.infer()`, so audio capture is not blocked.
 
 from __future__ import annotations
 
-import json
+import collections
 import logging
 import threading
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
 import numpy as np
-import openvino as ov
 
 from sed.audio.capture import AudioCapture
-from sed.audio.features import MelExtractor
-from sed.audio.resample import resample_audio
-from sed.config import Config, ProjectLayout
-from sed.runtime.manifest import load_manifest, resolve_model_path  # re-exported
+from sed.audio.features import MelExtractor, feature_frame_count
+from sed.audio.resample import model_rate_index, resample_audio
+from sed.config import Config, ProjectLayout, resolve_active_model_dir
+from sed.runtime.manifest import resolve_model_path  # re-exported
 from sed.runtime.smooth import TriggerArbiter, TriggerEvent
+from sed.train.objective import logits_to_probabilities
 
 log = logging.getLogger(__name__)
 
 
-__all__ = ["RealtimeInference", "load_manifest", "resolve_model_path"]
+@dataclass
+class RuntimeDetection:
+    class_name: str
+    confidence: float
+    timestamp: float
+    kind: str
+    probs: dict[str, float]
+    smoothed: dict[str, float]
+    audio: np.ndarray
+    sample_rate: int
+    active_channels: list[int]
+    best_channel: int | None
+    peak_dbfs: float
+    rms_dbfs: float
+    min_dbfs: float | None
+    active_targets: list[str]
+
+
+__all__ = [
+    "RealtimeInference",
+    "RuntimeDetection",
+    "compile_openvino_model",
+    "load_openvino_model",
+    "_linear_to_db",
+    "normalize_openvino_logits",
+    "openvino_input_shape",
+    "resolve_model_path",
+]
 
 
 class RealtimeInference:
@@ -46,22 +74,43 @@ class RealtimeInference:
         project_id: str,
         on_trigger: Callable[[TriggerEvent], None] | None = None,
         on_frame: Callable[[dict[str, float]], None] | None = None,
+        on_detection: Callable[[RuntimeDetection], Path | None] | None = None,
+        active_trigger_classes: set[str] | None = None,
+        detection_classes: set[str] | None = None,
+        live_monitor: bool = False,
     ):
         self.cfg = cfg
         self.layout = ProjectLayout(project_id)
-        self.manifest = load_manifest(self.layout)
-        self.classes: list[str] = self.manifest["classes"]
-        self.neg_idx: int = self.manifest["negative_index"]
+        # Live monitor wants probabilities refreshed every hop; the edge service
+        # (no monitor) keeps onset-only scoring so silence costs no inference.
+        self.live_monitor = bool(live_monitor)
+        self.classes: list[str] = list(cfg.model.classes)
+        self.neg_idx: int | None = (
+            self.classes.index("_negative") if "_negative" in self.classes else None
+        )
+        known = set(self.classes)
+        self.active_trigger_classes = (
+            {c for c in active_trigger_classes if c in known}
+            if active_trigger_classes is not None else None
+        )
+        self.detection_classes = (
+            {c for c in detection_classes if c in known}
+            if detection_classes is not None else set()
+        )
 
-        # OpenVINO compiled model (dynamic batch)
-        model_path = resolve_model_path(self.layout, self.manifest)
+        # OpenVINO compiled model, shaped to one window per inference mic.
+        import openvino as ov
+
+        model_dir = resolve_active_model_dir(self.layout, cfg.deploy.active_model)
+        model_path = resolve_model_path(model_dir)
         log.info("loading model: %s", model_path)
         self.core = ov.Core()
-        self.model = self.core.read_model(str(model_path))
-        # Allow batch>1 for multi-mic. The model was exported with dynamic batch.
-        self.compiled = self.core.compile_model(
-            self.model,
-            "CPU",
+        batch_size = max(1, len(cfg.inference.inference_channels))
+        self.model, self.compiled = compile_openvino_model(
+            self.core,
+            model_path,
+            cfg,
+            batch_size=batch_size,
             config={
                 "PERFORMANCE_HINT": "LATENCY",
                 "INFERENCE_NUM_THREADS": str(cfg.inference.inference_threads),
@@ -69,30 +118,39 @@ class RealtimeInference:
         )
         self.infer_req = self.compiled.create_infer_request()
 
-        self.input_sample_rate = cfg.audio.input_sample_rate
-        self.feature_sample_rate = int(self.manifest["sample_rate"])
-        self.window_seconds = float(self.manifest["window_seconds"])
+        self.record_sample_rate = cfg.audio.record_sample_rate
+        self.feature_sample_rate = int(cfg.model.sample_rate)
+        self.window_seconds = float(cfg.features.window_seconds)
 
         # Mel extractor (pure-numpy/torch shared code), matched to the exported model.
         self.mel = MelExtractor(
             sample_rate=self.feature_sample_rate,
-            n_fft=self.manifest["n_fft"],
-            win_length=self.manifest["win_length"],
-            hop_length=self.manifest["hop_length"],
-            n_mels=self.manifest["n_mels"],
-            fmin=self.manifest["fmin"],
-            fmax=self.manifest["fmax"],
+            n_fft=cfg.features.n_fft,
+            win_length=cfg.features.win_length,
+            hop_length=cfg.features.hop_length,
+            n_mels=cfg.features.n_mels,
+            fmin=cfg.features.fmin,
+            fmax=cfg.features.fmax,
+            frontend=cfg.features.frontend,
         )
 
-        # Smoother + arbiter — ONE arbiter sees the per-class max (or mean)
+        # Onset-gated mode scores ONE onset-centered window per transient, so the
+        # temporal-consensus machinery (median/EMA/consecutive frames) does not
+        # apply — each window is gated on the spot, exactly like the frozen test.
+        self.onset_gating = bool(cfg.inference.onset_gating_enabled)
+
+        # Smoother + arbiter — ONE arbiter sees the pooled per-class probability
         # across mics. So "any mic detects → trigger" is enforced naturally.
-        thresholds = dict(cfg.thresholds)
+        # Per-class thresholds come from [targets].<cls>.threshold, falling back to
+        # legacy [thresholds] then inference.default_threshold (Config helper).
+        thresholds = cfg.effective_thresholds(self.classes)
         smoothers_cfg = {
             "median_window": cfg.inference.smoothing_median_window,
             "ema_alpha": cfg.inference.smoothing_ema_alpha,
             "default_threshold": cfg.inference.default_threshold,
             "hysteresis_low": cfg.inference.hysteresis_low,
-            "consecutive_frames": cfg.inference.consecutive_frames,
+            "consecutive_frames": 1 if self.onset_gating else cfg.inference.consecutive_frames,
+            "smoothing_enabled": False if self.onset_gating else cfg.inference.smoothing_enabled,
         }
         self.arbiter = TriggerArbiter(
             classes=self.classes,
@@ -102,47 +160,144 @@ class RealtimeInference:
             negative_max=cfg.inference.negative_max,
             margin_to_second_best=cfg.inference.margin_to_second_best,
             global_refractory_ms=cfg.inference.trigger_refractory_ms,
+            trigger_classes=self.active_trigger_classes,
         )
 
         # Audio
-        self.window_input_n = int(round(self.window_seconds * self.input_sample_rate))
+        self.window_input_n = int(round(self.window_seconds * self.record_sample_rate))
         self.window_feature_n = int(round(self.window_seconds * self.feature_sample_rate))
-        self.hop_input_n = int(round(cfg.inference.hop_ms / 1000.0 * self.input_sample_rate))
+        self.hop_input_n = int(round(cfg.inference.hop_ms / 1000.0 * self.record_sample_rate))
+        if self.window_input_n <= 0 or self.window_feature_n <= 0 or self.hop_input_n <= 0:
+            raise ValueError("runtime window_seconds and inference.hop_ms must produce samples")
 
-        # Determine how many mics actually feed inference
+        # Determine which physical mics feed inference. inference_channels is an
+        # ordered list of physical channel indexes (independent of the recording
+        # selection); we open enough physical channels to cover the highest one.
         self.mic_mode = cfg.inference.multi_mic_mode  # "max" | "single" | "mean"
-        if self.mic_mode == "single":
-            self.active_channels = [cfg.audio.inference_channel]
-        else:
-            self.active_channels = list(range(max(1, cfg.audio.record_channels)))
+        self.active_channels = list(cfg.inference.inference_channels)
+        if self.mic_mode == "single" and len(self.active_channels) != 1:
+            raise ValueError(
+                "inference.multi_mic_mode = 'single' requires exactly one inference channel"
+            )
+        n_physical = max(self.active_channels) + 1
         log.info(
-            "multi-mic mode=%s · active channels=%s",
-            self.mic_mode, self.active_channels,
+            "microphones: pooling=%s | inference_channels=%s | opened_channels=%d",
+            self.mic_mode, self.active_channels, n_physical,
         )
 
+        # Rolling inference-time accounting (was a _loop local; now shared by the
+        # sliding and onset-gated paths).
+        self._infer_ms_total = 0.0
+        self._infer_count = 0
+
+        # Onset-gated inference: one StreamingSuperflux per active mic, fed from
+        # the audio callback. Detector params come from [onset] — the same
+        # settings that recorded/trained the data, so live onsets match.
+        self._pending_onsets: collections.deque[int] = collections.deque()
+        self._onset_lock = threading.Lock()
+        on_block_cb: Callable[[np.ndarray, int], None] | None = None
+        if self.onset_gating:
+            from sed.audio.onset import StreamingSuperflux
+
+            o = cfg.onset
+            self._onset_preroll_n = int(round(o.preroll_ms / 1000.0 * self.record_sample_rate))
+            # Collapse the same physical transient (seen on several mics or in
+            # successive detector frames) into a single scoring window.
+            self._onset_cooldown_n = int(
+                round(max(o.cross_channel_merge_ms, 1) / 1000.0 * self.record_sample_rate)
+            )
+            self._last_onset_input_idx = -10**12
+            self._onset_detectors = [
+                StreamingSuperflux(
+                    sample_rate=self.feature_sample_rate,
+                    hop_ms=o.hop_ms,
+                    median_window_s=o.median_window_s,
+                    mad_k=o.mad_k,
+                    refractory_ms=min(150, int(o.recording_cooldown_ms)),
+                    min_flux=o.min_flux,
+                )
+                for _ in self.active_channels
+            ]
+            on_block_cb = self._on_audio_block
+            log.info(
+                "onset trigger enabled | preroll=%d ms | detectors=%d | mad_k=%.1f | onset_floor=%.1f dB",
+                o.preroll_ms, len(self._onset_detectors), o.mad_k, o.min_flux_db,
+            )
+
         self.capture = AudioCapture(
-            sample_rate=self.input_sample_rate,
-            channels=max(1, cfg.audio.record_channels),
-            device=cfg.audio.record_device,
+            sample_rate=self.record_sample_rate,
+            channels=n_physical,
+            device=cfg.deploy.record_device,
             blocksize=cfg.audio.blocksize,
             ring_seconds=4.0,
-            gain_db=cfg.audio.input_gain_db,
+            on_block=on_block_cb,
         )
 
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+        # Per-class cooldown for "threshold"-kind mining (monotonic seconds).
+        self._mining_last_ts: dict[str, float] = {}
         self._on_trigger = on_trigger
         self._on_frame = on_frame
+        self._on_detection = on_detection
 
-        # Stats — also report per-mic activity so the operator can see if a
-        # mic is dead.
+        mic_status = {
+            ch: self._initial_mic_status(ch, i)
+            for i, ch in enumerate(self.active_channels)
+        }
+        # Stats — keep the legacy flat counters, and publish richer per-mic
+        # state under mic_status for the operator display.
         self.stats = {
             "frames": 0,
+            "windows": 0,
+            "onset_windows": 0,  # onset-gated frames scored (== onsets passed)
             "triggers": 0,
+            "amplitude_skipped": 0,
+            "audio_rms_dbfs": -120.0,
+            "audio_peak_dbfs": -120.0,
+            "amplitude_gate": False,
+            "min_dbfs": cfg.inference.min_dbfs,
+            "last_probs": {},
+            "last_smoothed": {},
             "infer_ms_avg": 0.0,
             "per_mic_max_prob": {ch: 0.0 for ch in self.active_channels},
             "per_mic_triggers": {ch: 0 for ch in self.active_channels},
+            "mic_status": mic_status,
+            "class_thresholds": {
+                cls: smoother.threshold
+                for cls, smoother in self.arbiter.smoothers.items()
+            },
+            "negative_max": cfg.inference.negative_max,
+            "mined_saved": 0,
+            "last_trigger": None,    # {"class", "conf", "ts", "mined"} of the most recent fire
+            "last_detection": None,  # operator-facing alias with mic/level detail
+            "last_mined": None,      # {"class", "ts", "path"} of the most recent saved clip
         }
+
+    def _initial_mic_status(self, channel: int, order_index: int) -> dict:
+        return {
+            "channel": channel,
+            "label": self._mic_label(channel, order_index),
+            "peak_dbfs": -120.0,
+            "rms_dbfs": -120.0,
+            "onset_db": None,
+            "onset_gate_db": None,
+            "top_class": None,
+            "top_score": 0.0,
+            "detections": 0,
+            "detections_by_class": {},
+            "last_detection": None,
+        }
+
+    def _mic_label(self, channel: int, order_index: int) -> str:
+        labels = list(getattr(self.cfg.audio, "microphone_type", []) or [])
+        if len(labels) == len(self.active_channels):
+            return labels[order_index]
+        if 0 <= channel < len(labels):
+            return labels[channel]
+        if len(labels) == 1:
+            return labels[0]
+        return ""
 
     # ---- lifecycle --------------------------------------------------------
 
@@ -152,7 +307,7 @@ class RealtimeInference:
         log.info(
             "waiting for first %d input samples in ring (%d Hz -> %d Hz features) ...",
             self.window_input_n,
-            self.input_sample_rate,
+            self.record_sample_rate,
             self.feature_sample_rate,
         )
         while self.capture.ring.write_idx < self.window_input_n and not self._stop.is_set():
@@ -170,101 +325,626 @@ class RealtimeInference:
     # ---- loop -------------------------------------------------------------
 
     def _loop(self) -> None:
-        next_idx = self.capture.ring.write_idx           # absolute end-sample of next window
-        infer_ms_total = 0.0
-        infer_count = 0
+        """Unified inference loop.
+
+        Two cadences share one thread (and one OpenVINO infer request):
+
+          * **Display frames** — every ``hop_ms`` we score the latest sliding
+            window and refresh the live monitor's mic levels + class probabilities.
+            This keeps the bars responsive (~hop rate) instead of frozen between
+            transients. When onset gating is OFF this is also the decision path
+            (trigger each hop, the legacy sliding behaviour).
+
+          * **Onset frames** — when onset gating is ON, each detected transient is
+            scored on its own onset-centered window (matching the recorded/frozen
+            distribution) and only those frames run the arbiter / trigger / mining.
+
+        So with gating on: bars update every hop, but a trigger fires only on a
+        real onset. With gating ON and no live monitor (e.g. the edge service),
+        display frames are skipped so silence costs no inference.
+        """
+        # Hop-paced display frames only matter for the live monitor. When onset
+        # gating is OFF they are the decision path, so they always run.
+        do_display = (not self.onset_gating) or self.live_monitor
+        next_idx = self.capture.ring.write_idx       # absolute end-sample of next display frame
         while not self._stop.is_set():
+            did_work = False
             now_idx = self.capture.ring.write_idx
-            if now_idx - next_idx < self.hop_input_n:
-                time.sleep(0.01)
-                continue
 
-            # Catch up if we're behind (>1 hop)
-            while now_idx - next_idx >= self.hop_input_n:
-                next_idx += self.hop_input_n
+            if self.onset_gating:
+                for onset_input_idx in self._pop_due_onsets(now_idx):
+                    window_start = onset_input_idx - self._onset_preroll_n
+                    try:
+                        channel_waves = self._read_channel_window(window_start)
+                    except ValueError as e:
+                        # Window not yet written, or already overwritten under load.
+                        log.debug("onset window read failed: %s", e)
+                        continue
+                    self.stats["onset_windows"] += 1
+                    self._process_window(channel_waves, trigger=True)
+                    did_work = True
 
-            window_end = next_idx
-            window_start = window_end - self.window_input_n
+            if do_display and now_idx - next_idx >= self.hop_input_n:
+                # Catch up if we're behind (>1 hop).
+                while now_idx - next_idx >= self.hop_input_n:
+                    next_idx += self.hop_input_n
+                window_start = next_idx - self.window_input_n
+                try:
+                    channel_waves = self._read_channel_window(window_start)
+                except ValueError as e:
+                    log.warning("ring read failed: %s", e)
+                else:
+                    self._process_window(channel_waves, trigger=not self.onset_gating)
+                did_work = True
 
-            # Read N channels of audio
-            try:
-                channel_waves: list[np.ndarray] = []
-                for ch in self.active_channels:
-                    w = self.capture.ring.read_window(
-                        window_start, self.window_input_n, channel=ch
-                    )
-                    channel_waves.append(w)
-            except ValueError as e:
-                log.warning("ring read failed: %s", e)
-                continue
+            if not did_work:
+                time.sleep(0.005)
 
-            t0 = time.perf_counter()
-            # Build the mel batch
-            specs = []
-            for w in channel_waves:
-                w = resample_audio(
-                    w,
-                    orig_sr=self.input_sample_rate,
-                    target_sr=self.feature_sample_rate,
-                )
-                if len(w) != self.window_feature_n:
-                    if len(w) > self.window_feature_n:
-                        w = w[:self.window_feature_n]
-                    else:
-                        w = np.pad(w, (0, self.window_feature_n - len(w)))
-                spec = self.mel(w)
-                if hasattr(spec, "numpy"):
-                    spec = spec.numpy()
-                # spec is (1, n_mels, T) → (n_mels, T)
-                if spec.ndim == 3:
-                    spec = spec[0]
-                specs.append(spec)
-            batch = np.stack(specs, axis=0)[:, None, :, :].astype(np.float32)  # (B, 1, n_mels, T)
+    def _pop_due_onsets(self, now_idx: int) -> list[int]:
+        """Pop queued onsets whose full window (preroll + postroll) is captured."""
+        due: list[int] = []
+        with self._onset_lock:
+            while self._pending_onsets and (
+                self._pending_onsets[0] - self._onset_preroll_n + self.window_input_n
+                <= now_idx
+            ):
+                due.append(self._pending_onsets.popleft())
+        return due
 
-            # Single batched OpenVINO call — much cheaper than N sequential calls
-            logits = self.infer_req.infer({0: batch})
-            logits = list(logits.values())[0]                               # (B, num_classes)
-            probs_per_mic = 1.0 / (1.0 + np.exp(-logits))                   # (B, num_classes)
-            t1 = time.perf_counter()
-            infer_ms_total += (t1 - t0) * 1000
-            infer_count += 1
+    def _read_channel_window(self, window_start: int) -> list[np.ndarray]:
+        """Read `window_input_n` samples from each active mic, starting at the
+        absolute ring index `window_start`."""
+        return [
+            self.capture.ring.read_window(window_start, self.window_input_n, channel=ch)
+            for ch in self.active_channels
+        ]
 
-            # Pool per-class across mics
-            if self.mic_mode == "max" or self.mic_mode == "single":
-                pooled = probs_per_mic.max(axis=0)                          # (num_classes,)
-            elif self.mic_mode == "mean":
-                pooled = probs_per_mic.mean(axis=0)
-            else:
-                pooled = probs_per_mic.max(axis=0)
+    def _process_window(self, channel_waves: list[np.ndarray], *, trigger: bool) -> None:
+        """Audio stats + amplitude gate + scoring for one window.
 
-            # Per-mic stats: which mic had the highest TARGET-class probability?
-            target_mask = np.array([i != self.neg_idx for i in range(len(self.classes))])
-            for i, ch in enumerate(self.active_channels):
-                m = float(probs_per_mic[i, target_mask].max())
-                # exponential moving max for the live display
-                self.stats["per_mic_max_prob"][ch] = (
-                    0.85 * self.stats["per_mic_max_prob"].get(ch, 0.0) + 0.15 * m
-                )
+        ``trigger`` controls whether the scored window runs the full decision
+        path (arbiter → trigger → mining). Display-only frames (``trigger=False``)
+        refresh the live monitor's levels/probabilities without advancing the
+        arbiter, so they never fire on non-onset windows.
+        """
+        audio_window = np.stack(channel_waves, axis=1)
+        audio_mono = audio_window.mean(axis=1)
+        rms = float(np.sqrt(np.mean(np.square(audio_mono))) + 1e-12)
+        peak = float(np.max(np.abs(audio_window)) + 1e-12)
+        rms_dbfs = 20.0 * np.log10(rms)
+        peak_dbfs = 20.0 * np.log10(peak)
+        self.stats["windows"] += 1
+        self.stats["audio_rms_dbfs"] = rms_dbfs
+        self.stats["audio_peak_dbfs"] = peak_dbfs
+        self._update_mic_audio_status(channel_waves)
+        min_dbfs = self.cfg.inference.min_dbfs
+        amplitude_gate = _below_min_dbfs(peak_dbfs, min_dbfs)
+        self.stats["amplitude_gate"] = amplitude_gate
+        if amplitude_gate:
+            self.stats["amplitude_skipped"] += 1
+            zero_probs = {c: 0.0 for c in self.classes}
+            self.stats["last_probs"] = zero_probs
+            self.stats["last_smoothed"] = zero_probs
+            self._clear_mic_score_status()
+            if self._on_frame is not None:
+                self._on_frame(zero_probs)
+            return
 
-            prob_dict = {c: float(p) for c, p in zip(self.classes, pooled)}
+        prob_dict, probs_per_mic = self._score_window(channel_waves)
+        if trigger:
+            self._decide_and_fire(
+                prob_dict, probs_per_mic, audio_window, peak_dbfs, rms_dbfs, min_dbfs
+            )
+        else:
+            # Display-only refresh: show the latest probabilities (no smoothing in
+            # onset-gated mode) but leave the arbiter untouched so quiet sliding
+            # windows can never trigger.
+            self.stats["last_probs"] = prob_dict
+            self.stats["last_smoothed"] = dict(prob_dict)
             if self._on_frame is not None:
                 self._on_frame(prob_dict)
 
-            ev = self.arbiter.step(prob_dict)
-            self.stats["frames"] += 1
-            if ev is not None:
-                self.stats["triggers"] += 1
-                # Which mic detected most strongly?
-                ci = self.classes.index(ev.class_name)
-                best_mic_i = int(np.argmax(probs_per_mic[:, ci]))
-                best_mic = self.active_channels[best_mic_i]
-                self.stats["per_mic_triggers"][best_mic] = (
-                    self.stats["per_mic_triggers"].get(best_mic, 0) + 1
-                )
-                if self._on_trigger is not None:
-                    self._on_trigger(ev)
+    def _score_window(
+        self, channel_waves: list[np.ndarray]
+    ) -> tuple[dict[str, float], np.ndarray]:
+        """Mel features → OpenVINO → per-mic pooling for one window.
 
-            if infer_count >= 20:
-                self.stats["infer_ms_avg"] = infer_ms_total / infer_count
-                infer_ms_total = 0.0
-                infer_count = 0
+        Returns the pooled per-class probability dict and the raw per-mic matrix.
+        """
+        t0 = time.perf_counter()
+        # Build the mel batch
+        specs = []
+        for w in channel_waves:
+            w = resample_audio(
+                w,
+                orig_sr=self.record_sample_rate,
+                target_sr=self.feature_sample_rate,
+            )
+            if len(w) != self.window_feature_n:
+                if len(w) > self.window_feature_n:
+                    w = w[:self.window_feature_n]
+                else:
+                    w = np.pad(w, (0, self.window_feature_n - len(w)))
+            spec = self.mel(w)
+            if hasattr(spec, "numpy"):
+                spec = spec.numpy()
+            # spec is (1, n_mels, T) → (n_mels, T)
+            if spec.ndim == 3:
+                spec = spec[0]
+            specs.append(spec)
+        batch = np.stack(specs, axis=0)[:, None, :, :].astype(np.float32)  # (B, 1, n_mels, T)
+
+        # Single batched OpenVINO call — much cheaper than N sequential calls
+        logits = self.infer_req.infer({0: batch})
+        logits = normalize_openvino_logits(
+            list(logits.values())[0],
+            batch_size=batch.shape[0],
+            num_classes=len(self.classes),
+        )
+        probs_per_mic = logits_to_probabilities(logits, self.cfg)       # (B, num_classes)
+        self._accumulate_infer_ms((time.perf_counter() - t0) * 1000)
+
+        # Which classes are targets (everything except the optional _negative).
+        target_mask = np.array(
+            [self.neg_idx is None or i != self.neg_idx for i in range(len(self.classes))]
+        )
+        # Pool per-class across mics into one decision vector.
+        pooled = pool_mic_probabilities(probs_per_mic, self.mic_mode, self.neg_idx)
+        # Per-mic stats: which mic had the highest TARGET-class probability?
+        for i, ch in enumerate(self.active_channels):
+            m = float(probs_per_mic[i, target_mask].max()) if target_mask.any() else 0.0
+            # exponential moving max for the live display
+            self.stats["per_mic_max_prob"][ch] = (
+                0.85 * self.stats["per_mic_max_prob"].get(ch, 0.0) + 0.15 * m
+            )
+            self._update_mic_score_status(ch, probs_per_mic[i], target_mask)
+        prob_dict = {c: float(p) for c, p in zip(self.classes, pooled)}
+        return prob_dict, probs_per_mic
+
+    def _update_mic_audio_status(self, channel_waves: list[np.ndarray]) -> None:
+        mic_status = self.stats.get("mic_status", {})
+        for ch, wave in zip(self.active_channels, channel_waves):
+            if wave.size:
+                rms = float(np.sqrt(np.mean(np.square(wave))) + 1e-12)
+                peak = float(np.max(np.abs(wave)) + 1e-12)
+                rms_dbfs = 20.0 * np.log10(rms)
+                peak_dbfs = 20.0 * np.log10(peak)
+            else:
+                rms_dbfs = peak_dbfs = -120.0
+            status = mic_status.setdefault(ch, self._initial_mic_status(ch, 0))
+            status["rms_dbfs"] = float(rms_dbfs)
+            status["peak_dbfs"] = float(peak_dbfs)
+
+    def _update_mic_score_status(
+        self,
+        channel: int,
+        probs: np.ndarray,
+        target_mask: np.ndarray,
+    ) -> None:
+        mic_status = self.stats.get("mic_status", {})
+        status = mic_status.setdefault(channel, self._initial_mic_status(channel, 0))
+        target_indices = np.flatnonzero(target_mask)
+        if target_indices.size:
+            best_idx = int(target_indices[int(np.argmax(probs[target_indices]))])
+        else:
+            best_idx = int(np.argmax(probs))
+        status["top_class"] = self.classes[best_idx]
+        status["top_score"] = float(probs[best_idx])
+
+    def _clear_mic_score_status(self) -> None:
+        for status in self.stats.get("mic_status", {}).values():
+            status["top_class"] = None
+            status["top_score"] = 0.0
+
+    def _accumulate_infer_ms(self, ms: float) -> None:
+        self._infer_ms_total += ms
+        self._infer_count += 1
+        if self._infer_count >= 20:
+            self.stats["infer_ms_avg"] = self._infer_ms_total / self._infer_count
+            self._infer_ms_total = 0.0
+            self._infer_count = 0
+
+    def _decide_and_fire(
+        self,
+        prob_dict: dict[str, float],
+        probs_per_mic: np.ndarray,
+        audio_window: np.ndarray,
+        peak_dbfs: float,
+        rms_dbfs: float,
+        min_dbfs: float | None,
+    ) -> None:
+        ev = self.arbiter.step(prob_dict)
+        self.stats["frames"] += 1
+        smoothed = dict(self.arbiter.last_smoothed)
+        self.stats["last_probs"] = prob_dict
+        self.stats["last_smoothed"] = smoothed
+        if self._on_frame is not None:
+            self._on_frame(prob_dict)
+        emitted_detection_classes: set[str] = set()
+        if ev is not None:
+            self.stats["triggers"] += 1
+            # Which mic detected most strongly?
+            ci = self.classes.index(ev.class_name)
+            best_mic_i = int(np.argmax(probs_per_mic[:, ci]))
+            best_mic = self.active_channels[best_mic_i]
+            self.stats["per_mic_triggers"][best_mic] = (
+                self.stats["per_mic_triggers"].get(best_mic, 0) + 1
+            )
+            ev.peak_dbfs = peak_dbfs
+            ev.rms_dbfs = rms_dbfs
+            ev.min_dbfs = min_dbfs
+            ev.best_channel = best_mic
+            if self._on_detection is not None:
+                mined_path = self._on_detection(
+                    self._runtime_detection(
+                        ev.class_name,
+                        ev.confidence,
+                        ev.timestamp,
+                        "trigger",
+                        prob_dict,
+                        smoothed,
+                        audio_window,
+                        best_mic,
+                        peak_dbfs,
+                        rms_dbfs,
+                        min_dbfs,
+                    )
+                )
+                ev.mined_path = str(mined_path) if mined_path is not None else None
+                emitted_detection_classes.add(ev.class_name)
+                # Start the cooldown so threshold-mining doesn't immediately
+                # pile clips on top of a just-saved trigger clip.
+                self._mining_last_ts[ev.class_name] = time.monotonic()
+                if mined_path is not None:
+                    self.stats["mined_saved"] += 1
+                    self.stats["last_mined"] = {
+                        "class": ev.class_name, "ts": ev.timestamp,
+                        "path": str(mined_path),
+                    }
+            self.stats["last_trigger"] = {
+                "class": ev.class_name, "conf": ev.confidence,
+                "ts": ev.timestamp, "mined": ev.mined_path,
+            }
+            self._record_mic_detection(best_mic, ev.class_name, ev.confidence, ev.timestamp, peak_dbfs)
+            self.stats["last_detection"] = {
+                "class": ev.class_name,
+                "conf": ev.confidence,
+                "ts": ev.timestamp,
+                "mic": best_mic,
+                "peak_dbfs": peak_dbfs,
+                "mined": ev.mined_path,
+            }
+            if self._on_trigger is not None:
+                self._on_trigger(ev)
+
+        if self._on_detection is not None and self.detection_classes:
+            cooldown = self.cfg.mining.min_interval_ms / 1000.0
+            now_ts = time.monotonic()
+            for cls in sorted(self.detection_classes):
+                if cls in emitted_detection_classes:
+                    continue
+                score = float(smoothed.get(cls, 0.0))
+                threshold = self._mining_threshold(cls)
+                if score < threshold:
+                    continue
+                # Anti-flood: at most one mined clip per class per cooldown.
+                if now_ts - self._mining_last_ts.get(cls, -1e9) < cooldown:
+                    continue
+                self._mining_last_ts[cls] = now_ts
+                ci = self.classes.index(cls)
+                best_mic_i = int(np.argmax(probs_per_mic[:, ci]))
+                mined_path = self._on_detection(
+                    self._runtime_detection(
+                        cls,
+                        score,
+                        now_ts,
+                        "threshold",
+                        prob_dict,
+                        smoothed,
+                        audio_window,
+                        self.active_channels[best_mic_i],
+                        peak_dbfs,
+                        rms_dbfs,
+                        min_dbfs,
+                    )
+                )
+                if mined_path is not None:
+                    self.stats["mined_saved"] += 1
+                    self.stats["last_mined"] = {
+                        "class": cls, "ts": now_ts, "path": str(mined_path),
+                    }
+
+    def _record_mic_detection(
+        self,
+        channel: int,
+        class_name: str,
+        confidence: float,
+        timestamp: float,
+        peak_dbfs: float,
+    ) -> None:
+        mic_status = self.stats.get("mic_status", {})
+        status = mic_status.setdefault(channel, self._initial_mic_status(channel, 0))
+        status["detections"] = int(status.get("detections", 0)) + 1
+        by_class = status.setdefault("detections_by_class", {})
+        by_class[class_name] = int(by_class.get(class_name, 0)) + 1
+        status["last_detection"] = {
+            "class": class_name,
+            "conf": confidence,
+            "ts": timestamp,
+            "peak_dbfs": peak_dbfs,
+        }
+
+    def _on_audio_block(self, block: np.ndarray, write_idx: int) -> None:
+        """Audio-thread callback (onset gating): detect onsets and queue them.
+
+        Deliberately light — resample + spectral flux only; all model work runs
+        in the scoring thread. Onsets from any mic for the same physical
+        transient are collapsed via `_onset_cooldown_n`.
+        """
+        try:
+            end_idx_model = model_rate_index(
+                write_idx, self.record_sample_rate, self.feature_sample_rate
+            )
+            new_onsets: list[int] = []
+            for det, ch in zip(self._onset_detectors, self.active_channels):
+                sig = block[:, ch] if block.ndim > 1 else block
+                sig_rs = resample_audio(
+                    sig, orig_sr=self.record_sample_rate, target_sr=self.feature_sample_rate
+                )
+                events = det.process_block(sig_rs, end_idx_model)
+                self._update_mic_onset_status(det, ch, events)
+                for ev in events:
+                    new_onsets.append(
+                        model_rate_index(
+                            ev.sample_idx, self.feature_sample_rate, self.record_sample_rate
+                        )
+                    )
+            if not new_onsets:
+                return
+            new_onsets.sort()
+            with self._onset_lock:
+                for input_idx in new_onsets:
+                    if input_idx - self._last_onset_input_idx < self._onset_cooldown_n:
+                        continue
+                    self._last_onset_input_idx = input_idx
+                    self._pending_onsets.append(input_idx)
+        except Exception:  # noqa: BLE001 — never let the audio callback die
+            log.exception("onset block callback failed")
+
+    def _update_mic_onset_status(self, detector, channel: int, events: list) -> None:
+        mic_status = self.stats.get("mic_status", {})
+        status = mic_status.setdefault(channel, self._initial_mic_status(channel, 0))
+        _dbfs, flux, threshold = detector.get_status()
+        gate = max(float(self.cfg.onset.min_flux), float(threshold))
+        status["onset_db"] = _linear_to_db(flux)
+        status["onset_gate_db"] = _linear_to_db(gate)
+        if events:
+            status["last_onset_db"] = max(_linear_to_db(ev.strength) for ev in events)
+
+    def _mining_threshold(self, class_name: str) -> float:
+        # Legacy [mining].per_class_min_confidence still wins if set; otherwise
+        # mining shares the class's decision threshold from [targets]/[thresholds].
+        per_class = self.cfg.mining.per_class_min_confidence
+        if class_name in per_class:
+            return float(per_class[class_name])
+        return float(self.cfg.class_threshold(class_name))
+
+    def _runtime_detection(
+        self,
+        class_name: str,
+        confidence: float,
+        timestamp: float,
+        kind: str,
+        probs: dict[str, float],
+        smoothed: dict[str, float],
+        audio: np.ndarray,
+        best_channel: int | None,
+        peak_dbfs: float,
+        rms_dbfs: float,
+        min_dbfs: float | None,
+    ) -> RuntimeDetection:
+        return RuntimeDetection(
+            class_name=class_name,
+            confidence=confidence,
+            timestamp=timestamp,
+            kind=kind,
+            probs=probs,
+            smoothed=smoothed,
+            audio=audio,
+            sample_rate=self.record_sample_rate,
+            active_channels=list(self.active_channels),
+            best_channel=best_channel,
+            peak_dbfs=peak_dbfs,
+            rms_dbfs=rms_dbfs,
+            min_dbfs=min_dbfs,
+            active_targets=sorted(self.detection_classes or self.active_trigger_classes or []),
+        )
+
+
+def _below_min_dbfs(peak_dbfs: float, min_dbfs: float | None) -> bool:
+    """Return whether a window should be skipped by the peak-amplitude gate."""
+    return min_dbfs is not None and peak_dbfs < float(min_dbfs)
+
+
+def _linear_to_db(value: float | None) -> float:
+    """Convert a positive linear onset value to dB for operator displays."""
+    if value is None or float(value) <= 0.0:
+        return -120.0
+    return 20.0 * float(np.log10(float(value) + 1e-12))
+
+
+def pool_mic_probabilities(
+    probs_per_mic: np.ndarray,
+    mic_mode: str,
+    neg_idx: int | None,
+) -> np.ndarray:
+    """Collapse per-mic class probabilities ``(n_mics, n_classes)`` to ``(n_classes,)``.
+
+    ``best``  — trust the single mic that best heard a target and return its
+                *whole* softmax vector (including its own ``_negative``). The
+                negative gate then stays self-consistent: it reflects the mic
+                that actually heard the event, not the quietest off-axis mic.
+    ``mean``  — average across mics.
+    ``max`` / ``single`` — per-class maximum across mics. Cheap, but with an
+                explicit ``_negative`` class this lets the worst mic's negative
+                veto a fire another mic is confident about, hurting recall.
+    """
+    if probs_per_mic.ndim != 2:
+        raise ValueError("probs_per_mic must be 2-D (n_mics, n_classes)")
+    if mic_mode == "best":
+        n_classes = probs_per_mic.shape[1]
+        target_cols = [c for c in range(n_classes) if neg_idx is None or c != neg_idx]
+        scores = (
+            probs_per_mic[:, target_cols].max(axis=1)
+            if target_cols
+            else probs_per_mic.max(axis=1)
+        )
+        return probs_per_mic[int(np.argmax(scores))]
+    if mic_mode == "mean":
+        return probs_per_mic.mean(axis=0)
+    return probs_per_mic.max(axis=0)  # "max" / "single"
+
+
+def openvino_input_shape(cfg: Config, batch_size: int | None = None) -> list[int]:
+    """Return the model input shape implied by the frozen inference config."""
+    batch = -1 if batch_size is None else int(batch_size)
+    return [
+        batch,
+        int(cfg.model.channels),
+        int(cfg.features.n_mels),
+        feature_frame_count(
+            sample_rate=cfg.model.sample_rate,
+            window_seconds=cfg.features.window_seconds,
+            hop_length=cfg.features.hop_length,
+            n_fft=cfg.features.n_fft,
+            frontend=cfg.features.frontend,
+        ),
+    ]
+
+
+def load_openvino_model(core, model_path: Path, cfg: Config, *, batch_size: int | None = None):  # noqa: ANN001
+    """Read an OpenVINO IR and optionally reshape it to a fixed runtime batch.
+
+    Runtime inference always knows its batch size: one window per selected
+    inference mic. Reshaping to that static batch also lets older EfficientAT
+    exports with dynamic-rank Squeeze nodes compile on the CPU plugin.
+    """
+    model = core.read_model(str(model_path))
+    _validate_openvino_input_shape(model.input(0).partial_shape, cfg)
+    if batch_size is None:
+        return model
+    shape = openvino_input_shape(cfg, batch_size=batch_size)
+    try:
+        model.reshape({model.input(0): shape})
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(
+            f"Could not reshape OpenVINO model input to {shape}. "
+            "Re-export this model bundle or select a model matching the frozen "
+            "training_config.json."
+        ) from exc
+    _validate_openvino_input_shape(model.input(0).partial_shape, cfg)
+    return model
+
+
+def compile_openvino_model(
+    core,  # noqa: ANN001
+    model_path: Path,
+    cfg: Config,
+    *,
+    batch_size: int | None,
+    config: dict[str, str] | None = None,
+):  # noqa: ANN001
+    """Read, validate, reshape, and compile the deployed OpenVINO model."""
+    model = load_openvino_model(core, model_path, cfg, batch_size=batch_size)
+    try:
+        compiled = core.compile_model(model, "CPU", config=config or {})
+    except Exception as exc:  # noqa: BLE001
+        shape = openvino_input_shape(cfg, batch_size=batch_size)
+        raise RuntimeError(
+            f"OpenVINO CPU compile failed for {model_path} with input shape {shape}: {exc}"
+        ) from exc
+    return model, compiled
+
+
+def normalize_openvino_logits(
+    logits: np.ndarray,
+    *,
+    batch_size: int,
+    num_classes: int,
+) -> np.ndarray:
+    """Normalize OpenVINO outputs to ``(batch, classes)``.
+
+    Legacy EfficientAT exports can return ``(1, batch, classes)`` after a static
+    reshape because the traced single-batch branch reinserted a singleton dim.
+    """
+    arr = np.asarray(logits)
+    expected = (int(batch_size), int(num_classes))
+    if arr.shape == expected:
+        return arr
+    if arr.shape == (1, *expected):
+        return arr.reshape(expected)
+    if arr.size == expected[0] * expected[1]:
+        return arr.reshape(expected)
+    raise RuntimeError(
+        "OpenVINO model output shape does not match the selected classes: "
+        f"got {arr.shape}, expected {expected}."
+    )
+
+
+def _known_dim_value(dim) -> int | None:  # noqa: ANN001
+    """Return an OpenVINO/static shape dimension, or None for dynamic."""
+    if dim is None:
+        return None
+    if isinstance(dim, int):
+        return dim
+    if getattr(dim, "is_dynamic", False):
+        return None
+    for attr in ("get_length", "get_min_length"):
+        fn = getattr(dim, attr, None)
+        if callable(fn):
+            try:
+                return int(fn())
+            except Exception:  # noqa: BLE001
+                pass
+    try:
+        return int(dim)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _validate_openvino_input_shape(partial_shape, cfg: Config) -> None:  # noqa: ANN001
+    """Check the exported IR input matches the frozen config snapshot."""
+    dims = list(partial_shape)
+    if len(dims) != 4:
+        raise RuntimeError(
+            "Selected OpenVINO model must accept input shape "
+            "(batch, 1, n_mels, n_frames); got "
+            f"{partial_shape!s}."
+        )
+    expected = {
+        1: ("channels", int(cfg.model.channels)),
+        2: ("features.n_mels", int(cfg.features.n_mels)),
+        3: (
+            "feature frames",
+            feature_frame_count(
+                sample_rate=cfg.model.sample_rate,
+                window_seconds=cfg.features.window_seconds,
+                hop_length=cfg.features.hop_length,
+                n_fft=cfg.features.n_fft,
+                frontend=cfg.features.frontend,
+            ),
+        ),
+    }
+    mismatches: list[str] = []
+    for idx, (label, expected_value) in expected.items():
+        actual = _known_dim_value(dims[idx])
+        if actual is not None and actual != expected_value:
+            mismatches.append(f"{label}={actual} (expected {expected_value})")
+    if mismatches:
+        raise RuntimeError(
+            "Selected OpenVINO model input shape does not match the selected "
+            "model snapshot: "
+            + "; ".join(mismatches)
+            + ". Re-export this model bundle or run `sed models select` with "
+            "the matching model."
+        )

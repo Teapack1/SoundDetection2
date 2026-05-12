@@ -5,9 +5,8 @@ import json
 from pathlib import Path
 
 import numpy as np
-import pytest
 
-from sed.config import Config, ProjectLayout, load_config
+from sed.config import ProjectLayout, load_config
 from sed import doctor
 
 
@@ -37,13 +36,13 @@ def test_doctor_train_detects_missing_dataset(tmp_path, monkeypatch):
         f"expected dataset/CSV-related FAIL, got: {[c.name for c in fails]}"
 
 
-def _seed_ambience(tmp_path: Path, n_clips: int = 12, total_min: float = 25.0,
-                   labels: tuple[str, ...] = ("bar_busy", "restaurant_dinner", "cafe")):
-    """Create a tmp ambience pool + library manifest entries for doctor checks."""
+def _seed_negatives(tmp_path: Path, n_clips: int = 12, total_min: float = 25.0,
+                    labels: tuple[str, ...] = ("bar_busy", "restaurant_dinner", "cafe")):
+    """Create a tmp negative pool + library manifest entries for doctor checks."""
     import json as _json
     import soundfile as _sf
-    amb_dir = tmp_path / "data_library" / "ambience"
-    amb_dir.mkdir(parents=True, exist_ok=True)
+    neg_dir = tmp_path / "data_library" / "negatives"
+    neg_dir.mkdir(parents=True, exist_ok=True)
     manifest = tmp_path / "data_library" / "manifest.jsonl"
     sr = 32000
     per_clip_s = (total_min * 60) / n_clips
@@ -51,16 +50,16 @@ def _seed_ambience(tmp_path: Path, n_clips: int = 12, total_min: float = 25.0,
     with open(manifest, "w", encoding="utf-8") as f:
         for i in range(n_clips):
             label = labels[i % len(labels)]
-            (amb_dir / label).mkdir(parents=True, exist_ok=True)
+            (neg_dir / label).mkdir(parents=True, exist_ok=True)
             uuid = f"clip_{i}"
-            wav = (amb_dir / label / f"{uuid}.wav")
+            wav = (neg_dir / label / f"{uuid}.wav")
             # Tiny silent WAV — enough for AudioPool to count it
             _sf.write(str(wav), np.zeros(samples_per_clip, dtype="float32"), sr)
             density = "busy" if i % 2 == 0 else "normal"
             entry = {
                 "uuid": uuid,
                 "relpath": str(wav.relative_to(tmp_path / "data_library")),
-                "category": "ambience",
+                "category": "negatives",
                 "label": label,
                 "duration_s": per_clip_s,
                 "sample_rate": sr,
@@ -72,8 +71,12 @@ def _seed_ambience(tmp_path: Path, n_clips: int = 12, total_min: float = 25.0,
                 "tags": [f"density:{density}"],
                 "notes": "",
             }
+            wav.with_suffix(".json").write_text(
+                _json.dumps(entry, indent=2) + "\n",
+                encoding="utf-8",
+            )
             f.write(_json.dumps(entry) + "\n")
-    return amb_dir
+    return neg_dir
 
 
 def _patch_library_paths(monkeypatch, tmp_path: Path):
@@ -91,7 +94,7 @@ def test_doctor_train_passes_minimal_dataset(tmp_path, monkeypatch):
     from sed import config as cfg_mod
     monkeypatch.setattr(cfg_mod, "PROJECTS_DIR", tmp_path)
     _patch_library_paths(monkeypatch, tmp_path)
-    _seed_ambience(tmp_path)
+    _seed_negatives(tmp_path)
 
     layout = ProjectLayout("p")
     layout.create()
@@ -130,13 +133,12 @@ def test_doctor_train_passes_minimal_dataset(tmp_path, monkeypatch):
 
     cfg = load_config()
     cfg.model.classes = classes
-    cfg.augmentation.ambience_pool = str(tmp_path / "data_library" / "ambience")
     checks = doctor.doctor_train(cfg, "p")
     fails = [c for c in checks if c.status == "FAIL"]
     assert not fails, f"expected no FAILs, got: {[(c.name, c.detail) for c in fails]}"
 
 
-def test_doctor_train_detects_session_leakage(tmp_path, monkeypatch):
+def test_doctor_train_does_not_check_session_leakage_for_random_splits(tmp_path, monkeypatch):
     from sed import config as cfg_mod
     monkeypatch.setattr(cfg_mod, "PROJECTS_DIR", tmp_path)
     layout = ProjectLayout("leaky")
@@ -144,7 +146,8 @@ def test_doctor_train_detects_session_leakage(tmp_path, monkeypatch):
     classes = ["_negative", "x"]
     with open(layout.dataset_dir / "classes.json", "w", encoding="utf-8") as f:
         json.dump({"classes": classes, "class_index": {c: i for i, c in enumerate(classes)}}, f)
-    # Same session_id in train AND val — should FAIL
+    # Same session_id in train AND val is allowed now: splits are random
+    # clip-level per class and session_id is retained for traceability only.
     _write_csv(layout.dataset_dir / "train.csv",
                [[f"/dev/null/{i}.wav", "x", "shared_sess",
                  32000, 1.0, 1, "p"] for i in range(60)] +
@@ -160,38 +163,15 @@ def test_doctor_train_detects_session_leakage(tmp_path, monkeypatch):
     cfg.model.classes = classes
     checks = doctor.doctor_train(cfg, "leaky")
     leakage = [c for c in checks if "leakage" in c.name]
-    assert leakage and leakage[0].status == "FAIL"
+    assert not leakage
 
 
-def test_doctor_train_warns_balanced_sampler(tmp_path, monkeypatch):
-    from sed import config as cfg_mod
-    monkeypatch.setattr(cfg_mod, "PROJECTS_DIR", tmp_path)
-    layout = ProjectLayout("p")
-    layout.create()
-    classes = ["_negative", "x"]
-    with open(layout.dataset_dir / "classes.json", "w", encoding="utf-8") as f:
-        json.dump({"classes": classes, "class_index": {c: i for i, c in enumerate(classes)}}, f)
-    for split in ("train", "val", "test"):
-        _write_csv(layout.dataset_dir / f"{split}.csv",
-                   [[f"/dev/null/{split}{i}.wav", "x", f"s_{split}_{i}",
-                     32000, 1.0, 1, "p"] for i in range(20)] +
-                   [[f"/dev/null/{split}n{i}.wav", "_negative", f"sn_{split}_{i}",
-                     32000, 1.0, 0, "p"] for i in range(60)])
-    cfg = load_config()
-    cfg.model.classes = classes
-    cfg.training.balanced_sampler = True            # the configuration we want flagged
-    checks = doctor.doctor_train(cfg, "p")
-    bs = [c for c in checks if c.name == "balanced_sampler"]
-    assert bs and bs[0].status == "WARN"
-
-
-def test_doctor_train_fails_on_empty_ambience(tmp_path, monkeypatch):
-    """The empty-venue workflow makes domain mixing essential. Doctor must
-    surface a FAIL when the ambience pool is empty, not a soft warning."""
+def test_doctor_train_warns_on_empty_negative_pool(tmp_path, monkeypatch):
+    """The negative/background pool is expected for FP-resistant training."""
     from sed import config as cfg_mod
     monkeypatch.setattr(cfg_mod, "PROJECTS_DIR", tmp_path)
     _patch_library_paths(monkeypatch, tmp_path)
-    # Deliberately do NOT seed ambience.
+    # Deliberately do NOT seed negatives.
     layout = ProjectLayout("p")
     layout.create()
     classes = ["_negative", "clink"]
@@ -206,23 +186,22 @@ def test_doctor_train_fails_on_empty_ambience(tmp_path, monkeypatch):
                      32000, 1.0, 0, "p"] for i in range(60)])
     cfg = load_config()
     cfg.model.classes = classes
-    cfg.augmentation.ambience_pool = str(tmp_path / "data_library" / "ambience")
     checks = doctor.doctor_train(cfg, "p")
-    fails = [c for c in checks if c.status == "FAIL"]
-    assert any(c.name == "ambience pool" for c in fails), \
-        f"expected ambience pool FAIL, got: {[(c.name, c.status) for c in checks]}"
-    fix_text = next(c.fix for c in fails if c.name == "ambience pool")
-    # The fix advice should point users to record-ambience, not just warn
-    assert "record-ambience" in fix_text or "library" in fix_text
+    warns = [c for c in checks if c.status == "WARN"]
+    neg_warns = [c for c in warns if c.name == "negatives"]
+    assert neg_warns, \
+        f"expected negatives WARN, got: {[(c.name, c.status) for c in checks]}"
+    fix_text = neg_warns[0].fix
+    assert "assign labels to _negative" in fix_text
 
 
-def test_doctor_train_warns_thin_ambience(tmp_path, monkeypatch):
-    """Less than 20 minutes total ambience should warn."""
+def test_doctor_train_warns_thin_negatives(tmp_path, monkeypatch):
+    """Less than 20 minutes total negative/background material should warn."""
     from sed import config as cfg_mod
     monkeypatch.setattr(cfg_mod, "PROJECTS_DIR", tmp_path)
     _patch_library_paths(monkeypatch, tmp_path)
-    _seed_ambience(tmp_path, n_clips=8, total_min=8.0,
-                   labels=("bar_one", "bar_two", "bar_three"))
+    _seed_negatives(tmp_path, n_clips=8, total_min=8.0,
+                    labels=("bar_one", "bar_two", "bar_three"))
     layout = ProjectLayout("thin")
     layout.create()
     classes = ["_negative", "x"]
@@ -237,9 +216,35 @@ def test_doctor_train_warns_thin_ambience(tmp_path, monkeypatch):
                      32000, 1.0, 0, "p"] for i in range(60)])
     cfg = load_config()
     cfg.model.classes = classes
-    cfg.augmentation.ambience_pool = str(tmp_path / "data_library" / "ambience")
     checks = doctor.doctor_train(cfg, "thin")
-    duration_warns = [c for c in checks
-                      if c.name == "ambience pool duration" and c.status == "WARN"]
-    assert duration_warns, \
-        f"expected duration WARN, got: {[(c.name, c.status, c.detail) for c in checks]}"
+    # A thin pool surfaces in the consolidated "negatives" row, with the
+    # duration figure quoted in the detail string.
+    neg_warns = [c for c in checks
+                 if c.name == "negatives" and c.status == "WARN"]
+    assert neg_warns, \
+        f"expected negatives WARN, got: {[(c.name, c.status, c.detail) for c in checks]}"
+    assert "min" in neg_warns[0].detail
+
+
+def test_doctor_train_skips_negative_pool_when_negative_class_absent(tmp_path, monkeypatch):
+    from sed import config as cfg_mod
+    monkeypatch.setattr(cfg_mod, "PROJECTS_DIR", tmp_path)
+    _patch_library_paths(monkeypatch, tmp_path)
+    _seed_negatives(tmp_path, n_clips=2, total_min=1.0, labels=("cutlery",))
+    layout = ProjectLayout("target_only")
+    layout.create()
+    classes = ["cheers_loud", "cheers_quiet"]
+    with open(layout.dataset_dir / "classes.json", "w", encoding="utf-8") as f:
+        json.dump({"classes": classes, "class_index": {c: i for i, c in enumerate(classes)}}, f)
+    for split in ("train", "val", "test"):
+        _write_csv(layout.dataset_dir / f"{split}.csv",
+                   [[f"/dev/null/{split}a{i}.wav", "cheers_loud", f"sa_{split}_{i}",
+                     32000, 1.0, 1, "p"] for i in range(60)] +
+                   [[f"/dev/null/{split}b{i}.wav", "cheers_quiet", f"sb_{split}_{i}",
+                     32000, 1.0, 1, "p"] for i in range(60)])
+    cfg = load_config()
+    cfg.model.classes = classes
+
+    checks = doctor.doctor_train(cfg, "target_only")
+
+    assert not [c for c in checks if c.name == "negatives"]

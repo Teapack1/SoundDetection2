@@ -1,42 +1,25 @@
-"""Threshold calibration against ambience.
+"""Threshold calibration against negative/background recordings.
 
 The procedure:
-  1. Get ambience material — venue-recorded, library-pooled, or *simulated*
-     by mixing empty-venue room tone with library "busy" ambience.
+  1. Get project or library negative/background material.
   2. Run the trained model over it offline (the full inference pipeline,
      including smoothing + arbiter).
   3. For each target class, find the lowest threshold that yields
      ≤ target FP/h.
-  4. Write the calibrated thresholds back to project.toml.
+  4. Write the calibrated thresholds to generated runtime_settings.json.
 
 This is the single biggest contributor to a low false-positive rate in
-production. Calibrated thresholds typically end up at 0.7–0.85.
+production. The default starting threshold is 0.90, then calibration can
+adjust per class from recorded negative/background material.
 
-## Ambience sources
-
-In practice, system setup almost always happens BEFORE the venue opens —
-HVAC running, dim lights, no crowd. Real busy-hour ambience can't be
-recorded on-site at install time. The three modes solve this:
-
-  - ``venue`` (default if recordings exist): use whatever ambience was
-    recorded at the venue. Fine if the team came back during peak hours
-    or if the install includes a sound system playing crowd noise.
-  - ``library``: use the shared library ambience pool only — assumes the
-    library has crowd/restaurant recordings representative of the venue.
-  - ``simulated_busy``: combine venue-recorded *empty* ambience (room
-    tone, HVAC, reverb signature) with library *busy* ambience, mixed at
-    randomised SNRs that bracket realistic peak conditions. This lets you
-    calibrate against a plausible peak-hour soundscape even when only
-    empty-venue recordings exist.
-
-After deployment, recapture an hour of real busy-hour ambience and
-re-run ``clinkd calibrate --ambience-source venue`` to refine.
+Record room tone, crowd beds, and distractors into ``data_library/sounds/``
+and assign the labels to ``_negative``. Calibration sweeps target thresholds against
+those non-target clips to control false positives.
 """
 
 from __future__ import annotations
 
 import logging
-import random
 from pathlib import Path
 from typing import Literal
 
@@ -45,15 +28,23 @@ import soundfile as sf
 
 from sed.audio.features import MelExtractor
 from sed.audio.resample import resample_audio
-from sed.config import LIBRARY_DIR, Config, ProjectLayout
-from sed.data.augment import _load_wav_resampled, mix_at_snr
-from sed.runtime.manifest import load_manifest, resolve_model_path
+from sed.config import (
+    LIBRARY_DIR,
+    Config,
+    ProjectLayout,
+    dump_runtime_settings,
+    load_runtime_settings,
+    resolve_active_model_dir,
+    runtime_settings_from_config,
+)
+from sed.runtime.manifest import resolve_model_path
 from sed.runtime.smooth import TriggerArbiter
+from sed.train.objective import logits_to_probabilities
 
 log = logging.getLogger(__name__)
 
 
-AmbienceSource = Literal["venue", "library", "simulated_busy"]
+NegativeSource = Literal["venue", "library"]
 
 
 def _iter_windows(wave: np.ndarray, sr: int, win_s: float, hop_ms: int):
@@ -63,213 +54,131 @@ def _iter_windows(wave: np.ndarray, sr: int, win_s: float, hop_ms: int):
         yield wave[start:start + win_n]
 
 
-def _gather_ambience_files(
+def _gather_negative_files(
     layout: ProjectLayout,
-    source: AmbienceSource,
-    ambience_dir: Path | None,
-) -> tuple[list[Path], list[Path]]:
-    """Return (primary_files, busy_overlay_files) depending on source.
+    source: NegativeSource,
+    negative_dir: Path | None,
+    cfg: Config | None = None,
+) -> list[Path]:
+    """Return calibration negative/background files for the selected source."""
+    if negative_dir is not None:
+        return sorted(negative_dir.rglob("*.wav"))
 
-    For ``simulated_busy`` we need both: primary = empty-venue room tone,
-    overlay = library busy ambience.
-    """
-    if source == "venue":
-        primary = (
-            sorted(ambience_dir.rglob("*.wav")) if ambience_dir is not None
-            else sorted(layout.ambience_dir.rglob("*.wav"))
-        )
-        return primary, []
+    if source == "venue" and cfg is not None:
+        from sed.data.compose import _library_clips_for_class, load_dataset_selection
 
-    library_amb = sorted((LIBRARY_DIR / "ambience").rglob("*.wav"))
+        selection = load_dataset_selection(layout)
+        return [
+            Path(clip.path)
+            for clip in _library_clips_for_class(
+                cfg, layout.id, "_negative", dataset_role="train", selection=selection
+            )
+        ]
 
     if source == "library":
-        return library_amb, []
+        return sorted((LIBRARY_DIR / "sounds").rglob("*.wav"))
 
-    if source == "simulated_busy":
-        venue_files = (
-            sorted(ambience_dir.rglob("*.wav")) if ambience_dir is not None
-            else sorted(layout.ambience_dir.rglob("*.wav"))
-        )
-        # Fall back to library-only if the venue has no recordings — strictly
-        # less realistic but better than refusing to calibrate.
-        if not venue_files:
-            log.warning(
-                "simulated_busy: no venue ambience found, using library-only"
-            )
-            return library_amb, []
-        return venue_files, library_amb
+    if source == "venue":
+        return []
 
-    raise ValueError(f"unknown ambience source: {source}")
-
-
-def _generate_simulated_window(
-    primary_wave: np.ndarray,
-    overlay_pool: list[np.ndarray],
-    win_n: int,
-    rng: random.Random,
-    snr_range_db: tuple[float, float] = (-3.0, 12.0),
-) -> np.ndarray:
-    """Build a single 'simulated busy' window: empty-venue tone + busy overlay.
-
-    SNR is the busy-overlay-relative-to-empty ratio: higher = louder crowd.
-    The default range (-3 to +12 dB) brackets realistic peak conditions:
-    -3 dB = quiet evening, +12 dB = packed Friday night.
-    """
-    if len(primary_wave) < win_n:
-        primary = np.tile(primary_wave, win_n // max(1, len(primary_wave)) + 1)[:win_n]
-    else:
-        start = rng.randint(0, len(primary_wave) - win_n)
-        primary = primary_wave[start:start + win_n].copy()
-
-    if not overlay_pool:
-        return primary
-
-    overlay_full = rng.choice(overlay_pool)
-    if len(overlay_full) < win_n:
-        overlay = np.tile(overlay_full, win_n // max(1, len(overlay_full)) + 1)[:win_n]
-    else:
-        ostart = rng.randint(0, len(overlay_full) - win_n)
-        overlay = overlay_full[ostart:ostart + win_n].copy()
-
-    # mix_at_snr(signal, noise, snr_db): the busy overlay is the signal we
-    # want at the given SNR over the empty-venue tone (which is the noise
-    # floor). Higher SNR → louder crowd over the room tone.
-    snr_db = rng.uniform(*snr_range_db)
-    return mix_at_snr(signal=overlay, noise=primary, snr_db=snr_db)
+    raise ValueError(f"unknown negative source: {source}")
 
 
 def calibrate(
     cfg: Config,
     project_id: str,
-    ambience_dir: Path | None = None,
+    negative_dir: Path | None = None,
     target_fp_per_hour: float = 1.0,
-    ambience_source: AmbienceSource = "venue",
-    simulated_minutes: float = 30.0,
-    simulated_snr_db_range: tuple[float, float] = (-3.0, 12.0),
-    seed: int = 0,
+    negative_source: NegativeSource = "venue",
 ) -> dict[str, float]:
     layout = ProjectLayout(project_id)
-    manifest = load_manifest(layout)
-    classes = manifest["classes"]
-    neg_idx = manifest["negative_index"]
+    classes = list(cfg.model.classes)
+    neg_idx = classes.index("_negative") if "_negative" in classes else None
 
-    primary_files, overlay_files = _gather_ambience_files(
-        layout, ambience_source, ambience_dir
-    )
-    if not primary_files:
+    negative_files = _gather_negative_files(layout, negative_source, negative_dir, cfg)
+    if not negative_files:
         raise RuntimeError(
-            f"No ambience clips for source='{ambience_source}'. "
-            "Record some with `clinkd record ambience` (venue) or "
-            "`clinkd library record-ambience` (library)."
+            f"No negative clips for source='{negative_source}'. "
+            "Record/import sounds and assign one or more labels to _negative."
         )
     log.info(
-        "calibration ambience: source=%s primary=%d overlay=%d",
-        ambience_source, len(primary_files), len(overlay_files),
+        "calibration negatives: source=%s files=%d",
+        negative_source, len(negative_files),
     )
 
     # Compile model (openvino import deferred — keeps pure helpers testable
     # in environments without the runtime, e.g. CI sandboxes)
     import openvino as ov
+    from sed.runtime.infer import compile_openvino_model, normalize_openvino_logits
+    model_dir = resolve_active_model_dir(layout, cfg.deploy.active_model)
     core = ov.Core()
-    cm = core.compile_model(
-        core.read_model(str(resolve_model_path(layout, manifest))),
-        "CPU",
+    _model, cm = compile_openvino_model(
+        core,
+        resolve_model_path(model_dir),
+        cfg,
+        batch_size=1,
         config={"PERFORMANCE_HINT": "LATENCY"},
     )
     req = cm.create_infer_request()
 
     mel = MelExtractor(
-        sample_rate=manifest["sample_rate"],
-        n_fft=manifest["n_fft"],
-        win_length=manifest["win_length"],
-        hop_length=manifest["hop_length"],
-        n_mels=manifest["n_mels"],
-        fmin=manifest["fmin"],
-        fmax=manifest["fmax"],
+        sample_rate=cfg.model.sample_rate,
+        n_fft=cfg.features.n_fft,
+        win_length=cfg.features.win_length,
+        hop_length=cfg.features.hop_length,
+        n_mels=cfg.features.n_mels,
+        fmin=cfg.features.fmin,
+        fmax=cfg.features.fmax,
+        frontend=cfg.features.frontend,
     )
 
-    sr = manifest["sample_rate"]
-    win_n = int(sr * manifest["window_seconds"])
-    hop_n = int(sr * cfg.inference.hop_ms / 1000.0)
-
+    sr = cfg.model.sample_rate
     # Score every window once, store probabilities per class
-    log.info("scoring ambience ...")
+    log.info("scoring negatives ...")
     all_probs: list[np.ndarray] = []
     total_seconds = 0.0
 
-    if ambience_source == "simulated_busy" and overlay_files:
-        # Build a synthetic stream of simulated_minutes by drawing windows
-        # at hop_n stride. Pre-load all material once (small RAM footprint
-        # per file, total typically < 200 MB).
-        rng = random.Random(seed)
-        primaries = []
-        for f in primary_files:
-            try:
-                primaries.append(_load_wav_resampled(f, sr))
-            except Exception as e:  # noqa: BLE001
-                log.warning("skip primary %s: %s", f, e)
-        overlays = []
-        for f in overlay_files:
-            try:
-                overlays.append(_load_wav_resampled(f, sr))
-            except Exception as e:  # noqa: BLE001
-                log.warning("skip overlay %s: %s", f, e)
-        if not primaries:
-            raise RuntimeError("no usable primary (empty-venue) clips")
-        if not overlays:
-            log.warning("no usable overlay (library) clips, falling through")
-
-        n_windows = int(simulated_minutes * 60 * sr / hop_n)
-        log.info(
-            "synthesising %d simulated busy windows (%.1f min @ SNR %s dB)",
-            n_windows, simulated_minutes, list(simulated_snr_db_range),
-        )
-        for _ in range(n_windows):
-            primary = rng.choice(primaries)
-            w = _generate_simulated_window(
-                primary, overlays, win_n, rng, simulated_snr_db_range,
-            )
+    for f in negative_files:
+        try:
+            wave, file_sr = sf.read(str(f), dtype="float32", always_2d=True)
+            wave = wave[:, 0]
+            if file_sr != sr:
+                wave = resample_audio(wave, orig_sr=file_sr, target_sr=sr)
+        except Exception as e:  # noqa: BLE001
+            log.warning("skip %s: %s", f, e)
+            continue
+        for w in _iter_windows(wave, sr, cfg.features.window_seconds,
+                               cfg.inference.hop_ms):
             spec = mel(w)
             if hasattr(spec, "numpy"):
                 spec = spec.numpy()
-            x = spec.reshape(1, 1, manifest["n_mels"], -1).astype(np.float32)
-            logits = list(req.infer({0: x}).values())[0][0]
-            all_probs.append(1.0 / (1.0 + np.exp(-logits)))
-        total_seconds = simulated_minutes * 60
-    else:
-        for f in primary_files:
-            try:
-                wave, file_sr = sf.read(str(f), dtype="float32", always_2d=True)
-                wave = wave[:, 0]
-                if file_sr != sr:
-                    wave = resample_audio(wave, orig_sr=file_sr, target_sr=sr)
-            except Exception as e:  # noqa: BLE001
-                log.warning("skip %s: %s", f, e)
-                continue
-            for w in _iter_windows(wave, sr, manifest["window_seconds"],
-                                   cfg.inference.hop_ms):
-                spec = mel(w)
-                if hasattr(spec, "numpy"):
-                    spec = spec.numpy()
-                x = spec.reshape(1, 1, manifest["n_mels"], -1).astype(np.float32)
-                logits = list(req.infer({0: x}).values())[0][0]
-                all_probs.append(1.0 / (1.0 + np.exp(-logits)))
-            total_seconds += len(wave) / sr
+            x = spec.reshape(1, 1, cfg.features.n_mels, -1).astype(np.float32)
+            logits = normalize_openvino_logits(
+                list(req.infer({0: x}).values())[0],
+                batch_size=x.shape[0],
+                num_classes=len(classes),
+            )
+            # Use the SAME logits→prob mapping as live inference (softmax for
+            # single-label cross_entropy, sigmoid for multilabel). Hardcoding
+            # sigmoid here calibrated thresholds in the wrong probability space.
+            probs = logits_to_probabilities(logits, cfg)          # (1, num_classes)
+            all_probs.append(np.asarray(probs)[0])
+        total_seconds += len(wave) / sr
 
     if not all_probs:
-        raise RuntimeError("No usable ambience samples after preprocessing.")
+        raise RuntimeError("No usable negative samples after preprocessing.")
 
     probs_arr = np.stack(all_probs, axis=0)             # (T, num_classes)
     log.info(
-        "scored %d windows / %.1f minutes of ambience (source=%s)",
-        len(probs_arr), total_seconds / 60, ambience_source,
+        "scored %d windows / %.1f minutes of negatives (source=%s)",
+        len(probs_arr), total_seconds / 60, negative_source,
     )
 
     # Sweep threshold per target class
     chosen: dict[str, float] = {}
     grid = np.linspace(0.30, 0.95, 14)
 
-    for ci, cls in enumerate(classes):
+    for cls in classes:
         if cls == "_negative":
             continue
         best_thr = 0.95                                  # safest default
@@ -283,6 +192,7 @@ def calibrate(
                     "default_threshold": thr,
                     "hysteresis_low": cfg.inference.hysteresis_low,
                     "consecutive_frames": cfg.inference.consecutive_frames,
+                    "smoothing_enabled": cfg.inference.smoothing_enabled,
                 },
                 negative_index=neg_idx,
                 negative_max=cfg.inference.negative_max,
@@ -305,44 +215,25 @@ def calibrate(
         chosen[cls] = best_thr
         log.info("→ %s threshold = %.2f", cls, best_thr)
 
-    # Persist back into project.toml
-    _write_thresholds(layout.project_toml, chosen)
+    persist_calibrated_thresholds(cfg, project_id, chosen)
     return chosen
 
 
-def _write_thresholds(toml_path: Path, thresholds: dict[str, float]) -> None:
-    """Append/replace [thresholds] block in project.toml. Minimal-diff approach."""
-    toml_path.parent.mkdir(parents=True, exist_ok=True)
-    if not toml_path.exists():
-        toml_path.write_text("")
-
-    text = toml_path.read_text(encoding="utf-8")
-    new_block = "[thresholds]\n" + "\n".join(
-        f"{k} = {v:.3f}" for k, v in thresholds.items()
-    ) + "\n"
-
-    if "[thresholds]" not in text:
-        if text and not text.endswith("\n"):
-            text += "\n"
-        text += "\n" + new_block
-    else:
-        # Replace existing section up to next [section] header
-        lines = text.splitlines()
-        out_lines: list[str] = []
-        in_section = False
-        replaced = False
-        for line in lines:
-            if line.strip() == "[thresholds]":
-                in_section = True
-                if not replaced:
-                    out_lines.append(new_block.rstrip())
-                    replaced = True
-                continue
-            if in_section and line.startswith("[") and line.endswith("]"):
-                in_section = False
-            if not in_section:
-                out_lines.append(line)
-        text = "\n".join(out_lines) + "\n"
-
-    toml_path.write_text(text, encoding="utf-8")
-    log.info("thresholds written to %s", toml_path)
+def persist_calibrated_thresholds(
+    cfg: Config,
+    project_id: str,
+    thresholds: dict[str, float],
+) -> Path:
+    """Persist calibrated thresholds into the active model's runtime settings."""
+    layout = ProjectLayout(project_id)
+    model_dir = resolve_active_model_dir(layout, cfg.deploy.active_model)
+    runtime_path = model_dir / "runtime_settings.json"
+    settings = runtime_settings_from_config(cfg)
+    existing = load_runtime_settings(runtime_path)
+    if existing:
+        settings.update(existing)
+    settings.setdefault("thresholds", {})
+    settings["thresholds"].update({k: float(v) for k, v in thresholds.items()})
+    out = dump_runtime_settings(settings, runtime_path)
+    log.info("thresholds written to %s", out)
+    return out

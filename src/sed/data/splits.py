@@ -1,12 +1,19 @@
-"""Session-aware train/val/test splitting.
+"""Per-class train/val splitting.
 
-Random clip-level splitting LEAKS: the same recording session ends up in train
-and val and inflates val accuracy by 10–20 % F1. We split by session_id
-instead, ensuring a session is never in two splits.
+``split_train_val_no_leakage`` is what dataset composition uses: raw clips
+are split per class grouped by recording session, and derived/augmented
+clips never enter val — a variant joins train only when its source clip is
+not in val. This keeps val an honest generalisation check; otherwise an
+overlay-augmented copy of a val clip in train (or a near-duplicate clip from
+the same session) inflates val metrics, which drive checkpoint selection and
+early stopping.
 
-If session ids are very few (e.g. all clips from one session), we fall back to
-clip-level splitting and emit a warning — but the user should fix this by
-recording multiple sessions per class.
+``train_val_split`` is the older per-class random split kept for callers
+that operate on a flat clip list without provenance.
+
+There is no test split here: test.csv is built deterministically from library
+sidecars marked ``dataset_role="test"`` by sed.data.compose. When no such
+clips are selected, test.csv is empty and post-training evaluation is skipped.
 """
 
 from __future__ import annotations
@@ -14,114 +21,18 @@ from __future__ import annotations
 import logging
 import random
 from collections import defaultdict
-from typing import Sequence, TypeVar
+from pathlib import Path
+from typing import Sequence
 
 log = logging.getLogger(__name__)
 
-T = TypeVar("T")
 
-
-def session_split(
-    clips: Sequence,                 # any object with .session_id and .class_name
-    val_frac: float = 0.15,
-    test_frac: float = 0.15,
-    seed: int = 42,
-) -> tuple[list, list, list]:
-    rng = random.Random(seed)
-
-    # Group by session_id; track classes that appear in each session
-    session_to_clips: dict[str, list] = defaultdict(list)
-    for c in clips:
-        session_to_clips[c.session_id].append(c)
-
-    sessions = list(session_to_clips.keys())
-    rng.shuffle(sessions)
-
-    # Use per-class session counts to avoid putting all of class X into one split
-    # Strategy: assign sessions greedily to whichever split is most "deficient"
-    # for any class it contains.
-    target_train = 1.0 - val_frac - test_frac
-    targets = {"train": target_train, "val": val_frac, "test": test_frac}
-    class_counts_total: dict[str, int] = defaultdict(int)
-    for c in clips:
-        class_counts_total[c.class_name] += 1
-
-    splits = {"train": [], "val": [], "test": []}
-    split_class_counts: dict[str, dict[str, int]] = {
-        "train": defaultdict(int), "val": defaultdict(int), "test": defaultdict(int),
-    }
-
-    def deficit(split: str) -> float:
-        """How under-quota the split is across classes (lower = more wanted)."""
-        d = 0.0
-        for cls, total in class_counts_total.items():
-            current = split_class_counts[split][cls]
-            target = targets[split] * total
-            d += max(0.0, target - current)
-        return d
-
-    for sess in sessions:
-        sess_clips = session_to_clips[sess]
-        # pick the split with the largest deficit
-        best = max(splits.keys(), key=lambda s: deficit(s))
-        splits[best].extend(sess_clips)
-        for c in sess_clips:
-            split_class_counts[best][c.class_name] += 1
-
-    # warn if any class is missing in val or test
-    for split_name in ("val", "test"):
-        present = set(split_class_counts[split_name].keys())
-        missing = set(class_counts_total.keys()) - present
-        if missing:
-            log.warning(
-                "split %s missing classes %s — consider recording more sessions",
-                split_name, sorted(missing),
-            )
-
-    return splits["train"], splits["val"], splits["test"]
-
-
-def _random_clip_split(clips: list, val_frac: float, test_frac: float,
-                       rng: random.Random) -> tuple[list, list, list]:
-    """Fallback: random clip-level split (no session protection).
-
-    Used for classes that have too few distinct sessions for session-aware
-    splitting to produce balanced splits. The trade-off is that two clips
-    from the same physical session might end up in train + val — but if you
-    only have one session, you don't have that problem to begin with (no
-    second session to be in train).
-    """
-    items = list(clips)
-    rng.shuffle(items)
-    n = len(items)
-    n_test = max(1, int(round(test_frac * n))) if n > 1 else 0
-    n_val = max(1, int(round(val_frac * n))) if n > 2 else 0
-    test = items[:n_test]
-    val = items[n_test:n_test + n_val]
-    train = items[n_test + n_val:]
-    return train, val, test
-
-
-def session_split_adaptive(
+def train_val_split(
     clips: Sequence,
     val_frac: float = 0.15,
-    test_frac: float = 0.15,
-    min_sessions_for_session_split: int = 3,
     seed: int = 42,
-) -> tuple[list, list, list, dict[str, str]]:
-    """Per-class split that picks the right strategy automatically.
-
-    For each class:
-      - If the class has ≥ `min_sessions_for_session_split` distinct
-        session_ids, do session-aware splitting (no leakage).
-      - Otherwise, fall back to random clip-level splitting WITHIN that
-        class (with a warning). This is the right move for library-heavy
-        classes where every clip is independent anyway, and for projects
-        with only one or two on-site recording sessions where strict
-        session-splitting would put everything in train.
-
-    Returns (train, val, test, modes) where modes is {class_name: "session"|"random"}.
-    """
+) -> tuple[list, list, dict[str, str]]:
+    """Per-class random split into train + val only."""
     rng = random.Random(seed)
 
     by_class: dict[str, list] = defaultdict(list)
@@ -130,29 +41,164 @@ def session_split_adaptive(
 
     train: list = []
     val: list = []
-    test: list = []
     modes: dict[str, str] = {}
 
-    for class_name, class_clips in by_class.items():
-        sessions = {c.session_id for c in class_clips}
-        if len(sessions) >= min_sessions_for_session_split:
-            t, v, te = session_split(class_clips, val_frac=val_frac,
-                                     test_frac=test_frac, seed=seed)
-            modes[class_name] = f"session ({len(sessions)} sessions)"
-        else:
-            t, v, te = _random_clip_split(class_clips, val_frac, test_frac, rng)
-            modes[class_name] = (
-                f"random ({len(sessions)} session{'s' if len(sessions)!=1 else ''} "
-                f"— too few for session-aware splitting)"
-            )
-            if len(sessions) == 1 and len(class_clips) > 50:
-                log.warning(
-                    "class '%s' has %d clips but only 1 session_id. "
-                    "Used random clip-level split as fallback. To improve "
-                    "split robustness, record this class across 3+ separate "
-                    "sessions (different days / contexts).",
-                    class_name, len(class_clips),
-                )
-        train.extend(t); val.extend(v); test.extend(te)
+    for class_name, items in by_class.items():
+        items = list(items)
+        rng.shuffle(items)
+        n = len(items)
+        n_val = max(1, int(round(val_frac * n))) if n >= 2 else 0
+        if n_val >= n:
+            n_val = max(0, n - 1)
+        val_part = items[:n_val]
+        train_part = items[n_val:]
+        train.extend(train_part)
+        val.extend(val_part)
+        modes[class_name] = f"random ({n} clip{'s' if n != 1 else ''})"
 
-    return train, val, test, modes
+    return train, val, modes
+
+
+def split_train_val_no_leakage(
+    raw_clips: Sequence,
+    derived_clips: Sequence,
+    val_frac: float = 0.15,
+    seed: int = 42,
+) -> tuple[list, list, dict[str, str]]:
+    """Leakage-free per-class train/val split.
+
+    Raw clips are split with whole recording sessions kept on one side, so
+    near-duplicate clips captured seconds apart never straddle train and val.
+    Classes with fewer than 3 sessions fall back to per-clip groups (with a
+    warning) so val still gets material.
+
+    Derived/augmented clips never enter val. A variant joins train only when
+    its source clip is NOT in val; variants of val sources are dropped
+    entirely. Variants whose source is outside this split (e.g. a library
+    base not selected directly) stay in train. Unlinkable variants (no
+    ``source`` in the sidecar) also stay in train, with a warning, since
+    their leakage risk cannot be checked.
+    """
+    rng = random.Random(seed)
+
+    by_class: dict[str, list] = defaultdict(list)
+    for c in raw_clips:
+        by_class[c.class_name].append(c)
+
+    train: list = []
+    val: list = []
+    modes: dict[str, str] = {}
+
+    for class_name in sorted(by_class):
+        items = list(by_class[class_name])
+        n = len(items)
+        if n < 2:
+            train.extend(items)
+            modes[class_name] = f"all-train ({n} clip{'s' if n != 1 else ''})"
+            continue
+
+        groups: dict[str, list] = defaultdict(list)
+        for c in items:
+            groups[c.session_id or Path(c.path).stem].append(c)
+        grouped = len(groups) >= 3
+        if not grouped:
+            log.warning(
+                "class '%s' has only %d recording session(s); falling back to "
+                "a per-clip split — clips from one session may land in both "
+                "train and val. Record more sessions for an honest split.",
+                class_name, len(groups),
+            )
+            groups = {f"clip-{i}": [c] for i, c in enumerate(items)}
+
+        group_keys = sorted(groups)
+        rng.shuffle(group_keys)
+        n_val_target = max(1, int(round(val_frac * n)))
+        val_keys: list[str] = []
+        n_val = 0
+        for key in group_keys:
+            if n_val >= n_val_target:
+                break
+            if len(val_keys) + 1 >= len(group_keys):
+                break                       # always keep >= 1 group for train
+            val_keys.append(key)
+            n_val += len(groups[key])
+        val_key_set = set(val_keys)
+        for key in group_keys:
+            (val if key in val_key_set else train).extend(groups[key])
+        modes[class_name] = (
+            f"session-grouped ({len(groups)} sessions, {n} clips, val={n_val})"
+            if grouped
+            else f"per-clip fallback ({n} clips, val={n_val})"
+        )
+
+    val_stems = {Path(c.path).stem for c in val}
+    dropped = 0
+    unlinked = 0
+    for c in derived_clips:
+        stem = getattr(c, "source_stem", "") or ""
+        if stem and stem in val_stems:
+            dropped += 1
+            continue
+        if not stem:
+            unlinked += 1
+        train.append(c)
+    if dropped:
+        log.info(
+            "dropped %d derived clip(s) whose source landed in val "
+            "(train/val leakage guard)", dropped,
+        )
+    if unlinked:
+        log.warning(
+            "%d derived clip(s) carry no source provenance; kept in train "
+            "but their val-leakage risk cannot be verified.", unlinked,
+        )
+    return train, val, modes
+
+
+def session_split(
+    clips: Sequence,
+    val_frac: float = 0.15,
+    test_frac: float = 0.15,
+    seed: int = 42,
+) -> tuple[list, list, list]:
+    """Legacy session-aware train/val/test split helper.
+
+    Runtime composition now gets test clips from library sidecars, but older
+    callers/tests still import this helper. It keeps whole sessions in exactly
+    one split to avoid leakage.
+    """
+    rng = random.Random(seed)
+    by_session: dict[str, list] = defaultdict(list)
+    for clip in clips:
+        by_session[getattr(clip, "session_id", "")].append(clip)
+
+    sessions = list(by_session)
+    rng.shuffle(sessions)
+    n_sessions = len(sessions)
+    if n_sessions == 0:
+        return [], [], []
+
+    n_test = int(round(test_frac * n_sessions))
+    n_val = int(round(val_frac * n_sessions))
+    if test_frac > 0 and n_sessions >= 3:
+        n_test = max(1, n_test)
+    if val_frac > 0 and n_sessions >= 3:
+        n_val = max(1, n_val)
+    if n_test + n_val >= n_sessions:
+        overflow = n_test + n_val - n_sessions + 1
+        n_test = max(0, n_test - overflow)
+
+    test_sessions = set(sessions[:n_test])
+    val_sessions = set(sessions[n_test:n_test + n_val])
+
+    train: list = []
+    val: list = []
+    test: list = []
+    for session in sessions:
+        target = (
+            test if session in test_sessions
+            else val if session in val_sessions
+            else train
+        )
+        target.extend(by_session[session])
+    return train, val, test

@@ -8,6 +8,7 @@ configured FPS and writes the channel buffer.
 
 from __future__ import annotations
 
+import ipaddress
 import logging
 import threading
 import time
@@ -18,6 +19,37 @@ from stupidArtnet import StupidArtnet
 from sed.config import Config
 
 log = logging.getLogger(__name__)
+
+
+def _validate_unicast_target(ip: str) -> None:
+    """Reject anything that isn't a specific unicast IPv4 target.
+
+    Broadcasting onto a shared/venue network is treated as a misconfiguration,
+    not a feature, so broadcast addresses are refused outright. This runs only
+    when ArtNet is actually enabled and the controller is built, so it never
+    blocks `--no-artnet` test runs or detection-only operation.
+    """
+    if not ip:
+        raise ValueError(
+            "artnet.target_ip is not set. Set it to the ArtNet receiver's "
+            "specific unicast IP (e.g. the MADRIX PC at 192.168.50.40) before "
+            "enabling ArtNet. Broadcasting is disabled by design."
+        )
+    try:
+        addr = ipaddress.IPv4Address(ip)
+    except ValueError as exc:
+        raise ValueError(
+            f"artnet.target_ip {ip!r} is not a valid IPv4 address."
+        ) from exc
+    if ip == "255.255.255.255" or ip.split(".")[-1] == "255":
+        raise ValueError(
+            f"artnet.target_ip {ip!r} is a broadcast address. Broadcasting is "
+            "disabled by design; set the receiver's specific unicast IP."
+        )
+    if addr.is_multicast or addr.is_unspecified:
+        raise ValueError(
+            f"artnet.target_ip {ip!r} must be a specific unicast address."
+        )
 
 
 @dataclass
@@ -50,11 +82,14 @@ class Cue:
 class ArtnetController:
     def __init__(self, cfg: Config):
         self.cfg = cfg
+        target_ip = cfg.artnet.target_ip.strip()
+        _validate_unicast_target(target_ip)
         self.universe = StupidArtnet(
-            target_ip=cfg.artnet.target_ip,
+            target_ip=target_ip,
             universe=cfg.artnet.universe,
             packet_size=512,
             fps=cfg.artnet.fps,
+            broadcast=False,
         )
         self.universe.start()
         self._cues: list[Cue] = []

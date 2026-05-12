@@ -186,14 +186,12 @@ class AudioCapture:
         device: str | int = "default",
         blocksize: int = 1024,
         ring_seconds: float = 4.0,
-        gain_db: float = 0.0,
         on_block: Callable[[np.ndarray, int], None] | None = None,
     ):
         self.sample_rate = sample_rate
         self.channels = channels
         self.device = resolve_device(device)
         self.blocksize = blocksize
-        self.gain = float(10 ** (gain_db / 20.0))
         self.ring = RingBuffer(int(ring_seconds * sample_rate), channels=channels)
         self._on_block = on_block
 
@@ -202,6 +200,9 @@ class AudioCapture:
         self._supervisor: threading.Thread | None = None
 
         self.stats = {"xruns": 0, "blocks": 0, "reconnects": 0}
+        # Rate-limit the "sustained overflow" warning (audio thread).
+        self._last_xrun_warn = 0.0
+        self._xruns_at_last_warn = 0
 
     # ---- public API ---------------------------------------------------
 
@@ -224,13 +225,25 @@ class AudioCapture:
     # ---- internals ----------------------------------------------------
 
     def _audio_callback(self, indata: np.ndarray, frames: int, time_info, status):
+        _ = time_info
         if status:
             self.stats["xruns"] += 1
             log.debug("PortAudio status: %s", status)
+            # Occasional overflow is harmless (a few ms of dropped input). Only
+            # warn — rate-limited — when drops are SUSTAINED (>=5 in a 10 s
+            # window), which signals real audio loss (raise blocksize / reduce
+            # CPU load). Per-event noise stays at DEBUG above.
+            now = time.monotonic()
+            if (now - self._last_xrun_warn >= 10.0
+                    and self.stats["xruns"] - self._xruns_at_last_warn >= 5):
+                log.warning(
+                    "sustained audio input overflow: %d dropped-buffer events "
+                    "(raise [audio] blocksize or reduce CPU load)",
+                    self.stats["xruns"],
+                )
+                self._last_xrun_warn = now
+                self._xruns_at_last_warn = self.stats["xruns"]
         block = indata.copy()
-        if self.gain != 1.0:
-            block *= self.gain
-            np.clip(block, -1.0, 1.0, out=block)
         self.ring.write(block)
         self.stats["blocks"] += 1
         if self._on_block is not None:

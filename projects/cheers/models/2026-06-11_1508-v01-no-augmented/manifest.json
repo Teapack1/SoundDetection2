@@ -1,0 +1,121 @@
+{
+  "model_id": "2026-06-11_1508-v01-no-augmented",
+  "description": "v01-no-augmented",
+  "created_at": "2026-06-11T15:18:07.227415+00:00",
+  "git_commit": "042f5fb",
+  "dataset": {
+    "train": 1932,
+    "val": 594,
+    "test": 409,
+    "by_class": {
+      "_negative": 1630,
+      "cheers_quiet": 298,
+      "cheers_loud": 299,
+      "cheers_medium": 299
+    },
+    "test_set_hash": "sha256:2e1cdbdb3c827d551819ba79951e0ac79d630a6c5ad07875a66aa58b1418b899",
+    "frozen_test_present": true
+  },
+  "training": {
+    "epochs_ran": 45,
+    "epochs_max": 80,
+    "stopped_early": true,
+    "selection_metric": "val/loss",
+    "selection_mode": "min",
+    "selection_tiebreak": "val/accuracy",
+    "selected_epoch": 32,
+    "selected_score": 0.0016207690350711346,
+    "selected_val_loss": 0.0016207690350711346,
+    "selected_val_accuracy": 1.0,
+    "selected_train_loss": 0.002349681919440627,
+    "best_val_f1_macro_targets": 1.0,
+    "best_val_accuracy": 1.0,
+    "best_checkpoint_name": "checkpoint_best_epoch-032.ckpt"
+  },
+  "files": {
+    "checkpoint": "checkpoint_best_epoch-032.ckpt",
+    "training_config": "training_config.json",
+    "runtime_settings": "runtime_settings.json",
+    "dataset_snapshot": "dataset/dataset_snapshot.json",
+    "training_report": "reports/training_report.json",
+    "training_curves": "reports/training_curves.png",
+    "test_metrics": "reports/test_metrics.json",
+    "confusion_matrix": "reports/confusion_matrix.png",
+    "confusion_matrix_json": "reports/confusion_matrix.json",
+    "test_predictions": "reports/test_predictions.tsv",
+    "active_openvino": "active_openvino.xml",
+    "openvino_fp16": "model_fp16.xml",
+    "onnx": "model.onnx"
+  },
+  "exported": true,
+  "test_metrics": {
+    "threshold": null,
+    "thresholds": {
+      "_negative": 0.5,
+      "cheers_quiet": 0.9,
+      "cheers_loud": 0.9,
+      "cheers_medium": 0.9
+    },
+    "prediction_mode": "runtime_thresholds",
+    "probability_mode": "softmax",
+    "negative_max": 0.5,
+    "margin_to_second_best": 0.08,
+    "f1_macro_targets": 0.9654326927464917,
+    "ap_macro_targets": 0.9810871457205526,
+    "accuracy": 0.934010152284264,
+    "n_samples": 197,
+    "per_class": {
+      "_negative": {
+        "ap": 0.0,
+        "f1": 0.0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "tp": 0,
+        "fp": 13,
+        "fn": 0,
+        "tn": 184,
+        "support": 0
+      },
+      "cheers_quiet": {
+        "ap": 0.9985078053259872,
+        "f1": 0.9606299212598425,
+        "precision": 1.0,
+        "recall": 0.9242424242424242,
+        "tp": 61,
+        "fp": 0,
+        "fn": 5,
+        "tn": 131,
+        "support": 66
+      },
+      "cheers_loud": {
+        "ap": 0.9840635532017333,
+        "f1": 0.9848484848484849,
+        "precision": 1.0,
+        "recall": 0.9701492537313433,
+        "tp": 65,
+        "fp": 0,
+        "fn": 2,
+        "tn": 130,
+        "support": 67
+      },
+      "cheers_medium": {
+        "ap": 0.9606900786339374,
+        "f1": 0.9508196721311475,
+        "precision": 1.0,
+        "recall": 0.90625,
+        "tp": 58,
+        "fp": 0,
+        "fn": 6,
+        "tn": 133,
+        "support": 64
+      }
+    },
+    "test_source": "current",
+    "test_set_hash": "sha256:2e1cdbdb3c827d551819ba79951e0ac79d630a6c5ad07875a66aa58b1418b899"
+  },
+  "export": {
+    "source_checkpoint": "checkpoint_best_epoch-032.ckpt",
+    "active_precision": "fp16",
+    "active_target": "model_fp16.xml"
+  }
+}

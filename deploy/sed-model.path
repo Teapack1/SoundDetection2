@@ -1,10 +1,16 @@
 [Unit]
-Description=Restart SED when the active model changes
+Description=Restart SED when the active model or deployment config changes
 After=sed.service
 
 [Path]
-# Adjust to match your project — uses the project ID from /etc/sed/env
-PathChanged=/opt/sed/projects/%i/models/current.openvino
+# Two ways the running model changes on the edge, both trigger a reload:
+#   1. editing deployment config (active_model, record_device, verbose, mining, ArtNet)
+#   2. copying in a new models/<model_id>/ bundle (a new subfolder appears)
+# systemd path units are not recursive, so we watch the config file and the
+# models/ directory itself rather than individual model files.
+# __SED_HOME__ and %i are substituted by deploy/install.sh (repo path + PROJECT_ID).
+PathChanged=__SED_HOME__/projects/%i/config.toml
+PathModified=__SED_HOME__/projects/%i/models
 Unit=sed-model-reload.service
 
 [Install]

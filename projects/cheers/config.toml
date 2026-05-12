@@ -1,0 +1,91 @@
+# SoundEventDetection project config.
+# Edit project-specific values here; omitted keys use defaults from sed.config.
+# Dataset UI: uv run sed dataset inspect --project cheers --serve
+# Inspect state: projects/cheers/dataset/dataset_selection.json
+
+[project]
+id = "cheers"
+name = "cheers"
+created_at = "2026-06-05T13:11:10.504107+00:00"
+description = ""
+
+[dataset]
+target_classes = ["_negative", "cheers_quiet", "cheers_loud", "cheers_medium"]
+
+[deploy]
+active_model = "2026-06-11_1442-v01-with-augmented"
+record_device = "UMC404HD" # Scarlett 18i8 UMC404HD
+verbose = "none" # none | info | live
+
+[audio]
+record_sample_rate = 48000
+record_channels = [0,1,2] # ordered physical input channels, e.g. [0, 3, 1]
+microphone_type = ["rode", "samson", "joby"]
+
+[onset]
+min_flux_db = -80
+record_seconds = 1.0
+preroll_ms = 300
+recording_cooldown_ms = 1500
+randomize_preroll = true
+preroll_ms_range = [100, 700]
+multi_mic_trigger = "any" # any | mix | ch0 (multichannel: which channels can trigger)
+cross_channel_merge_ms = 500 # only for "any": merge mic onsets into one clip
+
+[model]
+backbone = "mn10_as" # mn01 | mn10_as | mn20_as | mn40_as
+pretrained = true
+sample_rate = 32000
+
+[features]
+frontend = "efficientat" # efficientat | legacy_torchaudio_db
+
+[training]
+epochs = 80
+patience = 12
+loss = "cross_entropy" # cross_entropy | asymmetric_focal | bce_logits
+precision = "16-mixed"
+auto_export = true
+auto_test = true
+
+[inference]
+inference_channels = [0,1,2]
+multi_mic_mode = "best" # best | max | mean | single
+# Score one onset-centered window per transient (matches how clips were
+# recorded) instead of a blind sliding window needing 3-frame consensus.
+onset_gating_enabled = true
+# Score a new sliding window every hop_ms (window overlap). Sets the live
+# monitor refresh rate; with onset_gating_enabled the bars update every hop but
+# triggers fire only on detected onsets.
+hop_ms = 300
+smoothing_enabled = true
+default_threshold = 0.9
+margin_to_second_best = 0.08
+negative_max = 0.5
+min_dbfs = "off" # "off" or dBFS number
+
+# [targets] is the single source of inference classes + their trigger/threshold/
+# mining/ArtNet specs. triggering AND mining both read this block.
+#   enabled  = can fire a trigger (and ArtNet, if configured)
+#   threshold= decision threshold (else default_threshold / negative_max)
+#   mine     = save mined clips of this class when mining is on (--mine)
+#   channel/value = DMX output on trigger
+[targets]
+cheers_loud = { enabled = true, threshold = 0.6, mine = true, channel = 1, value = 1 }
+cheers_medium = { enabled = true, threshold = 0.6, mine = true, channel = 1, value = 2 }
+cheers_quiet = { enabled = true, threshold = 0.6, mine = true, channel = 2, value = 3 }
+_negative   = { enabled = false, mine = true, threshold = 0.5 }  # mine hard negatives
+
+[artnet]
+enabled = false
+target_ip = ""
+universe = 0
+
+[mining]
+enabled = false
+output_dir = "mined"
+# per_class_min_confidence = { cheers_loud = 0.85 }
+
+[logging]
+level = "INFO"
+log_detections = true

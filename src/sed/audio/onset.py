@@ -22,6 +22,7 @@ class OnsetEvent:
     sample_idx: int          # absolute sample index of the trigger frame
     strength: float
     baseline: float
+    channel: int | None = None  # physical input channel when known
 
 
 class StreamingSuperflux:

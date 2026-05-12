@@ -1,0 +1,4951 @@
+{
+  "assignments": {
+    "_negative": [
+      {
+        "clip_kind": "mono",
+        "count": 0,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "2654ea572ea2",
+        "labels": [
+          "ambience_rnd"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260611T064453Z-967e06",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "office",
+          "rnd",
+          "talk",
+          "ambience"
+        ],
+        "triggered_channels": [
+          2
+        ],
+        "updated_at": "2026-06-11T08:09:15.216204+00:00"
+      },
+      {
+        "clip_kind": "mono",
+        "count": 224,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "6bf0ab7c9ed1",
+        "labels": [
+          "ambience_rnd"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260611T064651Z-a570e8",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "office",
+          "rnd",
+          "talk",
+          "ambience"
+        ],
+        "triggered_channels": [
+          2
+        ],
+        "updated_at": "2026-06-11T08:09:15.224993+00:00"
+      },
+      {
+        "clip_kind": "mono",
+        "count": 0,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "3454faa48a24",
+        "labels": [
+          "ambience_rnd"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260611T071303Z-c72a37",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "office",
+          "rnd",
+          "talk",
+          "ambience"
+        ],
+        "triggered_channels": [
+          2
+        ],
+        "updated_at": "2026-06-11T08:09:15.230123+00:00"
+      },
+      {
+        "clip_kind": "mono",
+        "count": 0,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "18df20744f1b",
+        "labels": [
+          "ambience_rnd"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260611T071332Z-40084e",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "office",
+          "rnd",
+          "talk",
+          "ambience"
+        ],
+        "triggered_channels": [
+          2
+        ],
+        "updated_at": "2026-06-11T08:09:15.235388+00:00"
+      },
+      {
+        "clip_kind": "mono",
+        "count": 0,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "8c56fa6df136",
+        "labels": [
+          "ambience_rnd"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260611T071332Z-40084e",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "office",
+          "rnd",
+          "talk",
+          "ambience"
+        ],
+        "triggered_channels": [
+          1
+        ],
+        "updated_at": "2026-06-11T08:09:15.244148+00:00"
+      },
+      {
+        "clip_kind": "mono",
+        "count": 0,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "a98cbb724550",
+        "labels": [
+          "ambience_rnd"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260611T071423Z-16fd60",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "office",
+          "rnd",
+          "talk",
+          "ambience"
+        ],
+        "triggered_channels": [
+          2
+        ],
+        "updated_at": "2026-06-11T08:09:15.251585+00:00"
+      },
+      {
+        "clip_kind": "mono",
+        "count": 0,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "84afaf7ab6a6",
+        "labels": [
+          "ambience_rnd"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260611T071517Z-ec7412",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "office",
+          "rnd",
+          "talk",
+          "ambience"
+        ],
+        "triggered_channels": [
+          2
+        ],
+        "updated_at": "2026-06-11T08:09:15.259463+00:00"
+      },
+      {
+        "clip_kind": "mono",
+        "count": 0,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "a25a471e5fac",
+        "labels": [
+          "ambience_rnd"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260611T071517Z-ec7412",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "office",
+          "rnd",
+          "talk",
+          "ambience"
+        ],
+        "triggered_channels": [
+          0
+        ],
+        "updated_at": "2026-06-11T08:09:15.270488+00:00"
+      },
+      {
+        "clip_kind": "mono",
+        "count": 45,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "09aa8e69337f",
+        "labels": [
+          "ambience_rnd"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260611T071547Z-9b1229",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "office",
+          "rnd",
+          "talk",
+          "ambience"
+        ],
+        "triggered_channels": [
+          2
+        ],
+        "updated_at": "2026-06-11T08:09:15.281377+00:00"
+      },
+      {
+        "clip_kind": "mono",
+        "count": 71,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "1dfb3ecea8e8",
+        "labels": [
+          "ambience_rnd"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260611T071547Z-9b1229",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "office",
+          "rnd",
+          "talk",
+          "ambience"
+        ],
+        "triggered_channels": [
+          0
+        ],
+        "updated_at": "2026-06-11T08:09:15.290361+00:00"
+      },
+      {
+        "clip_kind": "mono",
+        "count": 0,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "b024cd23aac1",
+        "labels": [
+          "ambience_rnd"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260611T071904Z-47a260",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "office",
+          "rnd",
+          "talk",
+          "ambience"
+        ],
+        "triggered_channels": [
+          2
+        ],
+        "updated_at": "2026-06-11T08:09:15.300832+00:00"
+      },
+      {
+        "clip_kind": "mono",
+        "count": 0,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "62c1799ae369",
+        "labels": [
+          "ambience_rnd"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260611T071904Z-47a260",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "office",
+          "rnd",
+          "talk",
+          "ambience"
+        ],
+        "triggered_channels": [
+          0
+        ],
+        "updated_at": "2026-06-11T08:09:15.310581+00:00"
+      },
+      {
+        "clip_kind": "mono",
+        "count": 124,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "88c727ce9ddb",
+        "labels": [
+          "ambience_rnd"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260611T074052Z-a824d2",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "office",
+          "rnd",
+          "talk",
+          "ambience"
+        ],
+        "triggered_channels": [
+          2
+        ],
+        "updated_at": "2026-06-11T08:09:15.319154+00:00"
+      },
+      {
+        "clip_kind": "mono",
+        "count": 81,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "9b7474512c6d",
+        "labels": [
+          "ambience_rnd"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260611T074052Z-a824d2",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "office",
+          "rnd",
+          "talk",
+          "ambience"
+        ],
+        "triggered_channels": [
+          0
+        ],
+        "updated_at": "2026-06-11T08:09:15.330757+00:00"
+      },
+      {
+        "clip_kind": "mono",
+        "count": 26,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "169d2a794f93",
+        "labels": [
+          "ambience_rnd"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260611T074052Z-a824d2",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "office",
+          "rnd",
+          "talk",
+          "ambience"
+        ],
+        "triggered_channels": [
+          1
+        ],
+        "updated_at": "2026-06-11T08:09:15.338629+00:00"
+      },
+      {
+        "clip_kind": "channel_split",
+        "count": 41,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "9491925c02d4",
+        "labels": [
+          "ambience_rnd"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260611T064651Z-a570e8",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "office",
+          "rnd",
+          "talk",
+          "ambience"
+        ],
+        "triggered_channels": [
+          1
+        ],
+        "updated_at": "2026-06-11T08:09:15.350383+00:00"
+      },
+      {
+        "clip_kind": "channel_split",
+        "count": 0,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "5e1353fcb9ed",
+        "labels": [
+          "ambience_rnd"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260611T071303Z-c72a37",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "office",
+          "rnd",
+          "talk",
+          "ambience"
+        ],
+        "triggered_channels": [
+          1
+        ],
+        "updated_at": "2026-06-11T08:09:15.360254+00:00"
+      },
+      {
+        "clip_kind": "channel_split",
+        "count": 0,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "807f850bcef1",
+        "labels": [
+          "ambience_rnd"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260611T071332Z-40084e",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "office",
+          "rnd",
+          "talk",
+          "ambience"
+        ],
+        "triggered_channels": [
+          1
+        ],
+        "updated_at": "2026-06-11T08:09:15.368293+00:00"
+      },
+      {
+        "clip_kind": "channel_split",
+        "count": 20,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "6598f8a94540",
+        "labels": [
+          "ambience_rnd"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260611T071423Z-16fd60",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "office",
+          "rnd",
+          "talk",
+          "ambience"
+        ],
+        "triggered_channels": [
+          1
+        ],
+        "updated_at": "2026-06-11T08:09:15.377759+00:00"
+      },
+      {
+        "clip_kind": "channel_split",
+        "count": 0,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "5d0675485eb9",
+        "labels": [
+          "ambience_rnd"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260611T071517Z-ec7412",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "office",
+          "rnd",
+          "talk",
+          "ambience"
+        ],
+        "triggered_channels": [
+          1
+        ],
+        "updated_at": "2026-06-11T08:09:15.386744+00:00"
+      },
+      {
+        "clip_kind": "channel_split",
+        "count": 0,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "58a93e7765b3",
+        "labels": [
+          "ambience_rnd"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260611T071517Z-ec7412",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "office",
+          "rnd",
+          "talk",
+          "ambience"
+        ],
+        "triggered_channels": [
+          0
+        ],
+        "updated_at": "2026-06-11T08:09:15.400522+00:00"
+      },
+      {
+        "clip_kind": "channel_split",
+        "count": 71,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "74d03ad30f14",
+        "labels": [
+          "ambience_rnd"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260611T071547Z-9b1229",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "office",
+          "rnd",
+          "talk",
+          "ambience"
+        ],
+        "triggered_channels": [
+          0
+        ],
+        "updated_at": "2026-06-11T08:09:15.416359+00:00"
+      },
+      {
+        "clip_kind": "channel_split",
+        "count": 29,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "adac6f53593c",
+        "labels": [
+          "ambience_rnd"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260611T071547Z-9b1229",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "office",
+          "rnd",
+          "talk",
+          "ambience"
+        ],
+        "triggered_channels": [
+          1
+        ],
+        "updated_at": "2026-06-11T08:09:15.433113+00:00"
+      },
+      {
+        "clip_kind": "channel_split",
+        "count": 0,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "510f0bec6226",
+        "labels": [
+          "ambience_rnd"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260611T071904Z-47a260",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "office",
+          "rnd",
+          "talk",
+          "ambience"
+        ],
+        "triggered_channels": [
+          0
+        ],
+        "updated_at": "2026-06-11T08:09:15.442514+00:00"
+      },
+      {
+        "clip_kind": "channel_split",
+        "count": 81,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "41587276602b",
+        "labels": [
+          "ambience_rnd"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260611T074052Z-a824d2",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "office",
+          "rnd",
+          "talk",
+          "ambience"
+        ],
+        "triggered_channels": [
+          0
+        ],
+        "updated_at": "2026-06-11T08:09:15.451093+00:00"
+      },
+      {
+        "clip_kind": "channel_split",
+        "count": 26,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "7be721b6bef2",
+        "labels": [
+          "ambience_rnd"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260611T074052Z-a824d2",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "office",
+          "rnd",
+          "talk",
+          "ambience"
+        ],
+        "triggered_channels": [
+          1
+        ],
+        "updated_at": "2026-06-11T08:09:15.461123+00:00"
+      },
+      {
+        "clip_kind": "channel_split",
+        "count": 224,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "8f2831577357",
+        "labels": [
+          "ambience_rnd"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260611T064651Z-a570e8",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "office",
+          "rnd",
+          "talk",
+          "ambience"
+        ],
+        "triggered_channels": [
+          2
+        ],
+        "updated_at": "2026-06-11T08:09:15.468882+00:00"
+      },
+      {
+        "clip_kind": "channel_split",
+        "count": 0,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "6737314be9c2",
+        "labels": [
+          "ambience_rnd"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260611T071303Z-c72a37",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "office",
+          "rnd",
+          "talk",
+          "ambience"
+        ],
+        "triggered_channels": [
+          2
+        ],
+        "updated_at": "2026-06-11T08:09:15.476583+00:00"
+      },
+      {
+        "clip_kind": "channel_split",
+        "count": 0,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "98e7f31ce128",
+        "labels": [
+          "ambience_rnd"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260611T071332Z-40084e",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "office",
+          "rnd",
+          "talk",
+          "ambience"
+        ],
+        "triggered_channels": [
+          2
+        ],
+        "updated_at": "2026-06-11T08:09:15.485778+00:00"
+      },
+      {
+        "clip_kind": "channel_split",
+        "count": 0,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "224d322a5a21",
+        "labels": [
+          "ambience_rnd"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260611T071423Z-16fd60",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "office",
+          "rnd",
+          "talk",
+          "ambience"
+        ],
+        "triggered_channels": [
+          2
+        ],
+        "updated_at": "2026-06-11T08:09:15.496985+00:00"
+      },
+      {
+        "clip_kind": "channel_split",
+        "count": 0,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "369e70b6b511",
+        "labels": [
+          "ambience_rnd"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260611T071517Z-ec7412",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "office",
+          "rnd",
+          "talk",
+          "ambience"
+        ],
+        "triggered_channels": [
+          2
+        ],
+        "updated_at": "2026-06-11T08:09:15.505651+00:00"
+      },
+      {
+        "clip_kind": "channel_split",
+        "count": 45,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "1e1017ce0d68",
+        "labels": [
+          "ambience_rnd"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260611T071547Z-9b1229",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "office",
+          "rnd",
+          "talk",
+          "ambience"
+        ],
+        "triggered_channels": [
+          2
+        ],
+        "updated_at": "2026-06-11T08:09:15.513291+00:00"
+      },
+      {
+        "clip_kind": "channel_split",
+        "count": 0,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "8f4aebe7d655",
+        "labels": [
+          "ambience_rnd"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260611T071904Z-47a260",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "office",
+          "rnd",
+          "talk",
+          "ambience"
+        ],
+        "triggered_channels": [
+          2
+        ],
+        "updated_at": "2026-06-11T08:09:15.521823+00:00"
+      },
+      {
+        "clip_kind": "channel_split",
+        "count": 0,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "5666efab1e5c",
+        "labels": [
+          "ambience_rnd"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260611T071904Z-47a260",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "office",
+          "rnd",
+          "talk",
+          "ambience"
+        ],
+        "triggered_channels": [
+          1
+        ],
+        "updated_at": "2026-06-11T08:09:15.532241+00:00"
+      },
+      {
+        "clip_kind": "channel_split",
+        "count": 124,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "d810509284c2",
+        "labels": [
+          "ambience_rnd"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260611T074052Z-a824d2",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "office",
+          "rnd",
+          "talk",
+          "ambience"
+        ],
+        "triggered_channels": [
+          2
+        ],
+        "updated_at": "2026-06-11T08:09:15.545181+00:00"
+      },
+      {
+        "clip_kind": "mono",
+        "count": 0,
+        "dataset_role": "train",
+        "density": "empty",
+        "id": "cfe17a52c078",
+        "labels": [
+          "ambience_temna"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260605T142519Z-10e5a3",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "temna",
+          "ambience",
+          "quiet"
+        ],
+        "triggered_channels": [
+          0
+        ],
+        "updated_at": "2026-06-11T08:09:15.560780+00:00"
+      },
+      {
+        "clip_kind": "mono",
+        "count": 45,
+        "dataset_role": "train",
+        "density": "empty",
+        "id": "76e9aa4d8269",
+        "labels": [
+          "ambience_temna"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260605T142519Z-10e5a3",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "temna",
+          "ambience",
+          "quiet"
+        ],
+        "triggered_channels": [
+          1
+        ],
+        "updated_at": "2026-06-11T08:09:15.568768+00:00"
+      },
+      {
+        "clip_kind": "mono",
+        "count": 20,
+        "dataset_role": "train",
+        "density": "empty",
+        "id": "77789c67f74f",
+        "labels": [
+          "ambience_temna"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260605T142519Z-10e5a3",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "temna",
+          "ambience",
+          "quiet"
+        ],
+        "triggered_channels": [
+          2
+        ],
+        "updated_at": "2026-06-11T08:09:15.578957+00:00"
+      },
+      {
+        "clip_kind": "channel_split",
+        "count": 0,
+        "dataset_role": "train",
+        "density": "empty",
+        "id": "acbf09aaa403",
+        "labels": [
+          "ambience_temna"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260605T142519Z-10e5a3",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "temna",
+          "ambience",
+          "quiet"
+        ],
+        "triggered_channels": [
+          0
+        ],
+        "updated_at": "2026-06-11T08:09:15.588729+00:00"
+      },
+      {
+        "clip_kind": "channel_split",
+        "count": 45,
+        "dataset_role": "train",
+        "density": "empty",
+        "id": "b172bc687e6f",
+        "labels": [
+          "ambience_temna"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260605T142519Z-10e5a3",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "temna",
+          "ambience",
+          "quiet"
+        ],
+        "triggered_channels": [
+          1
+        ],
+        "updated_at": "2026-06-11T08:09:15.598575+00:00"
+      },
+      {
+        "clip_kind": "channel_split",
+        "count": 20,
+        "dataset_role": "train",
+        "density": "empty",
+        "id": "c38d8e69783d",
+        "labels": [
+          "ambience_temna"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260605T142519Z-10e5a3",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "temna",
+          "ambience",
+          "quiet"
+        ],
+        "triggered_channels": [
+          2
+        ],
+        "updated_at": "2026-06-11T08:09:15.606812+00:00"
+      },
+      {
+        "clip_kind": "channel_split",
+        "count": 94,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "03c03db627c8",
+        "labels": [
+          "cuttlery"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260605T145619Z-d01288",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "temna",
+          "cuttlery",
+          "glasses"
+        ],
+        "triggered_channels": [
+          0
+        ],
+        "updated_at": "2026-06-11T08:12:49.583783+00:00"
+      },
+      {
+        "clip_kind": "channel_split",
+        "count": 93,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "a4e2dfa281bd",
+        "labels": [
+          "cuttlery"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260605T145619Z-d01288",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "temna",
+          "cuttlery",
+          "glasses"
+        ],
+        "triggered_channels": [
+          1
+        ],
+        "updated_at": "2026-06-11T08:13:38.198807+00:00"
+      },
+      {
+        "clip_kind": "channel_split",
+        "count": 96,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "48c2c6f27ad4",
+        "labels": [
+          "cuttlery"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260605T145619Z-d01288",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "temna",
+          "cuttlery",
+          "glasses"
+        ],
+        "triggered_channels": [
+          2
+        ],
+        "updated_at": "2026-06-11T08:13:42.312502+00:00"
+      },
+      {
+        "clip_kind": "mono",
+        "count": 26,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "c8c49518fd59",
+        "labels": [
+          "voice_talking"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260605T144043Z-395eec",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "temna",
+          "talk",
+          "solo"
+        ],
+        "triggered_channels": [
+          0
+        ],
+        "updated_at": "2026-06-11T08:28:47.095362+00:00"
+      },
+      {
+        "clip_kind": "mono",
+        "count": 170,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "a0a391cc780e",
+        "labels": [
+          "voice_talking"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260605T144229Z-ae6c78",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "temna",
+          "talk",
+          "solo"
+        ],
+        "triggered_channels": [
+          0
+        ],
+        "updated_at": "2026-06-11T08:28:47.106380+00:00"
+      },
+      {
+        "clip_kind": "mono",
+        "count": 159,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "033d093b7e53",
+        "labels": [
+          "voice_talking"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260605T144229Z-ae6c78",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "temna",
+          "talk",
+          "solo"
+        ],
+        "triggered_channels": [
+          2
+        ],
+        "updated_at": "2026-06-11T08:28:47.120443+00:00"
+      },
+      {
+        "clip_kind": "channel_split",
+        "count": 26,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "01ace57e840a",
+        "labels": [
+          "voice_talking"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260605T144043Z-395eec",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "temna",
+          "talk",
+          "solo"
+        ],
+        "triggered_channels": [
+          0
+        ],
+        "updated_at": "2026-06-11T08:28:47.132087+00:00"
+      },
+      {
+        "clip_kind": "channel_split",
+        "count": 170,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "de7b5c4844b9",
+        "labels": [
+          "voice_talking"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260605T144229Z-ae6c78",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "temna",
+          "talk",
+          "solo"
+        ],
+        "triggered_channels": [
+          0
+        ],
+        "updated_at": "2026-06-11T08:28:47.141706+00:00"
+      },
+      {
+        "clip_kind": "channel_split",
+        "count": 0,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "26708faad918",
+        "labels": [
+          "voice_talking"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260605T144043Z-395eec",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "temna",
+          "talk",
+          "solo"
+        ],
+        "triggered_channels": [
+          1
+        ],
+        "updated_at": "2026-06-11T08:28:47.153765+00:00"
+      },
+      {
+        "clip_kind": "channel_split",
+        "count": 26,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "c80cae7f9baf",
+        "labels": [
+          "voice_talking"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260605T144043Z-395eec",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "temna",
+          "talk",
+          "solo"
+        ],
+        "triggered_channels": [
+          2
+        ],
+        "updated_at": "2026-06-11T08:28:47.167024+00:00"
+      },
+      {
+        "clip_kind": "channel_split",
+        "count": 73,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "77c8eccfbcbc",
+        "labels": [
+          "voice_talking"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260605T144229Z-ae6c78",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "temna",
+          "talk",
+          "solo"
+        ],
+        "triggered_channels": [
+          1
+        ],
+        "updated_at": "2026-06-11T08:28:47.178144+00:00"
+      },
+      {
+        "clip_kind": "channel_split",
+        "count": 159,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "0e2205c40f4f",
+        "labels": [
+          "voice_talking"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260605T144229Z-ae6c78",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "temna",
+          "talk",
+          "solo"
+        ],
+        "triggered_channels": [
+          2
+        ],
+        "updated_at": "2026-06-11T08:28:47.188170+00:00"
+      },
+      {
+        "clip_kind": "mono",
+        "count": 60,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "f43eebc577f9",
+        "labels": [
+          "glasses"
+        ],
+        "mic_filter": "unknown",
+        "project_ids": [
+          "_library"
+        ],
+        "session": "20260528T1",
+        "source_bucket": "raw",
+        "split": "train",
+        "updated_at": "2026-06-11T23:13:03.351088+00:00"
+      }
+    ],
+    "cheers_loud": [
+      {
+        "clip_kind": "channel_split",
+        "count": 100,
+        "dataset_role": "train",
+        "density": "empty",
+        "id": "0a645ed6bb45",
+        "labels": [
+          "ikea_wine"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260605T140649Z-63eef7",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "wine",
+          "loud",
+          "ikea",
+          "full"
+        ],
+        "triggered_channels": [
+          0
+        ],
+        "updated_at": "2026-06-11T08:14:15.943390+00:00"
+      },
+      {
+        "clip_kind": "channel_split",
+        "count": 100,
+        "dataset_role": "train",
+        "density": "empty",
+        "id": "27288a83d7aa",
+        "labels": [
+          "ikea_wine"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260605T140649Z-63eef7",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "wine",
+          "loud",
+          "ikea",
+          "full"
+        ],
+        "triggered_channels": [
+          1
+        ],
+        "updated_at": "2026-06-11T08:14:16.019402+00:00"
+      },
+      {
+        "clip_kind": "channel_split",
+        "count": 99,
+        "dataset_role": "train",
+        "density": "empty",
+        "id": "eb5564efa853",
+        "labels": [
+          "ikea_wine"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260605T140649Z-63eef7",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "wine",
+          "loud",
+          "ikea",
+          "full"
+        ],
+        "triggered_channels": [
+          2
+        ],
+        "updated_at": "2026-06-11T08:14:16.045102+00:00"
+      },
+      {
+        "clip_kind": "mono",
+        "count": 200,
+        "dataset_role": "train",
+        "density": "empty",
+        "id": "9922a61edb8b",
+        "labels": [
+          "ikea_wine"
+        ],
+        "mic_filter": "unknown",
+        "project_ids": [
+          "cheers"
+        ],
+        "source_bucket": "derived",
+        "split": "train",
+        "tags_all": [
+          "wine",
+          "loud",
+          "ikea",
+          "full",
+          "office",
+          "rnd",
+          "talk",
+          "ambience"
+        ],
+        "updated_at": "2026-06-11T22:47:25.937432+00:00"
+      },
+      {
+        "clip_kind": "mono",
+        "count": 200,
+        "dataset_role": "train",
+        "density": "empty",
+        "id": "6215f0c05a41",
+        "labels": [
+          "ikea_wine"
+        ],
+        "mic_filter": "unknown",
+        "project_ids": [
+          "cheers"
+        ],
+        "source_bucket": "derived",
+        "split": "train",
+        "tags_all": [
+          "wine",
+          "loud",
+          "ikea",
+          "full",
+          "temna",
+          "talk",
+          "solo"
+        ],
+        "updated_at": "2026-06-11T22:47:25.961165+00:00"
+      },
+      {
+        "clip_kind": "mono",
+        "count": 198,
+        "dataset_role": "train",
+        "density": "empty",
+        "id": "0a8058db07a1",
+        "labels": [
+          "ikea_wine"
+        ],
+        "mic_filter": "unknown",
+        "project_ids": [
+          "cheers"
+        ],
+        "source_bucket": "derived",
+        "split": "train",
+        "tags_all": [
+          "wine",
+          "loud",
+          "ikea",
+          "full",
+          "temna",
+          "cuttlery",
+          "glasses"
+        ],
+        "updated_at": "2026-06-11T22:47:25.978920+00:00"
+      },
+      {
+        "clip_kind": "mono",
+        "count": 3,
+        "dataset_role": "test",
+        "density": "quiet",
+        "id": "db529f0875a1",
+        "labels": [
+          "ikea_wine"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260616T130941Z-3f18c8",
+        "source_bucket": "raw",
+        "split": "test",
+        "tags_all": [
+          "wine-glass",
+          "loud",
+          "ikdea"
+        ],
+        "triggered_channels": [
+          2
+        ],
+        "updated_at": "2026-06-16T20:16:30.807395+00:00"
+      },
+      {
+        "clip_kind": "channel_split",
+        "count": 20,
+        "dataset_role": "test",
+        "density": "quiet",
+        "id": "68dad8f6ff7b",
+        "labels": [
+          "ikea_wine"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260616T130941Z-3f18c8",
+        "source_bucket": "raw",
+        "split": "test",
+        "tags_all": [
+          "wine-glass",
+          "loud",
+          "ikdea"
+        ],
+        "triggered_channels": [
+          0
+        ],
+        "updated_at": "2026-06-16T20:16:30.822341+00:00"
+      },
+      {
+        "clip_kind": "channel_split",
+        "count": 22,
+        "dataset_role": "test",
+        "density": "quiet",
+        "id": "7aa3545812e0",
+        "labels": [
+          "ikea_wine"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260616T130941Z-3f18c8",
+        "source_bucket": "raw",
+        "split": "test",
+        "tags_all": [
+          "wine-glass",
+          "loud",
+          "ikdea"
+        ],
+        "triggered_channels": [
+          1
+        ],
+        "updated_at": "2026-06-16T20:16:30.842333+00:00"
+      },
+      {
+        "clip_kind": "channel_split",
+        "count": 22,
+        "dataset_role": "test",
+        "density": "quiet",
+        "id": "ed6cdbaf2ae4",
+        "labels": [
+          "ikea_wine"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260616T130941Z-3f18c8",
+        "source_bucket": "raw",
+        "split": "test",
+        "tags_all": [
+          "wine-glass",
+          "loud",
+          "ikdea"
+        ],
+        "triggered_channels": [
+          2
+        ],
+        "updated_at": "2026-06-16T20:16:30.863317+00:00"
+      }
+    ],
+    "cheers_medium": [
+      {
+        "clip_kind": "channel_split",
+        "count": 99,
+        "dataset_role": "train",
+        "density": "empty",
+        "id": "92016a5b9401",
+        "labels": [
+          "riedel_wine"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260605T141158Z-b5dfbf",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "wine",
+          "medium",
+          "riedel",
+          "full"
+        ],
+        "triggered_channels": [
+          0
+        ],
+        "updated_at": "2026-06-11T08:14:49.142356+00:00"
+      },
+      {
+        "clip_kind": "channel_split",
+        "count": 100,
+        "dataset_role": "train",
+        "density": "empty",
+        "id": "61136adfc83d",
+        "labels": [
+          "riedel_wine"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260605T141158Z-b5dfbf",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "wine",
+          "medium",
+          "riedel",
+          "full"
+        ],
+        "triggered_channels": [
+          1
+        ],
+        "updated_at": "2026-06-11T08:14:49.162509+00:00"
+      },
+      {
+        "clip_kind": "channel_split",
+        "count": 100,
+        "dataset_role": "train",
+        "density": "empty",
+        "id": "0f419216ba91",
+        "labels": [
+          "riedel_wine"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260605T141158Z-b5dfbf",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "wine",
+          "medium",
+          "riedel",
+          "full"
+        ],
+        "triggered_channels": [
+          2
+        ],
+        "updated_at": "2026-06-11T08:14:49.186801+00:00"
+      },
+      {
+        "clip_kind": "mono",
+        "count": 200,
+        "dataset_role": "train",
+        "density": "empty",
+        "id": "7176b67fdaec",
+        "labels": [
+          "riedel_wine"
+        ],
+        "mic_filter": "unknown",
+        "project_ids": [
+          "cheers"
+        ],
+        "source_bucket": "derived",
+        "split": "train",
+        "tags_all": [
+          "wine",
+          "medium",
+          "riedel",
+          "full",
+          "office",
+          "rnd",
+          "talk",
+          "ambience"
+        ],
+        "updated_at": "2026-06-11T22:47:44.843485+00:00"
+      },
+      {
+        "clip_kind": "mono",
+        "count": 200,
+        "dataset_role": "train",
+        "density": "empty",
+        "id": "9f6b9ab56ae6",
+        "labels": [
+          "riedel_wine"
+        ],
+        "mic_filter": "unknown",
+        "project_ids": [
+          "cheers"
+        ],
+        "source_bucket": "derived",
+        "split": "train",
+        "tags_all": [
+          "wine",
+          "medium",
+          "riedel",
+          "full",
+          "temna",
+          "talk",
+          "solo"
+        ],
+        "updated_at": "2026-06-11T22:47:44.860904+00:00"
+      },
+      {
+        "clip_kind": "mono",
+        "count": 199,
+        "dataset_role": "train",
+        "density": "empty",
+        "id": "0aaf902b88b9",
+        "labels": [
+          "riedel_wine"
+        ],
+        "mic_filter": "unknown",
+        "project_ids": [
+          "cheers"
+        ],
+        "source_bucket": "derived",
+        "split": "train",
+        "tags_all": [
+          "wine",
+          "medium",
+          "riedel",
+          "full",
+          "temna",
+          "cuttlery",
+          "glasses"
+        ],
+        "updated_at": "2026-06-11T22:47:44.878916+00:00"
+      },
+      {
+        "clip_kind": "channel_split",
+        "count": 18,
+        "dataset_role": "test",
+        "density": "quiet",
+        "id": "e343b5b52987",
+        "labels": [
+          "riedel_wine"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260616T131124Z-91cd5f",
+        "source_bucket": "raw",
+        "split": "test",
+        "tags_all": [
+          "wine-glass",
+          "medium",
+          "riedel"
+        ],
+        "triggered_channels": [
+          0
+        ],
+        "updated_at": "2026-06-16T20:16:04.153727+00:00"
+      },
+      {
+        "clip_kind": "channel_split",
+        "count": 21,
+        "dataset_role": "test",
+        "density": "quiet",
+        "id": "02f77b5af9b3",
+        "labels": [
+          "riedel_wine"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260616T131124Z-91cd5f",
+        "source_bucket": "raw",
+        "split": "test",
+        "tags_all": [
+          "wine-glass",
+          "medium",
+          "riedel"
+        ],
+        "triggered_channels": [
+          1
+        ],
+        "updated_at": "2026-06-16T20:16:04.174148+00:00"
+      },
+      {
+        "clip_kind": "channel_split",
+        "count": 21,
+        "dataset_role": "test",
+        "density": "quiet",
+        "id": "da58635ff40e",
+        "labels": [
+          "riedel_wine"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260616T131124Z-91cd5f",
+        "source_bucket": "raw",
+        "split": "test",
+        "tags_all": [
+          "wine-glass",
+          "medium",
+          "riedel"
+        ],
+        "triggered_channels": [
+          2
+        ],
+        "updated_at": "2026-06-16T20:16:04.196673+00:00"
+      },
+      {
+        "clip_kind": "mono",
+        "count": 4,
+        "dataset_role": "test",
+        "density": "quiet",
+        "id": "221e7c14089e",
+        "labels": [
+          "riedel_wine"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260616T131124Z-91cd5f",
+        "source_bucket": "raw",
+        "split": "test",
+        "tags_all": [
+          "wine-glass",
+          "medium",
+          "riedel"
+        ],
+        "triggered_channels": [
+          2
+        ],
+        "updated_at": "2026-06-16T20:16:04.219802+00:00"
+      }
+    ],
+    "cheers_quiet": [
+      {
+        "clip_kind": "channel_split",
+        "count": 99,
+        "dataset_role": "train",
+        "density": "empty",
+        "id": "d17954abd3ea",
+        "labels": [
+          "riedel_veloce"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260605T141913Z-1e033b",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "wine",
+          "quiet",
+          "riedel",
+          "full"
+        ],
+        "triggered_channels": [
+          0
+        ],
+        "updated_at": "2026-06-11T08:14:32.276981+00:00"
+      },
+      {
+        "clip_kind": "channel_split",
+        "count": 99,
+        "dataset_role": "train",
+        "density": "empty",
+        "id": "291c27b16c2b",
+        "labels": [
+          "riedel_veloce"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260605T141913Z-1e033b",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "wine",
+          "quiet",
+          "riedel",
+          "full"
+        ],
+        "triggered_channels": [
+          1
+        ],
+        "updated_at": "2026-06-11T08:14:32.299471+00:00"
+      },
+      {
+        "clip_kind": "channel_split",
+        "count": 100,
+        "dataset_role": "train",
+        "density": "empty",
+        "id": "87118e916435",
+        "labels": [
+          "riedel_veloce"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260605T141913Z-1e033b",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "wine",
+          "quiet",
+          "riedel",
+          "full"
+        ],
+        "triggered_channels": [
+          2
+        ],
+        "updated_at": "2026-06-11T08:14:32.323828+00:00"
+      },
+      {
+        "clip_kind": "mono",
+        "count": 198,
+        "dataset_role": "train",
+        "density": "empty",
+        "id": "6e09acc8fbc6",
+        "labels": [
+          "riedel_veloce"
+        ],
+        "mic_filter": "unknown",
+        "project_ids": [
+          "cheers"
+        ],
+        "source_bucket": "derived",
+        "split": "train",
+        "tags_all": [
+          "wine",
+          "quiet",
+          "riedel",
+          "full",
+          "office",
+          "rnd",
+          "talk",
+          "ambience"
+        ],
+        "updated_at": "2026-06-11T22:47:35.205818+00:00"
+      },
+      {
+        "clip_kind": "mono",
+        "count": 198,
+        "dataset_role": "train",
+        "density": "empty",
+        "id": "2eb207df547c",
+        "labels": [
+          "riedel_veloce"
+        ],
+        "mic_filter": "unknown",
+        "project_ids": [
+          "cheers"
+        ],
+        "source_bucket": "derived",
+        "split": "train",
+        "tags_all": [
+          "wine",
+          "quiet",
+          "riedel",
+          "full",
+          "temna",
+          "talk",
+          "solo"
+        ],
+        "updated_at": "2026-06-11T22:47:35.219581+00:00"
+      },
+      {
+        "clip_kind": "mono",
+        "count": 199,
+        "dataset_role": "train",
+        "density": "empty",
+        "id": "dbf8701c7f65",
+        "labels": [
+          "riedel_veloce"
+        ],
+        "mic_filter": "unknown",
+        "project_ids": [
+          "cheers"
+        ],
+        "source_bucket": "derived",
+        "split": "train",
+        "tags_all": [
+          "wine",
+          "quiet",
+          "riedel",
+          "full",
+          "temna",
+          "cuttlery",
+          "glasses"
+        ],
+        "updated_at": "2026-06-11T22:47:35.235352+00:00"
+      },
+      {
+        "clip_kind": "mono",
+        "count": 4,
+        "dataset_role": "test",
+        "density": "quiet",
+        "id": "408839f93313",
+        "labels": [
+          "riedel_veloce"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260616T131334Z-79e60b",
+        "source_bucket": "raw",
+        "split": "test",
+        "tags_all": [
+          "wine-glass",
+          "quiet",
+          "riedel"
+        ],
+        "triggered_channels": [
+          2
+        ],
+        "updated_at": "2026-06-16T20:16:53.817845+00:00"
+      },
+      {
+        "clip_kind": "channel_split",
+        "count": 20,
+        "dataset_role": "test",
+        "density": "quiet",
+        "id": "684cb4988227",
+        "labels": [
+          "riedel_veloce"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260616T131334Z-79e60b",
+        "source_bucket": "raw",
+        "split": "test",
+        "tags_all": [
+          "wine-glass",
+          "quiet",
+          "riedel"
+        ],
+        "triggered_channels": [
+          0
+        ],
+        "updated_at": "2026-06-16T20:16:53.832149+00:00"
+      },
+      {
+        "clip_kind": "channel_split",
+        "count": 21,
+        "dataset_role": "test",
+        "density": "quiet",
+        "id": "8fb16738e2e1",
+        "labels": [
+          "riedel_veloce"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260616T131334Z-79e60b",
+        "source_bucket": "raw",
+        "split": "test",
+        "tags_all": [
+          "wine-glass",
+          "quiet",
+          "riedel"
+        ],
+        "triggered_channels": [
+          1
+        ],
+        "updated_at": "2026-06-16T20:16:53.845970+00:00"
+      },
+      {
+        "clip_kind": "channel_split",
+        "count": 21,
+        "dataset_role": "test",
+        "density": "quiet",
+        "id": "94258c2fe783",
+        "labels": [
+          "riedel_veloce"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260616T131334Z-79e60b",
+        "source_bucket": "raw",
+        "split": "test",
+        "tags_all": [
+          "wine-glass",
+          "quiet",
+          "riedel"
+        ],
+        "triggered_channels": [
+          2
+        ],
+        "updated_at": "2026-06-16T20:17:38.573729+00:00"
+      }
+    ]
+  },
+  "augmentation_combinations": {},
+  "augmentation_recipes": [
+    {
+      "base": "ikea_wine",
+      "base_count": 100,
+      "base_filter": {
+        "clip_kind": "channel_split",
+        "count": 100,
+        "dataset_role": "train",
+        "density": "empty",
+        "id": "1f350dcf85bd",
+        "labels": [
+          "ikea_wine"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260605T140649Z-63eef7",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "wine",
+          "loud",
+          "ikea",
+          "full"
+        ],
+        "triggered_channels": [
+          0
+        ],
+        "updated_at": "2026-06-11T22:21:19.495429+00:00"
+      },
+      "base_filters": [
+        {
+          "clip_kind": "channel_split",
+          "count": 100,
+          "dataset_role": "train",
+          "density": "empty",
+          "id": "1f350dcf85bd",
+          "labels": [
+            "ikea_wine"
+          ],
+          "project_ids": [
+            "cheers"
+          ],
+          "session": "20260605T140649Z-63eef7",
+          "source_bucket": "raw",
+          "split": "train",
+          "tags_all": [
+            "wine",
+            "loud",
+            "ikea",
+            "full"
+          ],
+          "triggered_channels": [
+            0
+          ],
+          "updated_at": "2026-06-11T22:21:19.495429+00:00"
+        }
+      ],
+      "description": "ikea_wine x ambience_rnd",
+      "frozen_test": false,
+      "id": "2972c4826e50",
+      "overlay": "ambience_rnd",
+      "overlay_count": 224,
+      "overlay_filter": {
+        "clip_kind": "mono",
+        "count": 224,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "6393b6112982",
+        "labels": [
+          "ambience_rnd"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260611T064651Z-a570e8",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "office",
+          "rnd",
+          "talk",
+          "ambience"
+        ],
+        "triggered_channels": [
+          2
+        ],
+        "updated_at": "2026-06-11T22:21:19.495444+00:00"
+      },
+      "overlay_filters": [
+        {
+          "clip_kind": "mono",
+          "count": 224,
+          "dataset_role": "train",
+          "density": "normal",
+          "id": "6393b6112982",
+          "labels": [
+            "ambience_rnd"
+          ],
+          "project_ids": [
+            "cheers"
+          ],
+          "session": "20260611T064651Z-a570e8",
+          "source_bucket": "raw",
+          "split": "train",
+          "tags_all": [
+            "office",
+            "rnd",
+            "talk",
+            "ambience"
+          ],
+          "triggered_channels": [
+            2
+          ],
+          "updated_at": "2026-06-11T22:21:19.495444+00:00"
+        }
+      ],
+      "prefix": "",
+      "recipe_id": "2972c4826e50",
+      "replace_existing": true,
+      "selected": true,
+      "settings": {
+        "enabled": true,
+        "mask_band_count": 7,
+        "mask_candidate_attempts": 7,
+        "mask_filter_enabled": true,
+        "mask_min_band_db": null,
+        "mask_min_effective_snr_db": null,
+        "mask_min_mean_db": 6.0,
+        "mask_min_p25_db": 3.0,
+        "mask_top_frames": 7,
+        "overlay_enabled": true,
+        "pitch_shift_enabled": true,
+        "prevent_clipping": false,
+        "samples_per_source": 2.0,
+        "scale_noise_to_snr": false,
+        "seed": 42,
+        "semitones_range": [
+          -1.0,
+          1.0
+        ],
+        "snr_db_range": [
+          0.0,
+          20.0
+        ],
+        "transient_window_ms": 100
+      },
+      "tags": [
+        "wine",
+        "loud",
+        "ikea",
+        "full",
+        "office",
+        "rnd",
+        "talk",
+        "ambience"
+      ],
+      "updated_at": "2026-06-11T22:21:19.495467+00:00"
+    },
+    {
+      "base": "ikea_wine",
+      "base_count": 100,
+      "base_filter": {
+        "clip_kind": "channel_split",
+        "count": 100,
+        "dataset_role": "train",
+        "density": "empty",
+        "id": "fdaaa5967f70",
+        "labels": [
+          "ikea_wine"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260605T140649Z-63eef7",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "wine",
+          "loud",
+          "ikea",
+          "full"
+        ],
+        "triggered_channels": [
+          0
+        ],
+        "updated_at": "2026-06-11T21:15:31.324312+00:00"
+      },
+      "base_filters": [
+        {
+          "clip_kind": "channel_split",
+          "count": 100,
+          "dataset_role": "train",
+          "density": "empty",
+          "id": "fdaaa5967f70",
+          "labels": [
+            "ikea_wine"
+          ],
+          "project_ids": [
+            "cheers"
+          ],
+          "session": "20260605T140649Z-63eef7",
+          "source_bucket": "raw",
+          "split": "train",
+          "tags_all": [
+            "wine",
+            "loud",
+            "ikea",
+            "full"
+          ],
+          "triggered_channels": [
+            0
+          ],
+          "updated_at": "2026-06-11T21:15:31.324312+00:00"
+        }
+      ],
+      "description": "ikea_wine x voice_talking",
+      "frozen_test": false,
+      "id": "d5b0c8fa0cdc",
+      "overlay": "voice_talking",
+      "overlay_count": 170,
+      "overlay_filter": {
+        "clip_kind": "channel_split",
+        "count": 170,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "bdb00cc6ef45",
+        "labels": [
+          "voice_talking"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260605T144229Z-ae6c78",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "temna",
+          "talk",
+          "solo"
+        ],
+        "triggered_channels": [
+          0
+        ],
+        "updated_at": "2026-06-11T21:15:31.324330+00:00"
+      },
+      "overlay_filters": [
+        {
+          "clip_kind": "channel_split",
+          "count": 170,
+          "dataset_role": "train",
+          "density": "normal",
+          "id": "bdb00cc6ef45",
+          "labels": [
+            "voice_talking"
+          ],
+          "project_ids": [
+            "cheers"
+          ],
+          "session": "20260605T144229Z-ae6c78",
+          "source_bucket": "raw",
+          "split": "train",
+          "tags_all": [
+            "temna",
+            "talk",
+            "solo"
+          ],
+          "triggered_channels": [
+            0
+          ],
+          "updated_at": "2026-06-11T21:15:31.324330+00:00"
+        }
+      ],
+      "prefix": "",
+      "recipe_id": "d5b0c8fa0cdc",
+      "replace_existing": true,
+      "selected": true,
+      "settings": {
+        "enabled": true,
+        "mask_band_count": 7,
+        "mask_candidate_attempts": 7,
+        "mask_filter_enabled": true,
+        "mask_min_band_db": null,
+        "mask_min_effective_snr_db": null,
+        "mask_min_mean_db": 6.0,
+        "mask_min_p25_db": 3.0,
+        "mask_top_frames": 7,
+        "overlay_enabled": true,
+        "pitch_shift_enabled": true,
+        "prevent_clipping": false,
+        "samples_per_source": 2.0,
+        "scale_noise_to_snr": false,
+        "seed": 42,
+        "semitones_range": [
+          -1.0,
+          1.0
+        ],
+        "snr_db_range": [
+          0.0,
+          20.0
+        ],
+        "transient_window_ms": 100
+      },
+      "tags": [
+        "wine",
+        "loud",
+        "ikea",
+        "full",
+        "temna",
+        "talk",
+        "solo"
+      ],
+      "updated_at": "2026-06-11T21:15:31.324366+00:00"
+    },
+    {
+      "base": "ikea_wine",
+      "base_count": 99,
+      "base_filter": {
+        "clip_kind": "channel_split",
+        "count": 99,
+        "dataset_role": "train",
+        "density": "empty",
+        "id": "9d4d51b791e7",
+        "labels": [
+          "ikea_wine"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260605T140649Z-63eef7",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "wine",
+          "loud",
+          "ikea",
+          "full"
+        ],
+        "triggered_channels": [
+          2
+        ],
+        "updated_at": "2026-06-11T21:15:33.191707+00:00"
+      },
+      "base_filters": [
+        {
+          "clip_kind": "channel_split",
+          "count": 99,
+          "dataset_role": "train",
+          "density": "empty",
+          "id": "9d4d51b791e7",
+          "labels": [
+            "ikea_wine"
+          ],
+          "project_ids": [
+            "cheers"
+          ],
+          "session": "20260605T140649Z-63eef7",
+          "source_bucket": "raw",
+          "split": "train",
+          "tags_all": [
+            "wine",
+            "loud",
+            "ikea",
+            "full"
+          ],
+          "triggered_channels": [
+            2
+          ],
+          "updated_at": "2026-06-11T21:15:33.191707+00:00"
+        }
+      ],
+      "description": "ikea_wine x cuttlery",
+      "frozen_test": false,
+      "id": "4c2b4e598973",
+      "overlay": "cuttlery",
+      "overlay_count": 96,
+      "overlay_filter": {
+        "clip_kind": "channel_split",
+        "count": 96,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "c0fb13fcab6a",
+        "labels": [
+          "cuttlery"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260605T145619Z-d01288",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "temna",
+          "cuttlery",
+          "glasses"
+        ],
+        "triggered_channels": [
+          2
+        ],
+        "updated_at": "2026-06-11T21:15:33.191743+00:00"
+      },
+      "overlay_filters": [
+        {
+          "clip_kind": "channel_split",
+          "count": 96,
+          "dataset_role": "train",
+          "density": "normal",
+          "id": "c0fb13fcab6a",
+          "labels": [
+            "cuttlery"
+          ],
+          "project_ids": [
+            "cheers"
+          ],
+          "session": "20260605T145619Z-d01288",
+          "source_bucket": "raw",
+          "split": "train",
+          "tags_all": [
+            "temna",
+            "cuttlery",
+            "glasses"
+          ],
+          "triggered_channels": [
+            2
+          ],
+          "updated_at": "2026-06-11T21:15:33.191743+00:00"
+        }
+      ],
+      "prefix": "",
+      "recipe_id": "4c2b4e598973",
+      "replace_existing": true,
+      "selected": true,
+      "settings": {
+        "enabled": true,
+        "mask_band_count": 7,
+        "mask_candidate_attempts": 7,
+        "mask_filter_enabled": true,
+        "mask_min_band_db": null,
+        "mask_min_effective_snr_db": null,
+        "mask_min_mean_db": 6.0,
+        "mask_min_p25_db": 3.0,
+        "mask_top_frames": 7,
+        "overlay_enabled": true,
+        "pitch_shift_enabled": true,
+        "prevent_clipping": false,
+        "samples_per_source": 2.0,
+        "scale_noise_to_snr": false,
+        "seed": 42,
+        "semitones_range": [
+          -1.0,
+          1.0
+        ],
+        "snr_db_range": [
+          0.0,
+          20.0
+        ],
+        "transient_window_ms": 100
+      },
+      "tags": [
+        "wine",
+        "loud",
+        "ikea",
+        "full",
+        "temna",
+        "cuttlery",
+        "glasses"
+      ],
+      "updated_at": "2026-06-11T21:15:33.191800+00:00"
+    },
+    {
+      "base": "riedel_wine",
+      "base_count": 100,
+      "base_filter": {
+        "clip_kind": "channel_split",
+        "count": 100,
+        "dataset_role": "train",
+        "density": "empty",
+        "id": "061c7ebda9b0",
+        "labels": [
+          "riedel_wine"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260605T141158Z-b5dfbf",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "wine",
+          "medium",
+          "riedel",
+          "full"
+        ],
+        "triggered_channels": [
+          1
+        ],
+        "updated_at": "2026-06-11T21:15:35.759421+00:00"
+      },
+      "base_filters": [
+        {
+          "clip_kind": "channel_split",
+          "count": 100,
+          "dataset_role": "train",
+          "density": "empty",
+          "id": "061c7ebda9b0",
+          "labels": [
+            "riedel_wine"
+          ],
+          "project_ids": [
+            "cheers"
+          ],
+          "session": "20260605T141158Z-b5dfbf",
+          "source_bucket": "raw",
+          "split": "train",
+          "tags_all": [
+            "wine",
+            "medium",
+            "riedel",
+            "full"
+          ],
+          "triggered_channels": [
+            1
+          ],
+          "updated_at": "2026-06-11T21:15:35.759421+00:00"
+        }
+      ],
+      "description": "riedel_wine x ambience_rnd",
+      "frozen_test": false,
+      "id": "cfa119637d7c",
+      "overlay": "ambience_rnd",
+      "overlay_count": 224,
+      "overlay_filter": {
+        "clip_kind": "mono",
+        "count": 224,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "9f83d0916f7f",
+        "labels": [
+          "ambience_rnd"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260611T064651Z-a570e8",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "office",
+          "rnd",
+          "talk",
+          "ambience"
+        ],
+        "triggered_channels": [
+          2
+        ],
+        "updated_at": "2026-06-11T21:15:35.759436+00:00"
+      },
+      "overlay_filters": [
+        {
+          "clip_kind": "mono",
+          "count": 224,
+          "dataset_role": "train",
+          "density": "normal",
+          "id": "9f83d0916f7f",
+          "labels": [
+            "ambience_rnd"
+          ],
+          "project_ids": [
+            "cheers"
+          ],
+          "session": "20260611T064651Z-a570e8",
+          "source_bucket": "raw",
+          "split": "train",
+          "tags_all": [
+            "office",
+            "rnd",
+            "talk",
+            "ambience"
+          ],
+          "triggered_channels": [
+            2
+          ],
+          "updated_at": "2026-06-11T21:15:35.759436+00:00"
+        }
+      ],
+      "prefix": "",
+      "recipe_id": "cfa119637d7c",
+      "replace_existing": true,
+      "selected": true,
+      "settings": {
+        "enabled": true,
+        "mask_band_count": 7,
+        "mask_candidate_attempts": 7,
+        "mask_filter_enabled": true,
+        "mask_min_band_db": null,
+        "mask_min_effective_snr_db": null,
+        "mask_min_mean_db": 6.0,
+        "mask_min_p25_db": 3.0,
+        "mask_top_frames": 7,
+        "overlay_enabled": true,
+        "pitch_shift_enabled": true,
+        "prevent_clipping": false,
+        "samples_per_source": 2.0,
+        "scale_noise_to_snr": false,
+        "seed": 42,
+        "semitones_range": [
+          -1.0,
+          1.0
+        ],
+        "snr_db_range": [
+          0.0,
+          20.0
+        ],
+        "transient_window_ms": 100
+      },
+      "tags": [
+        "wine",
+        "medium",
+        "riedel",
+        "full",
+        "office",
+        "rnd",
+        "talk",
+        "ambience"
+      ],
+      "updated_at": "2026-06-11T21:15:35.759457+00:00"
+    },
+    {
+      "base": "riedel_wine",
+      "base_count": 100,
+      "base_filter": {
+        "clip_kind": "channel_split",
+        "count": 100,
+        "dataset_role": "train",
+        "density": "empty",
+        "id": "9d3eb5716787",
+        "labels": [
+          "riedel_wine"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260605T141158Z-b5dfbf",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "wine",
+          "medium",
+          "riedel",
+          "full"
+        ],
+        "triggered_channels": [
+          2
+        ],
+        "updated_at": "2026-06-11T21:15:38.030493+00:00"
+      },
+      "base_filters": [
+        {
+          "clip_kind": "channel_split",
+          "count": 100,
+          "dataset_role": "train",
+          "density": "empty",
+          "id": "9d3eb5716787",
+          "labels": [
+            "riedel_wine"
+          ],
+          "project_ids": [
+            "cheers"
+          ],
+          "session": "20260605T141158Z-b5dfbf",
+          "source_bucket": "raw",
+          "split": "train",
+          "tags_all": [
+            "wine",
+            "medium",
+            "riedel",
+            "full"
+          ],
+          "triggered_channels": [
+            2
+          ],
+          "updated_at": "2026-06-11T21:15:38.030493+00:00"
+        }
+      ],
+      "description": "riedel_wine x voice_talking",
+      "frozen_test": false,
+      "id": "13f632a6c26f",
+      "overlay": "voice_talking",
+      "overlay_count": 159,
+      "overlay_filter": {
+        "clip_kind": "channel_split",
+        "count": 159,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "c93fe71de162",
+        "labels": [
+          "voice_talking"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260605T144229Z-ae6c78",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "temna",
+          "talk",
+          "solo"
+        ],
+        "triggered_channels": [
+          2
+        ],
+        "updated_at": "2026-06-11T21:15:38.030522+00:00"
+      },
+      "overlay_filters": [
+        {
+          "clip_kind": "channel_split",
+          "count": 159,
+          "dataset_role": "train",
+          "density": "normal",
+          "id": "c93fe71de162",
+          "labels": [
+            "voice_talking"
+          ],
+          "project_ids": [
+            "cheers"
+          ],
+          "session": "20260605T144229Z-ae6c78",
+          "source_bucket": "raw",
+          "split": "train",
+          "tags_all": [
+            "temna",
+            "talk",
+            "solo"
+          ],
+          "triggered_channels": [
+            2
+          ],
+          "updated_at": "2026-06-11T21:15:38.030522+00:00"
+        }
+      ],
+      "prefix": "",
+      "recipe_id": "13f632a6c26f",
+      "replace_existing": true,
+      "selected": true,
+      "settings": {
+        "enabled": true,
+        "mask_band_count": 7,
+        "mask_candidate_attempts": 7,
+        "mask_filter_enabled": true,
+        "mask_min_band_db": null,
+        "mask_min_effective_snr_db": null,
+        "mask_min_mean_db": 6.0,
+        "mask_min_p25_db": 3.0,
+        "mask_top_frames": 7,
+        "overlay_enabled": true,
+        "pitch_shift_enabled": true,
+        "prevent_clipping": false,
+        "samples_per_source": 2.0,
+        "scale_noise_to_snr": false,
+        "seed": 42,
+        "semitones_range": [
+          -1.0,
+          1.0
+        ],
+        "snr_db_range": [
+          0.0,
+          20.0
+        ],
+        "transient_window_ms": 100
+      },
+      "tags": [
+        "wine",
+        "medium",
+        "riedel",
+        "full",
+        "temna",
+        "talk",
+        "solo"
+      ],
+      "updated_at": "2026-06-11T21:15:38.030560+00:00"
+    },
+    {
+      "base": "riedel_wine",
+      "base_count": 100,
+      "base_filter": {
+        "clip_kind": "channel_split",
+        "count": 100,
+        "dataset_role": "train",
+        "density": "empty",
+        "id": "1b3b6c56ace4",
+        "labels": [
+          "riedel_wine"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260605T141158Z-b5dfbf",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "wine",
+          "medium",
+          "riedel",
+          "full"
+        ],
+        "triggered_channels": [
+          2
+        ],
+        "updated_at": "2026-06-11T22:21:09.884085+00:00"
+      },
+      "base_filters": [
+        {
+          "clip_kind": "channel_split",
+          "count": 100,
+          "dataset_role": "train",
+          "density": "empty",
+          "id": "1b3b6c56ace4",
+          "labels": [
+            "riedel_wine"
+          ],
+          "project_ids": [
+            "cheers"
+          ],
+          "session": "20260605T141158Z-b5dfbf",
+          "source_bucket": "raw",
+          "split": "train",
+          "tags_all": [
+            "wine",
+            "medium",
+            "riedel",
+            "full"
+          ],
+          "triggered_channels": [
+            2
+          ],
+          "updated_at": "2026-06-11T22:21:09.884085+00:00"
+        }
+      ],
+      "description": "riedel_wine x cuttlery",
+      "frozen_test": false,
+      "id": "23dc981ecbaa",
+      "overlay": "cuttlery",
+      "overlay_count": 94,
+      "overlay_filter": {
+        "clip_kind": "channel_split",
+        "count": 94,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "a9f928a609d3",
+        "labels": [
+          "cuttlery"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260605T145619Z-d01288",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "temna",
+          "cuttlery",
+          "glasses"
+        ],
+        "triggered_channels": [
+          0
+        ],
+        "updated_at": "2026-06-11T22:21:09.884111+00:00"
+      },
+      "overlay_filters": [
+        {
+          "clip_kind": "channel_split",
+          "count": 94,
+          "dataset_role": "train",
+          "density": "normal",
+          "id": "a9f928a609d3",
+          "labels": [
+            "cuttlery"
+          ],
+          "project_ids": [
+            "cheers"
+          ],
+          "session": "20260605T145619Z-d01288",
+          "source_bucket": "raw",
+          "split": "train",
+          "tags_all": [
+            "temna",
+            "cuttlery",
+            "glasses"
+          ],
+          "triggered_channels": [
+            0
+          ],
+          "updated_at": "2026-06-11T22:21:09.884111+00:00"
+        }
+      ],
+      "prefix": "",
+      "recipe_id": "23dc981ecbaa",
+      "replace_existing": true,
+      "selected": true,
+      "settings": {
+        "enabled": true,
+        "mask_band_count": 7,
+        "mask_candidate_attempts": 7,
+        "mask_filter_enabled": true,
+        "mask_min_band_db": null,
+        "mask_min_effective_snr_db": null,
+        "mask_min_mean_db": 6.0,
+        "mask_min_p25_db": 3.0,
+        "mask_top_frames": 7,
+        "overlay_enabled": true,
+        "pitch_shift_enabled": true,
+        "prevent_clipping": false,
+        "samples_per_source": 2.0,
+        "scale_noise_to_snr": false,
+        "seed": 42,
+        "semitones_range": [
+          -1.0,
+          1.0
+        ],
+        "snr_db_range": [
+          0.0,
+          20.0
+        ],
+        "transient_window_ms": 100
+      },
+      "tags": [
+        "wine",
+        "medium",
+        "riedel",
+        "full",
+        "temna",
+        "cuttlery",
+        "glasses"
+      ],
+      "updated_at": "2026-06-11T22:21:09.884146+00:00"
+    },
+    {
+      "base": "riedel_veloce",
+      "base_count": 99,
+      "base_filter": {
+        "clip_kind": "channel_split",
+        "count": 99,
+        "dataset_role": "train",
+        "density": "empty",
+        "id": "40cbed7355e2",
+        "labels": [
+          "riedel_veloce"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260605T141913Z-1e033b",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "wine",
+          "quiet",
+          "riedel",
+          "full"
+        ],
+        "triggered_channels": [
+          0
+        ],
+        "updated_at": "2026-06-11T21:15:41.364297+00:00"
+      },
+      "base_filters": [
+        {
+          "clip_kind": "channel_split",
+          "count": 99,
+          "dataset_role": "train",
+          "density": "empty",
+          "id": "40cbed7355e2",
+          "labels": [
+            "riedel_veloce"
+          ],
+          "project_ids": [
+            "cheers"
+          ],
+          "session": "20260605T141913Z-1e033b",
+          "source_bucket": "raw",
+          "split": "train",
+          "tags_all": [
+            "wine",
+            "quiet",
+            "riedel",
+            "full"
+          ],
+          "triggered_channels": [
+            0
+          ],
+          "updated_at": "2026-06-11T21:15:41.364297+00:00"
+        }
+      ],
+      "description": "riedel_veloce x ambience_rnd",
+      "frozen_test": false,
+      "id": "8d1d69ae7a44",
+      "overlay": "ambience_rnd",
+      "overlay_count": 224,
+      "overlay_filter": {
+        "clip_kind": "mono",
+        "count": 224,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "0cfaa344ba0c",
+        "labels": [
+          "ambience_rnd"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260611T064651Z-a570e8",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "office",
+          "rnd",
+          "talk",
+          "ambience"
+        ],
+        "triggered_channels": [
+          2
+        ],
+        "updated_at": "2026-06-11T21:15:41.364319+00:00"
+      },
+      "overlay_filters": [
+        {
+          "clip_kind": "mono",
+          "count": 224,
+          "dataset_role": "train",
+          "density": "normal",
+          "id": "0cfaa344ba0c",
+          "labels": [
+            "ambience_rnd"
+          ],
+          "project_ids": [
+            "cheers"
+          ],
+          "session": "20260611T064651Z-a570e8",
+          "source_bucket": "raw",
+          "split": "train",
+          "tags_all": [
+            "office",
+            "rnd",
+            "talk",
+            "ambience"
+          ],
+          "triggered_channels": [
+            2
+          ],
+          "updated_at": "2026-06-11T21:15:41.364319+00:00"
+        }
+      ],
+      "prefix": "",
+      "recipe_id": "8d1d69ae7a44",
+      "replace_existing": true,
+      "selected": true,
+      "settings": {
+        "enabled": true,
+        "mask_band_count": 7,
+        "mask_candidate_attempts": 7,
+        "mask_filter_enabled": true,
+        "mask_min_band_db": null,
+        "mask_min_effective_snr_db": null,
+        "mask_min_mean_db": 6.0,
+        "mask_min_p25_db": 3.0,
+        "mask_top_frames": 7,
+        "overlay_enabled": true,
+        "pitch_shift_enabled": true,
+        "prevent_clipping": false,
+        "samples_per_source": 2.0,
+        "scale_noise_to_snr": false,
+        "seed": 42,
+        "semitones_range": [
+          -1.0,
+          1.0
+        ],
+        "snr_db_range": [
+          0.0,
+          20.0
+        ],
+        "transient_window_ms": 100
+      },
+      "tags": [
+        "wine",
+        "quiet",
+        "riedel",
+        "full",
+        "office",
+        "rnd",
+        "talk",
+        "ambience"
+      ],
+      "updated_at": "2026-06-11T21:15:41.364350+00:00"
+    },
+    {
+      "base": "riedel_veloce",
+      "base_count": 99,
+      "base_filter": {
+        "clip_kind": "channel_split",
+        "count": 99,
+        "dataset_role": "train",
+        "density": "empty",
+        "id": "f01db6c81dd3",
+        "labels": [
+          "riedel_veloce"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260605T141913Z-1e033b",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "wine",
+          "quiet",
+          "riedel",
+          "full"
+        ],
+        "triggered_channels": [
+          1
+        ],
+        "updated_at": "2026-06-11T22:21:13.732082+00:00"
+      },
+      "base_filters": [
+        {
+          "clip_kind": "channel_split",
+          "count": 99,
+          "dataset_role": "train",
+          "density": "empty",
+          "id": "f01db6c81dd3",
+          "labels": [
+            "riedel_veloce"
+          ],
+          "project_ids": [
+            "cheers"
+          ],
+          "session": "20260605T141913Z-1e033b",
+          "source_bucket": "raw",
+          "split": "train",
+          "tags_all": [
+            "wine",
+            "quiet",
+            "riedel",
+            "full"
+          ],
+          "triggered_channels": [
+            1
+          ],
+          "updated_at": "2026-06-11T22:21:13.732082+00:00"
+        }
+      ],
+      "description": "riedel_veloce x voice_talking",
+      "frozen_test": false,
+      "id": "c70c83052f25",
+      "overlay": "voice_talking",
+      "overlay_count": 170,
+      "overlay_filter": {
+        "clip_kind": "channel_split",
+        "count": 170,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "a53164d3c8cd",
+        "labels": [
+          "voice_talking"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260605T144229Z-ae6c78",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "temna",
+          "talk",
+          "solo"
+        ],
+        "triggered_channels": [
+          0
+        ],
+        "updated_at": "2026-06-11T22:21:13.732104+00:00"
+      },
+      "overlay_filters": [
+        {
+          "clip_kind": "channel_split",
+          "count": 170,
+          "dataset_role": "train",
+          "density": "normal",
+          "id": "a53164d3c8cd",
+          "labels": [
+            "voice_talking"
+          ],
+          "project_ids": [
+            "cheers"
+          ],
+          "session": "20260605T144229Z-ae6c78",
+          "source_bucket": "raw",
+          "split": "train",
+          "tags_all": [
+            "temna",
+            "talk",
+            "solo"
+          ],
+          "triggered_channels": [
+            0
+          ],
+          "updated_at": "2026-06-11T22:21:13.732104+00:00"
+        }
+      ],
+      "prefix": "",
+      "recipe_id": "c70c83052f25",
+      "replace_existing": true,
+      "selected": true,
+      "settings": {
+        "enabled": true,
+        "mask_band_count": 7,
+        "mask_candidate_attempts": 7,
+        "mask_filter_enabled": true,
+        "mask_min_band_db": null,
+        "mask_min_effective_snr_db": null,
+        "mask_min_mean_db": 6.0,
+        "mask_min_p25_db": 3.0,
+        "mask_top_frames": 7,
+        "overlay_enabled": true,
+        "pitch_shift_enabled": true,
+        "prevent_clipping": false,
+        "samples_per_source": 2.0,
+        "scale_noise_to_snr": false,
+        "seed": 42,
+        "semitones_range": [
+          -1.0,
+          1.0
+        ],
+        "snr_db_range": [
+          0.0,
+          20.0
+        ],
+        "transient_window_ms": 100
+      },
+      "tags": [
+        "wine",
+        "quiet",
+        "riedel",
+        "full",
+        "temna",
+        "talk",
+        "solo"
+      ],
+      "updated_at": "2026-06-11T22:21:13.732147+00:00"
+    },
+    {
+      "base": "riedel_veloce",
+      "base_count": 100,
+      "base_filter": {
+        "clip_kind": "channel_split",
+        "count": 100,
+        "dataset_role": "train",
+        "density": "empty",
+        "id": "28a4a4d705c8",
+        "labels": [
+          "riedel_veloce"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260605T141913Z-1e033b",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "wine",
+          "quiet",
+          "riedel",
+          "full"
+        ],
+        "triggered_channels": [
+          2
+        ],
+        "updated_at": "2026-06-11T21:15:45.323072+00:00"
+      },
+      "base_filters": [
+        {
+          "clip_kind": "channel_split",
+          "count": 100,
+          "dataset_role": "train",
+          "density": "empty",
+          "id": "28a4a4d705c8",
+          "labels": [
+            "riedel_veloce"
+          ],
+          "project_ids": [
+            "cheers"
+          ],
+          "session": "20260605T141913Z-1e033b",
+          "source_bucket": "raw",
+          "split": "train",
+          "tags_all": [
+            "wine",
+            "quiet",
+            "riedel",
+            "full"
+          ],
+          "triggered_channels": [
+            2
+          ],
+          "updated_at": "2026-06-11T21:15:45.323072+00:00"
+        }
+      ],
+      "description": "riedel_veloce x cuttlery",
+      "frozen_test": false,
+      "id": "b8116fde204c",
+      "overlay": "cuttlery",
+      "overlay_count": 93,
+      "overlay_filter": {
+        "clip_kind": "channel_split",
+        "count": 93,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "73429d149f96",
+        "labels": [
+          "cuttlery"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260605T145619Z-d01288",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "temna",
+          "cuttlery",
+          "glasses"
+        ],
+        "triggered_channels": [
+          1
+        ],
+        "updated_at": "2026-06-11T21:15:45.323096+00:00"
+      },
+      "overlay_filters": [
+        {
+          "clip_kind": "channel_split",
+          "count": 93,
+          "dataset_role": "train",
+          "density": "normal",
+          "id": "73429d149f96",
+          "labels": [
+            "cuttlery"
+          ],
+          "project_ids": [
+            "cheers"
+          ],
+          "session": "20260605T145619Z-d01288",
+          "source_bucket": "raw",
+          "split": "train",
+          "tags_all": [
+            "temna",
+            "cuttlery",
+            "glasses"
+          ],
+          "triggered_channels": [
+            1
+          ],
+          "updated_at": "2026-06-11T21:15:45.323096+00:00"
+        }
+      ],
+      "prefix": "",
+      "recipe_id": "b8116fde204c",
+      "replace_existing": true,
+      "selected": true,
+      "settings": {
+        "enabled": true,
+        "mask_band_count": 7,
+        "mask_candidate_attempts": 7,
+        "mask_filter_enabled": true,
+        "mask_min_band_db": null,
+        "mask_min_effective_snr_db": null,
+        "mask_min_mean_db": 6.0,
+        "mask_min_p25_db": 3.0,
+        "mask_top_frames": 7,
+        "overlay_enabled": true,
+        "pitch_shift_enabled": true,
+        "prevent_clipping": false,
+        "samples_per_source": 2.0,
+        "scale_noise_to_snr": false,
+        "seed": 42,
+        "semitones_range": [
+          -1.0,
+          1.0
+        ],
+        "snr_db_range": [
+          0.0,
+          20.0
+        ],
+        "transient_window_ms": 100
+      },
+      "tags": [
+        "wine",
+        "quiet",
+        "riedel",
+        "full",
+        "temna",
+        "cuttlery",
+        "glasses"
+      ],
+      "updated_at": "2026-06-11T21:15:45.323131+00:00"
+    },
+    {
+      "base": "chriedel_veloce",
+      "base_count": 44,
+      "base_filter": {
+        "clip_kind": "channel_split",
+        "count": 44,
+        "dataset_role": "test",
+        "density": "quiet",
+        "id": "b2961e4ac846",
+        "labels": [
+          "chriedel_veloce"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260610T145824Z-63f411",
+        "source_bucket": "raw",
+        "split": "test",
+        "tags_all": [
+          "wine",
+          "glass",
+          "quiet",
+          "full"
+        ],
+        "triggered_channels": [
+          2
+        ],
+        "updated_at": "2026-06-11T22:22:49.787908+00:00"
+      },
+      "base_filters": [
+        {
+          "clip_kind": "channel_split",
+          "count": 44,
+          "dataset_role": "test",
+          "density": "quiet",
+          "id": "b2961e4ac846",
+          "labels": [
+            "chriedel_veloce"
+          ],
+          "project_ids": [
+            "cheers"
+          ],
+          "session": "20260610T145824Z-63f411",
+          "source_bucket": "raw",
+          "split": "test",
+          "tags_all": [
+            "wine",
+            "glass",
+            "quiet",
+            "full"
+          ],
+          "triggered_channels": [
+            2
+          ],
+          "updated_at": "2026-06-11T22:22:49.787908+00:00"
+        }
+      ],
+      "description": "chriedel_veloce x glasses",
+      "frozen_test": true,
+      "id": "729f159b5b51",
+      "overlay": "glasses",
+      "overlay_count": 60,
+      "overlay_filter": {
+        "clip_kind": "mono",
+        "count": 60,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "047cb535e578",
+        "labels": [
+          "glasses"
+        ],
+        "mic_filter": "unknown",
+        "project_ids": [
+          "_library"
+        ],
+        "session": "20260528T1",
+        "source_bucket": "raw",
+        "split": "train",
+        "updated_at": "2026-06-11T22:22:49.787930+00:00"
+      },
+      "overlay_filters": [
+        {
+          "clip_kind": "mono",
+          "count": 60,
+          "dataset_role": "train",
+          "density": "normal",
+          "id": "047cb535e578",
+          "labels": [
+            "glasses"
+          ],
+          "mic_filter": "unknown",
+          "project_ids": [
+            "_library"
+          ],
+          "session": "20260528T1",
+          "source_bucket": "raw",
+          "split": "train",
+          "updated_at": "2026-06-11T22:22:49.787930+00:00"
+        }
+      ],
+      "prefix": "",
+      "recipe_id": "729f159b5b51",
+      "replace_existing": false,
+      "selected": true,
+      "settings": {
+        "enabled": true,
+        "mask_band_count": 7,
+        "mask_candidate_attempts": 7,
+        "mask_filter_enabled": true,
+        "mask_min_band_db": null,
+        "mask_min_effective_snr_db": null,
+        "mask_min_mean_db": 6.0,
+        "mask_min_p25_db": 3.0,
+        "mask_top_frames": 7,
+        "overlay_enabled": true,
+        "pitch_shift_enabled": true,
+        "prevent_clipping": false,
+        "samples_per_source": 1.0,
+        "scale_noise_to_snr": false,
+        "seed": 42,
+        "semitones_range": [
+          -1.0,
+          1.0
+        ],
+        "snr_db_range": [
+          0.0,
+          20.0
+        ],
+        "transient_window_ms": 100
+      },
+      "tags": [
+        "wine",
+        "glass",
+        "quiet",
+        "full"
+      ],
+      "updated_at": "2026-06-11T22:22:49.787976+00:00"
+    },
+    {
+      "base": "chriedel_veloce",
+      "base_count": 40,
+      "base_filter": {
+        "clip_kind": "channel_split",
+        "count": 40,
+        "dataset_role": "test",
+        "density": "quiet",
+        "id": "9739b2e0e06f",
+        "labels": [
+          "chriedel_veloce"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260610T145824Z-63f411",
+        "source_bucket": "raw",
+        "split": "test",
+        "tags_all": [
+          "wine",
+          "glass",
+          "quiet",
+          "full"
+        ],
+        "triggered_channels": [
+          0
+        ],
+        "updated_at": "2026-06-11T22:23:43.184966+00:00"
+      },
+      "base_filters": [
+        {
+          "clip_kind": "channel_split",
+          "count": 40,
+          "dataset_role": "test",
+          "density": "quiet",
+          "id": "9739b2e0e06f",
+          "labels": [
+            "chriedel_veloce"
+          ],
+          "project_ids": [
+            "cheers"
+          ],
+          "session": "20260610T145824Z-63f411",
+          "source_bucket": "raw",
+          "split": "test",
+          "tags_all": [
+            "wine",
+            "glass",
+            "quiet",
+            "full"
+          ],
+          "triggered_channels": [
+            0
+          ],
+          "updated_at": "2026-06-11T22:23:43.184966+00:00"
+        }
+      ],
+      "description": "chriedel_veloce x cuttlery",
+      "frozen_test": true,
+      "id": "839f1ec2e289",
+      "overlay": "cuttlery",
+      "overlay_count": 93,
+      "overlay_filter": {
+        "clip_kind": "channel_split",
+        "count": 93,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "7a8fade77c2a",
+        "labels": [
+          "cuttlery"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260605T145619Z-d01288",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "temna",
+          "cuttlery",
+          "glasses"
+        ],
+        "triggered_channels": [
+          1
+        ],
+        "updated_at": "2026-06-11T22:23:43.185003+00:00"
+      },
+      "overlay_filters": [
+        {
+          "clip_kind": "channel_split",
+          "count": 93,
+          "dataset_role": "train",
+          "density": "normal",
+          "id": "7a8fade77c2a",
+          "labels": [
+            "cuttlery"
+          ],
+          "project_ids": [
+            "cheers"
+          ],
+          "session": "20260605T145619Z-d01288",
+          "source_bucket": "raw",
+          "split": "train",
+          "tags_all": [
+            "temna",
+            "cuttlery",
+            "glasses"
+          ],
+          "triggered_channels": [
+            1
+          ],
+          "updated_at": "2026-06-11T22:23:43.185003+00:00"
+        }
+      ],
+      "prefix": "",
+      "recipe_id": "839f1ec2e289",
+      "replace_existing": false,
+      "selected": true,
+      "settings": {
+        "enabled": true,
+        "mask_band_count": 7,
+        "mask_candidate_attempts": 7,
+        "mask_filter_enabled": true,
+        "mask_min_band_db": null,
+        "mask_min_effective_snr_db": null,
+        "mask_min_mean_db": 6.0,
+        "mask_min_p25_db": 3.0,
+        "mask_top_frames": 7,
+        "overlay_enabled": true,
+        "pitch_shift_enabled": true,
+        "prevent_clipping": false,
+        "samples_per_source": 1.0,
+        "scale_noise_to_snr": false,
+        "seed": 42,
+        "semitones_range": [
+          -1.0,
+          1.0
+        ],
+        "snr_db_range": [
+          0.0,
+          20.0
+        ],
+        "transient_window_ms": 100
+      },
+      "tags": [
+        "wine",
+        "glass",
+        "quiet",
+        "full",
+        "temna",
+        "cuttlery",
+        "glasses"
+      ],
+      "updated_at": "2026-06-11T22:23:43.185033+00:00"
+    },
+    {
+      "base": "chriedel_veloce",
+      "base_count": 38,
+      "base_filter": {
+        "clip_kind": "channel_split",
+        "count": 38,
+        "dataset_role": "test",
+        "density": "quiet",
+        "id": "55bbaab3cf8d",
+        "labels": [
+          "chriedel_veloce"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260610T145824Z-63f411",
+        "source_bucket": "raw",
+        "split": "test",
+        "tags_all": [
+          "wine",
+          "glass",
+          "quiet",
+          "full"
+        ],
+        "triggered_channels": [
+          1
+        ],
+        "updated_at": "2026-06-11T22:24:38.959245+00:00"
+      },
+      "base_filters": [
+        {
+          "clip_kind": "channel_split",
+          "count": 38,
+          "dataset_role": "test",
+          "density": "quiet",
+          "id": "55bbaab3cf8d",
+          "labels": [
+            "chriedel_veloce"
+          ],
+          "project_ids": [
+            "cheers"
+          ],
+          "session": "20260610T145824Z-63f411",
+          "source_bucket": "raw",
+          "split": "test",
+          "tags_all": [
+            "wine",
+            "glass",
+            "quiet",
+            "full"
+          ],
+          "triggered_channels": [
+            1
+          ],
+          "updated_at": "2026-06-11T22:24:38.959245+00:00"
+        }
+      ],
+      "description": "chriedel_veloce x ambience_rnd",
+      "frozen_test": true,
+      "id": "924756aadd4c",
+      "overlay": "ambience_rnd",
+      "overlay_count": 124,
+      "overlay_filter": {
+        "clip_kind": "channel_split",
+        "count": 124,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "aaf79c44d867",
+        "labels": [
+          "ambience_rnd"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260611T074052Z-a824d2",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "office",
+          "rnd",
+          "talk",
+          "ambience"
+        ],
+        "triggered_channels": [
+          2
+        ],
+        "updated_at": "2026-06-11T22:24:38.959287+00:00"
+      },
+      "overlay_filters": [
+        {
+          "clip_kind": "channel_split",
+          "count": 124,
+          "dataset_role": "train",
+          "density": "normal",
+          "id": "aaf79c44d867",
+          "labels": [
+            "ambience_rnd"
+          ],
+          "project_ids": [
+            "cheers"
+          ],
+          "session": "20260611T074052Z-a824d2",
+          "source_bucket": "raw",
+          "split": "train",
+          "tags_all": [
+            "office",
+            "rnd",
+            "talk",
+            "ambience"
+          ],
+          "triggered_channels": [
+            2
+          ],
+          "updated_at": "2026-06-11T22:24:38.959287+00:00"
+        }
+      ],
+      "prefix": "",
+      "recipe_id": "924756aadd4c",
+      "replace_existing": false,
+      "selected": true,
+      "settings": {
+        "enabled": true,
+        "mask_band_count": 7,
+        "mask_candidate_attempts": 7,
+        "mask_filter_enabled": true,
+        "mask_min_band_db": null,
+        "mask_min_effective_snr_db": null,
+        "mask_min_mean_db": 6.0,
+        "mask_min_p25_db": 3.0,
+        "mask_top_frames": 7,
+        "overlay_enabled": true,
+        "pitch_shift_enabled": true,
+        "prevent_clipping": false,
+        "samples_per_source": 1.0,
+        "scale_noise_to_snr": false,
+        "seed": 42,
+        "semitones_range": [
+          -1.0,
+          1.0
+        ],
+        "snr_db_range": [
+          0.0,
+          20.0
+        ],
+        "transient_window_ms": 100
+      },
+      "tags": [
+        "wine",
+        "glass",
+        "quiet",
+        "full",
+        "office",
+        "rnd",
+        "talk",
+        "ambience"
+      ],
+      "updated_at": "2026-06-11T22:24:38.959321+00:00"
+    },
+    {
+      "base": "riedel_wine",
+      "base_count": 49,
+      "base_filter": {
+        "clip_kind": "channel_split",
+        "count": 49,
+        "dataset_role": "test",
+        "density": "quiet",
+        "id": "7850eee50e88",
+        "labels": [
+          "riedel_wine"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260610T150650Z-bdca7e",
+        "source_bucket": "raw",
+        "split": "test",
+        "tags_all": [
+          "wine",
+          "glass",
+          "medium",
+          "full"
+        ],
+        "triggered_channels": [
+          0
+        ],
+        "updated_at": "2026-06-11T22:24:59.761440+00:00"
+      },
+      "base_filters": [
+        {
+          "clip_kind": "channel_split",
+          "count": 49,
+          "dataset_role": "test",
+          "density": "quiet",
+          "id": "7850eee50e88",
+          "labels": [
+            "riedel_wine"
+          ],
+          "project_ids": [
+            "cheers"
+          ],
+          "session": "20260610T150650Z-bdca7e",
+          "source_bucket": "raw",
+          "split": "test",
+          "tags_all": [
+            "wine",
+            "glass",
+            "medium",
+            "full"
+          ],
+          "triggered_channels": [
+            0
+          ],
+          "updated_at": "2026-06-11T22:24:59.761440+00:00"
+        }
+      ],
+      "description": "riedel_wine x ambience_rnd",
+      "frozen_test": true,
+      "id": "667ada98ff04",
+      "overlay": "ambience_rnd",
+      "overlay_count": 81,
+      "overlay_filter": {
+        "clip_kind": "channel_split",
+        "count": 81,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "316ab0c2f3a3",
+        "labels": [
+          "ambience_rnd"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260611T074052Z-a824d2",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "office",
+          "rnd",
+          "talk",
+          "ambience"
+        ],
+        "triggered_channels": [
+          0
+        ],
+        "updated_at": "2026-06-11T22:24:59.761463+00:00"
+      },
+      "overlay_filters": [
+        {
+          "clip_kind": "channel_split",
+          "count": 81,
+          "dataset_role": "train",
+          "density": "normal",
+          "id": "316ab0c2f3a3",
+          "labels": [
+            "ambience_rnd"
+          ],
+          "project_ids": [
+            "cheers"
+          ],
+          "session": "20260611T074052Z-a824d2",
+          "source_bucket": "raw",
+          "split": "train",
+          "tags_all": [
+            "office",
+            "rnd",
+            "talk",
+            "ambience"
+          ],
+          "triggered_channels": [
+            0
+          ],
+          "updated_at": "2026-06-11T22:24:59.761463+00:00"
+        }
+      ],
+      "prefix": "",
+      "recipe_id": "667ada98ff04",
+      "replace_existing": false,
+      "selected": true,
+      "settings": {
+        "enabled": true,
+        "mask_band_count": 7,
+        "mask_candidate_attempts": 7,
+        "mask_filter_enabled": true,
+        "mask_min_band_db": null,
+        "mask_min_effective_snr_db": null,
+        "mask_min_mean_db": 6.0,
+        "mask_min_p25_db": 3.0,
+        "mask_top_frames": 7,
+        "overlay_enabled": true,
+        "pitch_shift_enabled": true,
+        "prevent_clipping": false,
+        "samples_per_source": 1.0,
+        "scale_noise_to_snr": false,
+        "seed": 42,
+        "semitones_range": [
+          -1.0,
+          1.0
+        ],
+        "snr_db_range": [
+          0.0,
+          20.0
+        ],
+        "transient_window_ms": 100
+      },
+      "tags": [
+        "wine",
+        "glass",
+        "medium",
+        "full",
+        "office",
+        "rnd",
+        "talk",
+        "ambience"
+      ],
+      "updated_at": "2026-06-11T22:24:59.761498+00:00"
+    },
+    {
+      "base": "riedel_wine",
+      "base_count": 43,
+      "base_filter": {
+        "clip_kind": "channel_split",
+        "count": 43,
+        "dataset_role": "test",
+        "density": "quiet",
+        "id": "e513551eac07",
+        "labels": [
+          "riedel_wine"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260610T150650Z-bdca7e",
+        "source_bucket": "raw",
+        "split": "test",
+        "tags_all": [
+          "wine",
+          "glass",
+          "medium",
+          "full"
+        ],
+        "triggered_channels": [
+          1
+        ],
+        "updated_at": "2026-06-11T22:25:20.523110+00:00"
+      },
+      "base_filters": [
+        {
+          "clip_kind": "channel_split",
+          "count": 43,
+          "dataset_role": "test",
+          "density": "quiet",
+          "id": "e513551eac07",
+          "labels": [
+            "riedel_wine"
+          ],
+          "project_ids": [
+            "cheers"
+          ],
+          "session": "20260610T150650Z-bdca7e",
+          "source_bucket": "raw",
+          "split": "test",
+          "tags_all": [
+            "wine",
+            "glass",
+            "medium",
+            "full"
+          ],
+          "triggered_channels": [
+            1
+          ],
+          "updated_at": "2026-06-11T22:25:20.523110+00:00"
+        }
+      ],
+      "description": "riedel_wine x cuttlery",
+      "frozen_test": true,
+      "id": "344ebe8bab7c",
+      "overlay": "cuttlery",
+      "overlay_count": 93,
+      "overlay_filter": {
+        "clip_kind": "channel_split",
+        "count": 93,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "b5574985d44e",
+        "labels": [
+          "cuttlery"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260605T145619Z-d01288",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "temna",
+          "cuttlery",
+          "glasses"
+        ],
+        "triggered_channels": [
+          1
+        ],
+        "updated_at": "2026-06-11T22:25:20.523133+00:00"
+      },
+      "overlay_filters": [
+        {
+          "clip_kind": "channel_split",
+          "count": 93,
+          "dataset_role": "train",
+          "density": "normal",
+          "id": "b5574985d44e",
+          "labels": [
+            "cuttlery"
+          ],
+          "project_ids": [
+            "cheers"
+          ],
+          "session": "20260605T145619Z-d01288",
+          "source_bucket": "raw",
+          "split": "train",
+          "tags_all": [
+            "temna",
+            "cuttlery",
+            "glasses"
+          ],
+          "triggered_channels": [
+            1
+          ],
+          "updated_at": "2026-06-11T22:25:20.523133+00:00"
+        }
+      ],
+      "prefix": "",
+      "recipe_id": "344ebe8bab7c",
+      "replace_existing": false,
+      "selected": true,
+      "settings": {
+        "enabled": true,
+        "mask_band_count": 7,
+        "mask_candidate_attempts": 7,
+        "mask_filter_enabled": true,
+        "mask_min_band_db": null,
+        "mask_min_effective_snr_db": null,
+        "mask_min_mean_db": 6.0,
+        "mask_min_p25_db": 3.0,
+        "mask_top_frames": 7,
+        "overlay_enabled": true,
+        "pitch_shift_enabled": true,
+        "prevent_clipping": false,
+        "samples_per_source": 1.0,
+        "scale_noise_to_snr": false,
+        "seed": 42,
+        "semitones_range": [
+          -1.0,
+          1.0
+        ],
+        "snr_db_range": [
+          0.0,
+          20.0
+        ],
+        "transient_window_ms": 100
+      },
+      "tags": [
+        "wine",
+        "glass",
+        "medium",
+        "full",
+        "temna",
+        "cuttlery",
+        "glasses"
+      ],
+      "updated_at": "2026-06-11T22:25:20.523163+00:00"
+    },
+    {
+      "base": "riedel_wine",
+      "base_count": 50,
+      "base_filter": {
+        "clip_kind": "channel_split",
+        "count": 50,
+        "dataset_role": "test",
+        "density": "quiet",
+        "id": "997aba04d919",
+        "labels": [
+          "riedel_wine"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260610T150650Z-bdca7e",
+        "source_bucket": "raw",
+        "split": "test",
+        "tags_all": [
+          "wine",
+          "glass",
+          "medium",
+          "full"
+        ],
+        "triggered_channels": [
+          2
+        ],
+        "updated_at": "2026-06-11T22:25:44.317349+00:00"
+      },
+      "base_filters": [
+        {
+          "clip_kind": "channel_split",
+          "count": 50,
+          "dataset_role": "test",
+          "density": "quiet",
+          "id": "997aba04d919",
+          "labels": [
+            "riedel_wine"
+          ],
+          "project_ids": [
+            "cheers"
+          ],
+          "session": "20260610T150650Z-bdca7e",
+          "source_bucket": "raw",
+          "split": "test",
+          "tags_all": [
+            "wine",
+            "glass",
+            "medium",
+            "full"
+          ],
+          "triggered_channels": [
+            2
+          ],
+          "updated_at": "2026-06-11T22:25:44.317349+00:00"
+        }
+      ],
+      "description": "riedel_wine x glasses",
+      "frozen_test": true,
+      "id": "64f514288dc3",
+      "overlay": "glasses",
+      "overlay_count": 60,
+      "overlay_filter": {
+        "clip_kind": "mono",
+        "count": 60,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "92369a6d8819",
+        "labels": [
+          "glasses"
+        ],
+        "mic_filter": "unknown",
+        "project_ids": [
+          "_library"
+        ],
+        "session": "20260528T1",
+        "source_bucket": "raw",
+        "split": "train",
+        "updated_at": "2026-06-11T22:25:44.317387+00:00"
+      },
+      "overlay_filters": [
+        {
+          "clip_kind": "mono",
+          "count": 60,
+          "dataset_role": "train",
+          "density": "normal",
+          "id": "92369a6d8819",
+          "labels": [
+            "glasses"
+          ],
+          "mic_filter": "unknown",
+          "project_ids": [
+            "_library"
+          ],
+          "session": "20260528T1",
+          "source_bucket": "raw",
+          "split": "train",
+          "updated_at": "2026-06-11T22:25:44.317387+00:00"
+        }
+      ],
+      "prefix": "",
+      "recipe_id": "64f514288dc3",
+      "replace_existing": false,
+      "selected": true,
+      "settings": {
+        "enabled": true,
+        "mask_band_count": 7,
+        "mask_candidate_attempts": 7,
+        "mask_filter_enabled": true,
+        "mask_min_band_db": null,
+        "mask_min_effective_snr_db": null,
+        "mask_min_mean_db": 6.0,
+        "mask_min_p25_db": 3.0,
+        "mask_top_frames": 7,
+        "overlay_enabled": true,
+        "pitch_shift_enabled": true,
+        "prevent_clipping": false,
+        "samples_per_source": 1.0,
+        "scale_noise_to_snr": false,
+        "seed": 42,
+        "semitones_range": [
+          -1.0,
+          1.0
+        ],
+        "snr_db_range": [
+          0.0,
+          20.0
+        ],
+        "transient_window_ms": 100
+      },
+      "tags": [
+        "wine",
+        "glass",
+        "medium",
+        "full"
+      ],
+      "updated_at": "2026-06-11T22:25:44.317417+00:00"
+    },
+    {
+      "base": "ikea_wine",
+      "base_count": 49,
+      "base_filter": {
+        "clip_kind": "channel_split",
+        "count": 49,
+        "dataset_role": "test",
+        "density": "quiet",
+        "id": "1b6d473619e7",
+        "labels": [
+          "ikea_wine"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260610T151500Z-9cdf0b",
+        "source_bucket": "raw",
+        "split": "test",
+        "tags_all": [
+          "wine",
+          "glass",
+          "loud",
+          "full"
+        ],
+        "triggered_channels": [
+          0
+        ],
+        "updated_at": "2026-06-11T22:26:05.740307+00:00"
+      },
+      "base_filters": [
+        {
+          "clip_kind": "channel_split",
+          "count": 49,
+          "dataset_role": "test",
+          "density": "quiet",
+          "id": "1b6d473619e7",
+          "labels": [
+            "ikea_wine"
+          ],
+          "project_ids": [
+            "cheers"
+          ],
+          "session": "20260610T151500Z-9cdf0b",
+          "source_bucket": "raw",
+          "split": "test",
+          "tags_all": [
+            "wine",
+            "glass",
+            "loud",
+            "full"
+          ],
+          "triggered_channels": [
+            0
+          ],
+          "updated_at": "2026-06-11T22:26:05.740307+00:00"
+        }
+      ],
+      "description": "ikea_wine x glasses",
+      "frozen_test": true,
+      "id": "74be97581bcc",
+      "overlay": "glasses",
+      "overlay_count": 60,
+      "overlay_filter": {
+        "clip_kind": "mono",
+        "count": 60,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "ce485470ba3a",
+        "labels": [
+          "glasses"
+        ],
+        "mic_filter": "unknown",
+        "project_ids": [
+          "_library"
+        ],
+        "session": "20260528T1",
+        "source_bucket": "raw",
+        "split": "train",
+        "updated_at": "2026-06-11T22:26:05.740326+00:00"
+      },
+      "overlay_filters": [
+        {
+          "clip_kind": "mono",
+          "count": 60,
+          "dataset_role": "train",
+          "density": "normal",
+          "id": "ce485470ba3a",
+          "labels": [
+            "glasses"
+          ],
+          "mic_filter": "unknown",
+          "project_ids": [
+            "_library"
+          ],
+          "session": "20260528T1",
+          "source_bucket": "raw",
+          "split": "train",
+          "updated_at": "2026-06-11T22:26:05.740326+00:00"
+        }
+      ],
+      "prefix": "",
+      "recipe_id": "74be97581bcc",
+      "replace_existing": false,
+      "selected": true,
+      "settings": {
+        "enabled": true,
+        "mask_band_count": 7,
+        "mask_candidate_attempts": 7,
+        "mask_filter_enabled": true,
+        "mask_min_band_db": null,
+        "mask_min_effective_snr_db": null,
+        "mask_min_mean_db": 6.0,
+        "mask_min_p25_db": 3.0,
+        "mask_top_frames": 7,
+        "overlay_enabled": true,
+        "pitch_shift_enabled": true,
+        "prevent_clipping": false,
+        "samples_per_source": 1.0,
+        "scale_noise_to_snr": false,
+        "seed": 42,
+        "semitones_range": [
+          -1.0,
+          1.0
+        ],
+        "snr_db_range": [
+          0.0,
+          20.0
+        ],
+        "transient_window_ms": 100
+      },
+      "tags": [
+        "wine",
+        "glass",
+        "loud",
+        "full"
+      ],
+      "updated_at": "2026-06-11T22:26:05.740354+00:00"
+    },
+    {
+      "base": "ikea_wine",
+      "base_count": 46,
+      "base_filter": {
+        "clip_kind": "channel_split",
+        "count": 46,
+        "dataset_role": "test",
+        "density": "quiet",
+        "id": "e420caa70e88",
+        "labels": [
+          "ikea_wine"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260610T151500Z-9cdf0b",
+        "source_bucket": "raw",
+        "split": "test",
+        "tags_all": [
+          "wine",
+          "glass",
+          "loud",
+          "full"
+        ],
+        "triggered_channels": [
+          1
+        ],
+        "updated_at": "2026-06-11T22:26:26.633831+00:00"
+      },
+      "base_filters": [
+        {
+          "clip_kind": "channel_split",
+          "count": 46,
+          "dataset_role": "test",
+          "density": "quiet",
+          "id": "e420caa70e88",
+          "labels": [
+            "ikea_wine"
+          ],
+          "project_ids": [
+            "cheers"
+          ],
+          "session": "20260610T151500Z-9cdf0b",
+          "source_bucket": "raw",
+          "split": "test",
+          "tags_all": [
+            "wine",
+            "glass",
+            "loud",
+            "full"
+          ],
+          "triggered_channels": [
+            1
+          ],
+          "updated_at": "2026-06-11T22:26:26.633831+00:00"
+        }
+      ],
+      "description": "ikea_wine x cuttlery",
+      "frozen_test": true,
+      "id": "f2ed428469a5",
+      "overlay": "cuttlery",
+      "overlay_count": 96,
+      "overlay_filter": {
+        "clip_kind": "channel_split",
+        "count": 96,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "07a02eba0cec",
+        "labels": [
+          "cuttlery"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260605T145619Z-d01288",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "temna",
+          "cuttlery",
+          "glasses"
+        ],
+        "triggered_channels": [
+          2
+        ],
+        "updated_at": "2026-06-11T22:26:26.633854+00:00"
+      },
+      "overlay_filters": [
+        {
+          "clip_kind": "channel_split",
+          "count": 96,
+          "dataset_role": "train",
+          "density": "normal",
+          "id": "07a02eba0cec",
+          "labels": [
+            "cuttlery"
+          ],
+          "project_ids": [
+            "cheers"
+          ],
+          "session": "20260605T145619Z-d01288",
+          "source_bucket": "raw",
+          "split": "train",
+          "tags_all": [
+            "temna",
+            "cuttlery",
+            "glasses"
+          ],
+          "triggered_channels": [
+            2
+          ],
+          "updated_at": "2026-06-11T22:26:26.633854+00:00"
+        }
+      ],
+      "prefix": "",
+      "recipe_id": "f2ed428469a5",
+      "replace_existing": false,
+      "selected": true,
+      "settings": {
+        "enabled": true,
+        "mask_band_count": 7,
+        "mask_candidate_attempts": 7,
+        "mask_filter_enabled": true,
+        "mask_min_band_db": null,
+        "mask_min_effective_snr_db": null,
+        "mask_min_mean_db": 6.0,
+        "mask_min_p25_db": 3.0,
+        "mask_top_frames": 7,
+        "overlay_enabled": true,
+        "pitch_shift_enabled": true,
+        "prevent_clipping": false,
+        "samples_per_source": 1.0,
+        "scale_noise_to_snr": false,
+        "seed": 42,
+        "semitones_range": [
+          -1.0,
+          1.0
+        ],
+        "snr_db_range": [
+          0.0,
+          20.0
+        ],
+        "transient_window_ms": 100
+      },
+      "tags": [
+        "wine",
+        "glass",
+        "loud",
+        "full",
+        "temna",
+        "cuttlery",
+        "glasses"
+      ],
+      "updated_at": "2026-06-11T22:26:26.633885+00:00"
+    },
+    {
+      "base": "ikea_wine",
+      "base_count": 50,
+      "base_filter": {
+        "clip_kind": "channel_split",
+        "count": 50,
+        "dataset_role": "test",
+        "density": "quiet",
+        "id": "15f17c5eed46",
+        "labels": [
+          "ikea_wine"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260610T151500Z-9cdf0b",
+        "source_bucket": "raw",
+        "split": "test",
+        "tags_all": [
+          "wine",
+          "glass",
+          "loud",
+          "full"
+        ],
+        "triggered_channels": [
+          2
+        ],
+        "updated_at": "2026-06-11T22:26:49.789456+00:00"
+      },
+      "base_filters": [
+        {
+          "clip_kind": "channel_split",
+          "count": 50,
+          "dataset_role": "test",
+          "density": "quiet",
+          "id": "15f17c5eed46",
+          "labels": [
+            "ikea_wine"
+          ],
+          "project_ids": [
+            "cheers"
+          ],
+          "session": "20260610T151500Z-9cdf0b",
+          "source_bucket": "raw",
+          "split": "test",
+          "tags_all": [
+            "wine",
+            "glass",
+            "loud",
+            "full"
+          ],
+          "triggered_channels": [
+            2
+          ],
+          "updated_at": "2026-06-11T22:26:49.789456+00:00"
+        }
+      ],
+      "description": "ikea_wine x ambience_rnd",
+      "frozen_test": true,
+      "id": "35c1b496dd6e",
+      "overlay": "ambience_rnd",
+      "overlay_count": 71,
+      "overlay_filter": {
+        "clip_kind": "channel_split",
+        "count": 71,
+        "dataset_role": "train",
+        "density": "normal",
+        "id": "a0698b346226",
+        "labels": [
+          "ambience_rnd"
+        ],
+        "project_ids": [
+          "cheers"
+        ],
+        "session": "20260611T071547Z-9b1229",
+        "source_bucket": "raw",
+        "split": "train",
+        "tags_all": [
+          "office",
+          "rnd",
+          "talk",
+          "ambience"
+        ],
+        "triggered_channels": [
+          0
+        ],
+        "updated_at": "2026-06-11T22:26:49.789501+00:00"
+      },
+      "overlay_filters": [
+        {
+          "clip_kind": "channel_split",
+          "count": 71,
+          "dataset_role": "train",
+          "density": "normal",
+          "id": "a0698b346226",
+          "labels": [
+            "ambience_rnd"
+          ],
+          "project_ids": [
+            "cheers"
+          ],
+          "session": "20260611T071547Z-9b1229",
+          "source_bucket": "raw",
+          "split": "train",
+          "tags_all": [
+            "office",
+            "rnd",
+            "talk",
+            "ambience"
+          ],
+          "triggered_channels": [
+            0
+          ],
+          "updated_at": "2026-06-11T22:26:49.789501+00:00"
+        }
+      ],
+      "prefix": "",
+      "recipe_id": "35c1b496dd6e",
+      "replace_existing": false,
+      "selected": true,
+      "settings": {
+        "enabled": true,
+        "mask_band_count": 7,
+        "mask_candidate_attempts": 7,
+        "mask_filter_enabled": true,
+        "mask_min_band_db": null,
+        "mask_min_effective_snr_db": null,
+        "mask_min_mean_db": 6.0,
+        "mask_min_p25_db": 3.0,
+        "mask_top_frames": 7,
+        "overlay_enabled": true,
+        "pitch_shift_enabled": true,
+        "prevent_clipping": false,
+        "samples_per_source": 1.0,
+        "scale_noise_to_snr": false,
+        "seed": 42,
+        "semitones_range": [
+          -1.0,
+          1.0
+        ],
+        "snr_db_range": [
+          0.0,
+          20.0
+        ],
+        "transient_window_ms": 100
+      },
+      "tags": [
+        "wine",
+        "glass",
+        "loud",
+        "full",
+        "office",
+        "rnd",
+        "talk",
+        "ambience"
+      ],
+      "updated_at": "2026-06-11T22:26:49.789561+00:00"
+    }
+  ],
+  "augmentation_settings": {
+    "enabled": true,
+    "mask_band_count": 7,
+    "mask_candidate_attempts": 7,
+    "mask_filter_enabled": true,
+    "mask_min_band_db": null,
+    "mask_min_mean_db": 6.0,
+    "mask_min_p25_db": 3.0,
+    "mask_top_frames": 7,
+    "overlay_enabled": true,
+    "pitch_shift_enabled": true,
+    "prevent_clipping": false,
+    "samples_per_source": 1.0,
+    "scale_noise_to_snr": false,
+    "seed": 42,
+    "semitones_range": [
+      -1.0,
+      1.0
+    ],
+    "snr_db_range": [
+      0.0,
+      20.0
+    ],
+    "transient_window_ms": 100
+  },
+  "clip_assignments": {},
+  "clip_overrides": {},
+  "schema_version": 2,
+  "ui_managed": true,
+  "updated_at": "2026-06-16T21:33:22.523217+00:00"
+}

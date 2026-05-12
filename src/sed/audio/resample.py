@@ -46,3 +46,15 @@ def resample_audio(wave: np.ndarray, orig_sr: int, target_sr: int) -> np.ndarray
             pad_shape += ((0, 0),)
         out = np.pad(out, pad_shape)
     return out.astype(np.float32, copy=False)
+
+
+def model_rate_index(input_idx: int, input_sr: int, model_sr: int) -> int:
+    """Map a ring index measured at the input sample rate to the model rate.
+
+    Derived fresh from the absolute ring index each block — never accumulated
+    from per-block resampled lengths, whose rounding (e.g. 1024 input samples ->
+    683 vs the true 682.67 model samples) would drift the mapping by ~29 ms per
+    minute of session. Used by both the recorder (onset->clip) and the runtime
+    (onset->scoring window) so the two stay in lockstep.
+    """
+    return int(round(input_idx * model_sr / input_sr))
