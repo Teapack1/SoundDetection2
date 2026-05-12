@@ -1,0 +1,205 @@
+# Default configuration. Projects override values in projects/<id>/project.toml
+# matched to EfficientAT mn10_as front-end.
+
+[audio]
+input_sample_rate = 48000     # Hz; PortAudio hardware capture rate for pro USB interfaces
+sample_rate    = 32000        # Hz; model/feature rate, matches EfficientAT
+channels       = 1            # mono inference; record_channels can differ
+record_channels = 1           # 1 to 4; raise for multi-mic recording
+record_device  = "Scarlett 18i8 USB"    # ALSA name or PortAudio index; `sed audio devices` lists them
+blocksize      = 1024         # PortAudio callback chunk
+input_gain_db  = 0.0          # software gain after capture (negative to attenuate)
+
+[features]
+n_fft          = 1024
+win_length     = 800          # 25 ms at 32 kHz
+hop_length     = 320          # 10 ms at 32 kHz
+n_mels         = 128
+fmin           = 0
+fmax           = 16000
+window_seconds = 1.0          # inference window length
+
+# ─────────────────────────────────────────────────────────────────────────────
+# [onset]  —  auto-triggered recording (clinkd record positives / hardnegs)
+#
+# The onset detector runs on a 32 kHz mel-spectrogram and fires whenever the
+# spectral flux (how much the spectrum changed since the last few frames) rises
+# above an adaptive threshold AND above an absolute floor.
+#
+# HOW TRIGGERING WORKS
+#   flux   = average positive change in mel spectrum from the previous frame
+#   median = rolling median of flux over the last `median_window_s` seconds
+#   MAD    = median absolute deviation of flux (measures how noisy the median is)
+#   threshold = median + mad_k × MAD       ← this is the adaptive bar
+#
+#   A clip is saved when:  flux > threshold  AND  flux > min_flux
+#
+# TUNING QUICK REFERENCE
+#   Symptom: fires on everything / ambient noise triggers it
+#     → raise min_flux (e.g. 0.01 → 0.03 → 0.1)   or raise mad_k (e.g. 4 → 6)
+#   Symptom: clinks not detected / too insensitive
+#     → lower min_flux (e.g. 0.005 → 0.002)        or lower mad_k (e.g. 4 → 3)
+#   Symptom: same clink saved as 2-3 clips
+#     → raise refractory_ms (e.g. 500 → 1000)
+#   Symptom: cling sound cut off at start of clip
+#     → raise preroll_ms (e.g. 300 → 500)
+#   Symptom: tail of sound cut off
+#     → raise postroll_ms (e.g. 700 → 1000)
+# ─────────────────────────────────────────────────────────────────────────────
+[onset]
+algo           = "superflux"  # onset algorithm — only "superflux" is implemented
+
+# --- sensitivity ---
+mad_k          = 4.0    # adaptive threshold multiplier: threshold = median + mad_k × MAD
+                         # higher → less sensitive (ignores smaller transients)
+                         # lower  → more sensitive (fires on subtler sounds)
+                         # typical range: 3 (sensitive) … 8 (only loud impacts)
+
+min_flux       = 0.005  # absolute minimum flux to trigger, regardless of adaptive threshold.
+                         # Prevents firing in dead-quiet rooms where MAD ≈ 0.
+                         # The live display shows current flux — set this just below
+                         # the smallest clink you want to capture.
+                         # typical range: 0.002 (very sensitive) … 0.05 (loud-only)
+
+# --- timing ---
+refractory_ms  = 1000    # minimum gap between two triggers (ms).
+                         # Prevents the same clink from saving 2-3 clips.
+                         # Raise if you get duplicate clips; lower if you want
+                         # to capture rapid successive clinks separately.
+
+preroll_ms     = 300    # audio saved BEFORE the trigger point (ms).
+                         # Increase if the attack of your sound is cut off.
+
+postroll_ms    = 700    # audio saved AFTER the trigger point (ms).
+                         # Increase if the tail/ring of the sound is cut off.
+
+clip_seconds   = 1.0   # total clip length saved: preroll + postroll must fit within this.
+                         # (300 + 700 = 1000 ms = 1.0 s — matches the model window)
+
+# --- adaptive baseline ---
+median_window_s = 5.0  # rolling window (seconds) used to compute the adaptive baseline.
+                         # Longer → baseline adapts more slowly to changing room noise.
+                         # Shorter → adapts fast, but may track a loud room too aggressively.
+                         # Leave at 5.0 unless recording in a very dynamic environment.
+
+hop_ms         = 32    # analysis frame step (ms). Controls time resolution of detection.
+                         # Do not change — matched to the model front-end.
+
+[model]
+backbone       = "mn10_as"    # mn01 | mn10_as | mn20_as | mn40_as
+pretrained     = true
+classes        = ["_negative"]   # projects extend this list
+
+[training]
+batch_size     = 64
+epochs         = 60
+lr_backbone    = 1e-4
+lr_head        = 1e-3
+weight_decay   = 1e-4
+warmup_epochs  = 5
+patience       = 10
+seed           = 42
+mixup_alpha    = 0.3
+balanced_sampler = false      # KEEP FALSE per project requirement: minimise FPs
+loss           = "asymmetric_focal"
+focal_gamma_pos = 1.0
+focal_gamma_neg = 2.0          # 4 was too aggressive — penalised correct positive
+                               # detections too. 2 still puts ~4x BCE weight on
+                               # hard negatives (vs 1x for hard positives).
+negative_weight = 1.5          # extra loss multiplier on the _negative class
+                               # (was 2.0 — calibration handles further FP push)
+num_workers    = 4
+precision      = "16-mixed"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# [augmentation]  —  what each training sample is randomly transformed with
+#
+# Each augmentation is independently toggleable via its probability/amount.
+# Set probability = 0 (or amounts to [0,0]) to disable a single augmentation
+# without touching the others.
+#
+# ORDER OF APPLICATION (per training sample, waveform domain):
+#   1. time shift     (positives only) — moves transient inside the window
+#   2. pitch shift    (positives only) — robustness to glass size variation
+#   3. time stretch                    — small tempo jitter
+#   4. domain mixing                   — mix with random ambience clip
+#   5. external-negative mix           — mix with library negatives
+#   6. gaussian noise                  — mic noise floor
+# Then in spectrogram domain:
+#   7. SpecAugment                     — frequency + time masking
+#   8. mixup                           — uses [training] mixup_alpha
+#
+# TUNING QUICK REFERENCE
+#   "model overfits to clean studio recordings"
+#       → raise domain_mix_prob (e.g. 0.95) and ensure ambience pool is ≥30 min
+#   "fine-glass clink classes are getting buried under loud bar noise"
+#       → set per_class_min_snr_db = { clink_wine_thin = 5.0 } (or higher)
+#       → raise masking_min_db to 4-6 dB to skip more buried mixes
+#   "model false-positives on cutlery / dishes"
+#       → record more hard-negatives, raise external_negative_mix_prob to 0.3
+#   "training data feels too noisy / underfitting"
+#       → lower domain_mix_prob to 0.5-0.7, narrow snr_db_range to [5, 25]
+#   "disable a single augmentation entirely"
+#       → set its prob/width/amount to 0 (see per-key comments below)
+# ─────────────────────────────────────────────────────────────────────────────
+[augmentation]
+
+# --- domain mixing (THE primary noise-robustness augmentation) ---
+domain_mix_prob = 0.95    # probability of mixing this sample with ambience (0 = disable)
+snr_db_range    = [-2.0, 25.0]   # SNR draw range in dB; lower = noisier
+per_class_min_snr_db = {}        # per-class minimum SNR floor.
+                                  # Example: { clink_wine_thin = 5.0 }
+ambience_pool   = "data_library/ambience"   # search root; project ambience also auto-included
+masking_check   = true    # skip mixes where the target is buried (recommended)
+masking_min_db  = 3.0     # minimum transient dominance (dB) the target must keep:
+                          #   ≥6 dB very strict · 3 dB balanced · 0 dB lax · <0 dB disabled
+
+# --- external-negative mixing (extra "this is NOT a target" hard negatives) ---
+external_negative_mix_prob = 0.20   # 0 disables external-negative mixing
+external_negative_pool     = "data_library/negatives_external"
+
+# --- waveform-level augmentations (per-sample, before mel) ---
+time_shift_ms     = 200          # ± shift the transient inside the window. 0 disables.
+pitch_shift_prob  = 0.4          # probability of pitch-shifting a positive. 0 disables.
+pitch_semitones   = [-2.0, 2.0]  # pitch shift range (semitones); ignored if prob=0
+time_stretch_prob = 0.2          # probability of time-stretching this sample. 0 disables.
+time_stretch      = [0.95, 1.05] # tempo factor range; ignored if prob=0
+gaussian_noise_amp = [0.001, 0.01]   # noise-floor amplitude range; set to [0,0] to disable
+
+# --- spectrogram-level augmentations (SpecAugment, applied AFTER mel) ---
+specaug_freq_masks = 2           # number of frequency-band masks; 0 disables freq masking
+specaug_freq_width = 24          # max width (mel bins) of each freq mask
+specaug_time_masks = 2           # number of time masks; 0 disables time masking
+specaug_time_width = 25          # max width (frames) of each time mask
+
+[inference]
+hop_ms         = 100          # how often to run the model on the ring buffer
+multi_mic_mode = "max"        # "max"   — ANY mic detects → trigger (max prob)
+                              # "single"— only inference_channel
+                              # "mean"  — mean across mics (more conservative)
+smoothing_median_window = 3   # frames
+smoothing_ema_alpha     = 0.4
+default_threshold       = 0.6 # overridden per-class after calibration
+hysteresis_low          = 0.3 # confidence must dip below this to re-arm
+consecutive_frames      = 1   # CHANGED 2 → 1: single-frame triggers for fine
+                              # quiet clinks (immersive feel). The smoother +
+                              # arbiter still defend with negative gate +
+                              # margin + calibrated thresholds. Bump to 2 for
+                              # very FP-sensitive venues at recall cost.
+trigger_refractory_ms   = 300
+margin_to_second_best   = 0.08  # winner must beat runner-up by this (multi-glass)
+negative_max            = 0.5   # _negative score must be below this to trigger
+inference_threads       = 2
+
+[artnet]
+enabled        = true
+target_ip      = "255.255.255.255"   # broadcast by default; override per venue
+universe       = 0
+fps            = 30
+
+[zmq]
+publish_endpoint = "ipc:///tmp/sed-events.sock"
+
+[logging]
+level          = "INFO"
+log_detections = true

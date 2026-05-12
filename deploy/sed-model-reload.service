@@ -1,0 +1,6 @@
+[Unit]
+Description=Restart sed.service after model swap
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemctl restart sed.service

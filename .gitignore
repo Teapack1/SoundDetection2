@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Build / dist
+build/
+dist/
+
+# Project artefacts
+projects/*/recordings/
+projects/*/dataset/
+projects/*/models/*.ckpt
+projects/*/models/*.onnx
+projects/*/models/*.xml
+projects/*/models/*.bin
+projects/*/reports/
+
+# Library audio is large — track with git-lfs or DVC, NOT plain git
+data_library/glasses_clean/
+data_library/ambience/
+data_library/negatives_external/
+data_library/manifest.jsonl
+
+# Local IDE
+.idea/
+.vscode/
+*.swp
+.DS_Store
+.codex/
+.agents/
+
+# Vendor
+# (vendor/EfficientAT is a git submodule — do NOT add it here, that would
+# prevent `git submodule add` from working. The submodule's contents are
+# tracked by reference, not as plain files.)

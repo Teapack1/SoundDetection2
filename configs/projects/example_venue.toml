@@ -1,0 +1,157 @@
+# Complete example per-project / per-venue configuration.
+#
+# Anything omitted here falls back to configs/default.toml. Keep only the
+# settings that differ for a real venue in projects/<id>/project.toml.
+
+[project]
+id          = "example_venue"          # must match the project directory name
+name        = "Example Wine Bar"       # human-facing venue name
+created_at  = "2026-01-15"
+notes       = "Two-glass discrimination + cutlery / ice / bottle hard-negatives."
+
+[model]
+# The classes the model will learn. The first class must be "_negative".
+# Target classes are the sounds you want to detect; hard-negative classes can
+# also be listed here if you want the model to learn them explicitly without
+# triggering lighting.
+backbone   = "mn10_as"                 # EfficientAT: mn01 | mn10_as | mn20_as | mn40_as
+pretrained = true
+classes = [
+    "_negative",
+    "clink_wine_thin",
+    "clink_wine_thick",
+    "clink_champagne",
+    # "hardneg_cutlery",
+]
+
+[targets]
+# Per-target ArtNet mapping. Keys must be class names from [model.classes].
+# `enabled = false` keeps a class trained/calibrated but prevents triggering.
+# Pattern A: one DMX channel per class, usually value=255.
+# Pattern B: one shared channel with distinct values, e.g. 85 / 170 / 255.
+clink_wine_thin   = { enabled = true,  channel = 1, value = 85,  effect = "default" }
+clink_wine_thick  = { enabled = true,  channel = 1, value = 170, effect = "default" }
+clink_champagne   = { enabled = true,  channel = 1, value = 255, effect = "default" }
+# hardneg_cutlery = { enabled = false, channel = 0, value = 0,   effect = "default" }
+
+[thresholds]
+# Written by `clinkd calibrate`. Starting at 0.6 is fine before calibration;
+# noisy venues often end up around 0.70-0.85 for low false positives.
+clink_wine_thin  = 0.600
+clink_wine_thick = 0.600
+clink_champagne  = 0.600
+
+[audio]
+# `record_device` accepts a PortAudio index or a unique substring from
+# `clinkd audio devices`. Prefer a stable name substring over "default".
+record_device     = "UMC404HD 192k"
+input_sample_rate = 48000              # hardware capture/WAV rate; 48 kHz is best for pro interfaces
+sample_rate       = 32000              # model/feature rate; EfficientAT defaults to 32 kHz
+record_channels   = 4                  # number of physical mic inputs to record/check
+channels          = 1                  # model input is mono features; leave at 1
+inference_channel = 0                  # used when multi_mic_mode = "single"
+blocksize         = 1024               # PortAudio callback frames at input_sample_rate
+input_gain_db     = 0.0                # software gain after capture; prefer hardware gain first
+
+[features]
+# These define the mel input shape. Treat as model-shape settings: changing
+# them after training requires retraining/exporting.
+n_fft          = 1024
+win_length     = 800                   # 25 ms at sample_rate=32000
+hop_length     = 320                   # 10 ms at sample_rate=32000
+n_mels         = 128
+fmin           = 0
+fmax           = 16000
+window_seconds = 1.0
+
+[onset]
+# Used by auto-triggered recording commands, not by model inference.
+algo            = "superflux"          # "superflux" | "energy"
+hop_ms          = 32
+median_window_s = 5.0
+mad_k           = 4.0                  # higher = fewer auto-record triggers
+preroll_ms      = 300
+postroll_ms     = 700
+refractory_ms   = 150
+clip_seconds    = 1.0
+
+[training]
+# Keep balanced_sampler=false for production: the natural negative-heavy
+# distribution helps reduce false positives.
+batch_size       = 64
+epochs           = 60
+lr_backbone      = 1e-4
+lr_head          = 1e-3
+weight_decay     = 1e-4
+warmup_epochs    = 5
+patience         = 10
+seed             = 42
+mixup_alpha      = 0.3
+balanced_sampler = false
+loss             = "asymmetric_focal"
+focal_gamma_pos  = 1.0
+focal_gamma_neg  = 2.0
+negative_weight  = 1.5
+num_workers      = 4
+precision        = "16-mixed"
+
+[augmentation]
+# Domain mixing overlays positives with ambience at training time. Library
+# ambience and project empty-venue ambience are both used by the datamodule.
+domain_mix_prob          = 0.95
+snr_db_range             = [-2.0, 25.0]
+per_class_min_snr_db     = { clink_wine_thin = 5.0 }  # optional floor for fragile/quiet classes
+ambience_pool            = "data_library/ambience"
+external_negative_mix_prob = 0.20
+external_negative_pool   = "data_library/negatives_external"
+masking_check            = true
+masking_min_db           = 3.0
+time_shift_ms            = 200
+pitch_semitones          = [-2.0, 2.0]
+time_stretch             = [0.95, 1.05]
+gaussian_noise_amp       = [0.001, 0.01]
+specaug_freq_masks       = 2
+specaug_freq_width       = 24
+specaug_time_masks       = 2
+specaug_time_width       = 25
+
+[inference]
+# Live runtime behavior. These can often be tuned after training, but keep the
+# model/feature settings above frozen unless you retrain.
+hop_ms                  = 100
+multi_mic_mode          = "max"        # "max" any mic fires | "single" one channel | "mean" conservative
+smoothing_median_window = 3
+smoothing_ema_alpha     = 0.4
+default_threshold       = 0.6
+hysteresis_low          = 0.3
+consecutive_frames      = 1
+trigger_refractory_ms   = 300
+margin_to_second_best   = 0.08
+negative_max            = 0.5
+inference_threads       = 2
+
+[artnet]
+enabled   = true
+target_ip = "192.168.50.40"            # lighting controller / console IP
+universe  = 0
+fps       = 30
+
+[zmq]
+# Local event socket for another show-control process, if used.
+publish_endpoint = "ipc:///tmp/sed-events.sock"
+
+[logging]
+level          = "INFO"
+log_detections = true
+
+# Optional: override library auto-discovery. By default:
+#   clink_wine_thin -> data_library/glasses_clean/wine_thin
+#   _negative       -> all data_library/negatives_external/*
+# Uncomment only when you need explicit mappings.
+#
+# [dataset.library]
+# clink_wine_thin = [{ category = "glasses_clean", label = "wine_thin" }]
+# "_negative" = [
+#     { category = "negatives_external", label = "cutlery" },
+#     { category = "negatives_external", label = "ice_in_glass" },
+# ]

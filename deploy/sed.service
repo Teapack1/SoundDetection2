@@ -1,0 +1,40 @@
+[Unit]
+Description=SED — Sound Event Detection Lighting Service
+After=network.target sound.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+User=sed
+Group=audio
+WorkingDirectory=/opt/sed
+EnvironmentFile=-/etc/sed/env
+# PROJECT_ID is set in /etc/sed/env
+ExecStart=/opt/sed/.venv/bin/python -m sed.runtime.run --project ${PROJECT_ID} --no-live
+Restart=always
+RestartSec=3
+StartLimitBurst=10
+StartLimitIntervalSec=300
+
+# Real-time-ish scheduling for low audio jitter
+LimitRTPRIO=20
+LimitNICE=-10
+Nice=-5
+IOSchedulingClass=realtime
+
+# Watchdog: the run loop calls sd_notify("WATCHDOG=1") every loop iteration
+WatchdogSec=15
+NotifyAccess=main
+
+StandardOutput=journal
+StandardError=journal
+
+# Hardening
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/opt/sed/projects /var/log/sed
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

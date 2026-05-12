@@ -1,0 +1,3 @@
+[submodule "vendor/EfficientAT"]
+	path = vendor/EfficientAT
+	url = https://github.com/fschmid56/EfficientAT

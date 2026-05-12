@@ -1,0 +1,11 @@
+[Unit]
+Description=Restart SED when the active model changes
+After=sed.service
+
+[Path]
+# Adjust to match your project — uses the project ID from /etc/sed/env
+PathChanged=/opt/sed/projects/%i/models/current.openvino
+Unit=sed-model-reload.service
+
+[Install]
+WantedBy=multi-user.target
