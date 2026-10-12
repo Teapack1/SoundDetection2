@@ -724,6 +724,26 @@ def doctor_deploy(cfg: Config, project_id: str) -> list[Check]:
         out.append(_fail("model load", str(e),
                          "check OpenVINO install and that the model exported cleanly"))
 
+    # --- (c2) what each model output does at decision time ---
+    # A class that cannot fire still competes for the window and suppresses the
+    # trigger when it wins, so a mis-declared role silently changes production
+    # behaviour. Name every role before the bundle ships.
+    deploy_classes = list(cfg.model.classes)
+    if deploy_classes:
+        roles = cfg.class_roles(deploy_classes)
+        vetoes = cfg.class_vetoes(deploy_classes)
+        summary = ", ".join(
+            f"{cls}={roles[cls]}" + (f"(veto>{vetoes[cls]:.2f})" if cls in vetoes else "")
+            for cls in deploy_classes
+        )
+        if not any(role == "target" for role in roles.values()):
+            out.append(_fail(
+                "class roles", summary,
+                "no class can fire — enable at least one in [targets]",
+            ))
+        else:
+            out.append(_ok("class roles", summary))
+
     # --- (d) ArtNet target reachable? ---
     if cfg.artnet.enabled:
         target = cfg.artnet.target_ip.strip()

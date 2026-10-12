@@ -34,7 +34,7 @@ from sed.audio.features import (
     build_feature_extractor,
     window_sample_count,
 )
-from sed.audio.resample import model_rate_index, resample_audio
+from sed.audio.resample import StreamingResampler, model_rate_index, resample_audio
 from sed.config import Config, ProjectLayout, resolve_active_model_dir
 from sed.runtime.backends import (  # noqa: F401 — re-exported for compat
     _validate_openvino_input_shape,
@@ -104,9 +104,17 @@ class RealtimeInference:
         # (no monitor) keeps onset-only scoring so silence costs no inference.
         self.live_monitor = bool(live_monitor)
         self.classes: list[str] = list(cfg.model.classes)
-        self.neg_idx: int | None = (
-            self.classes.index("_negative") if "_negative" in self.classes else None
-        )
+        roles = cfg.class_roles(self.classes)
+        # "best" mic selection and the per-mic display stats must agree with
+        # the arbiter about which columns are "heard a target" (role=="target")
+        # vs. never-competing background (role=="negative") — see WindowScorer,
+        # which this mirrors.
+        self.negative_idx: set[int] = {
+            i for i, cls in enumerate(self.classes) if roles.get(cls) == "negative"
+        }
+        self.target_idx: list[int] = [
+            i for i, cls in enumerate(self.classes) if roles.get(cls) == "target"
+        ]
         known = set(self.classes)
         self.active_trigger_classes = (
             {c for c in active_trigger_classes if c in known}
@@ -148,7 +156,7 @@ class RealtimeInference:
         # calibration decide exactly as production does — including the
         # onset-gating override that switches temporal consensus off.
         self.arbiter = _build_arbiter(
-            cfg, self.classes, self.neg_idx,
+            cfg, self.classes,
             trigger_classes=self.active_trigger_classes,
         )
 
@@ -214,6 +222,15 @@ class RealtimeInference:
                 )
                 for _ in self.active_channels
             ]
+            # One streaming resampler per detector. Resampling each block on
+            # its own zero-pads both of its edges, which a spectral-flux
+            # detector reads as a transient at every block boundary — the
+            # recorder shares this class so the gate that captured the training
+            # clips is the gate that runs in the venue.
+            self._onset_resamplers = [
+                StreamingResampler(self.record_sample_rate, self.feature_sample_rate)
+                for _ in self.active_channels
+            ]
             on_block_cb = self._on_audio_block
             log.info(
                 "onset trigger enabled | preroll=%d ms | detectors=%d | mad_k=%.1f | onset_floor=%.1f dB",
@@ -225,7 +242,10 @@ class RealtimeInference:
             channels=n_physical,
             device=cfg.deploy.record_device,
             blocksize=cfg.audio.blocksize,
-            ring_seconds=4.0,
+            # Must hold a whole scoring window with room to read it while the
+            # callback keeps writing; a fixed 4 s silently broke any
+            # features.window_seconds above it.
+            ring_seconds=max(4.0, float(self.window_seconds) * 4.0),
             on_block=on_block_cb,
         )
 
@@ -264,6 +284,7 @@ class RealtimeInference:
                 for cls, smoother in self.arbiter.smoothers.items()
             },
             "negative_max": cfg.inference.negative_max,
+            "vetoes": dict(self.arbiter.vetoes),
             "mined_saved": 0,
             "last_trigger": None,    # {"class", "conf", "ts", "mined"} of the most recent fire
             "last_detection": None,  # operator-facing alias with mic/level detail
@@ -480,12 +501,15 @@ class RealtimeInference:
         probs_per_mic = logits_to_probabilities(logits, self.cfg)       # (B, num_classes)
         self._accumulate_infer_ms((time.perf_counter() - t0) * 1000)
 
-        # Which classes are targets (everything except the optional _negative).
+        # Which classes are targets — role=="target" only, so a suppressor
+        # (e.g. cutlery) winning a mic's vote doesn't count as "heard a target".
         target_mask = np.array(
-            [self.neg_idx is None or i != self.neg_idx for i in range(len(self.classes))]
+            [i in self.target_idx for i in range(len(self.classes))]
         )
         # Pool per-class across mics into one decision vector.
-        pooled = pool_mic_probabilities(probs_per_mic, self.mic_mode, self.neg_idx)
+        pooled = pool_mic_probabilities(
+            probs_per_mic, self.mic_mode, self.negative_idx, self.target_idx
+        )
         # Per-mic stats: which mic had the highest TARGET-class probability?
         for i, ch in enumerate(self.active_channels):
             m = float(probs_per_mic[i, target_mask].max()) if target_mask.any() else 0.0
@@ -678,16 +702,15 @@ class RealtimeInference:
         transient are collapsed via `_onset_cooldown_n`.
         """
         try:
-            end_idx_model = model_rate_index(
-                write_idx, self.record_sample_rate, self.feature_sample_rate
-            )
             new_onsets: list[int] = []
-            for det, ch in zip(self._onset_detectors, self.active_channels):
+            for det, rs, ch in zip(
+                self._onset_detectors, self._onset_resamplers, self.active_channels
+            ):
                 sig = block[:, ch] if block.ndim > 1 else block
-                sig_rs = resample_audio(
-                    sig, orig_sr=self.record_sample_rate, target_sr=self.feature_sample_rate
-                )
-                events = det.process_block(sig_rs, end_idx_model)
+                sig_rs = rs.process(sig)
+                if sig_rs.size == 0:
+                    continue
+                events = det.process_block(sig_rs, rs.output_index)
                 self._update_mic_onset_status(det, ch, events)
                 for ev in events:
                     new_onsets.append(
@@ -713,12 +736,11 @@ class RealtimeInference:
             status["last_onset_db"] = max(_linear_to_db(ev.strength) for ev in events)
 
     def _mining_threshold(self, class_name: str) -> float:
-        # Legacy [mining].per_class_min_confidence still wins if set; otherwise
-        # mining shares the class's decision threshold from [targets]/[thresholds].
-        per_class = self.cfg.mining.per_class_min_confidence
-        if class_name in per_class:
-            return float(per_class[class_name])
-        return float(self.cfg.class_threshold(class_name))
+        # [targets].<cls>.mine_threshold wins if set; otherwise legacy
+        # [mining].per_class_min_confidence; otherwise mining shares the
+        # class's decision threshold from [targets]/[thresholds]. See
+        # Config.mine_threshold.
+        return float(self.cfg.mine_threshold(class_name))
 
     def _runtime_detection(
         self,

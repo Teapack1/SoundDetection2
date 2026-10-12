@@ -50,9 +50,86 @@ SELECTION_FILENAME = "dataset_selection.json"
 DATASET_DIRTY_FILENAME = "dataset_dirty.json"
 AUTO_MINED_DISMISSALS_KEY = "auto_mined_dismissed_bucket_keys"
 
+# Presentation-only class identity.  The selection manifest owns it because a
+# dataset preset is the thing that defines the project class space.  It must
+# never participate in composition or dataset freshness fingerprints.
+CLASS_VISUALS_KEY = "class_visuals"
+NEGATIVE_CLASS_VISUAL = "slate"
+CLASS_VISUAL_TOKENS: tuple[str, ...] = (
+    "blue", "orange", "teal", "violet", "gold", "magenta", "green", "coral",
+)
+
 def _pretrain_index():
     from sed.data.pretraining import shared_index
     return shared_index()
+
+
+def _normalise_class_visuals(value: object) -> dict[str, str]:
+    """Keep only known display tokens from an untrusted/legacy manifest."""
+    if not isinstance(value, dict):
+        return {}
+    allowed = set(CLASS_VISUAL_TOKENS) | {NEGATIVE_CLASS_VISUAL}
+    return {
+        str(name): str(token)
+        for name, token in value.items()
+        if str(name).strip() and str(token) in allowed
+    }
+
+
+def ensure_class_visuals(
+    selection: dict,
+    classes: list[str] | tuple[str, ...] | None,
+) -> tuple[dict[str, str], bool]:
+    """Resolve durable, distinct display tokens for a dataset class space.
+
+    Existing valid assignments win, so a class keeps its identity when new
+    classes appear. ``_negative`` is always neutral.  The product currently
+    targets small class spaces (one background plus up to three glass types);
+    after the eight categorical tokens are exhausted, names still render but
+    necessarily reuse the palette in declaration order.
+    """
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for raw in classes or []:
+        name = str(raw or "").strip()
+        if name and name not in seen:
+            ordered.append(name)
+            seen.add(name)
+
+    original = _normalise_class_visuals(selection.get(CLASS_VISUALS_KEY))
+    resolved: dict[str, str] = {}
+    used: set[str] = set()
+    if "_negative" in seen:
+        resolved["_negative"] = NEGATIVE_CLASS_VISUAL
+
+    # Preserve a class's existing valid colour first.  This is why a later
+    # class addition cannot make an established class silently change hue.
+    for name in ordered:
+        if name == "_negative":
+            continue
+        token = original.get(name)
+        if token in CLASS_VISUAL_TOKENS and token not in used:
+            resolved[name] = token
+            used.add(token)
+
+    free = [token for token in CLASS_VISUAL_TOKENS if token not in used]
+    overflow = 0
+    for name in ordered:
+        if name in resolved:
+            continue
+        if free:
+            token = free.pop(0)
+        else:
+            token = CLASS_VISUAL_TOKENS[overflow % len(CLASS_VISUAL_TOKENS)]
+            overflow += 1
+        resolved[name] = token
+        if token in CLASS_VISUAL_TOKENS:
+            used.add(token)
+
+    changed = original != resolved
+    if changed:
+        selection[CLASS_VISUALS_KEY] = resolved
+    return resolved, changed
 
 
 def _empty_dataset_selection() -> dict:
@@ -65,6 +142,7 @@ def _empty_dataset_selection() -> dict:
         "augmentation_recipes": [],
         "augmentation_settings": {},
         AUTO_MINED_DISMISSALS_KEY: [],
+        CLASS_VISUALS_KEY: {},
     }
 
 
@@ -154,6 +232,9 @@ def load_dataset_selection(layout: ProjectLayout) -> dict:
     payload.setdefault("augmentation_recipes", [])
     payload.setdefault("augmentation_settings", {})
     payload.setdefault(AUTO_MINED_DISMISSALS_KEY, [])
+    payload[CLASS_VISUALS_KEY] = _normalise_class_visuals(
+        payload.get(CLASS_VISUALS_KEY)
+    )
     _migrate_selection_roles(payload)
     return payload
 
@@ -170,6 +251,9 @@ def write_dataset_selection(layout: ProjectLayout, selection: dict) -> Path:
     payload.setdefault("augmentation_recipes", [])
     payload.setdefault("augmentation_settings", {})
     payload.setdefault(AUTO_MINED_DISMISSALS_KEY, [])
+    payload[CLASS_VISUALS_KEY] = _normalise_class_visuals(
+        payload.get(CLASS_VISUALS_KEY)
+    )
     _migrate_selection_roles(payload)
     out.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return out
@@ -500,6 +584,93 @@ def _preset_split_from_cfg(cfg: Config | None) -> dict:
     }
 
 
+def classes_in_selection(selection: dict | None) -> list[str]:
+    """Every class the dataset definition itself names, in sorted order.
+
+    A class exists because the definition assigns something to it — a source
+    rule or an individual clip. This is the ground truth the target-class list
+    follows; see :func:`dataset_definition_classes`.
+    """
+    names: set[str] = set()
+    for key in COMPOSE_SELECTION_KEYS:
+        rows = (selection or {}).get(key)
+        if not isinstance(rows, dict):
+            continue
+        for class_name, entries in rows.items():
+            name = str(class_name or "").strip()
+            if not name:
+                continue
+            if isinstance(entries, dict):
+                entries = [entries]
+            if isinstance(entries, list) and entries:
+                names.add(name)
+    return sorted(names)
+
+
+def _configured_classes(cfg: Config | None) -> list[str]:
+    """The project's class list — ``[dataset] target_classes``, falling back to
+    the resolved ``model.classes`` a caller may have set directly."""
+    dataset = getattr(cfg, "dataset", None)
+    model = getattr(cfg, "model", None)
+    return [
+        str(c) for c in (
+            getattr(dataset, "target_classes", None)
+            or getattr(model, "classes", None)
+            or []
+        )
+    ]
+
+
+def dataset_definition_classes(
+    cfg: Config | None, selection: dict | None, extra: list[str] | None = None
+) -> list[str]:
+    """The class space a dataset definition describes.
+
+    The project's configured order is preserved (it fixes the head's index
+    assignment) and any class the definition names but config has not caught up
+    with is appended. There is deliberately no such thing as a source rule for
+    a class that "is not a target class": the definition owns the class space,
+    which is what makes switching between a pretraining definition and a venue
+    fine-tune definition a single action.
+    """
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for name in _configured_classes(cfg):
+        name = str(name).strip()
+        if name and name not in seen:
+            ordered.append(name)
+            seen.add(name)
+    for name in list(extra or []) + classes_in_selection(selection):
+        name = str(name).strip()
+        if name and name not in seen:
+            ordered.append(name)
+            seen.add(name)
+    return ordered
+
+
+def ensure_dataset_definition_classes(
+    layout: ProjectLayout,
+    cfg: Config | None,
+    selection: dict | None,
+    extra: list[str] | None = None,
+) -> list[str] | None:
+    """Adopt classes named by the dataset definition into ``config.toml``.
+
+    Returns the written class list when config changed, else ``None``. Called
+    wherever the definition can gain a class (rule edits, preset loads, compose)
+    so a rule can never point at a class the project would drop at compose time.
+    """
+    from sed.config import update_config_toml_values
+
+    classes = dataset_definition_classes(cfg, selection, extra)
+    if not classes or classes == _configured_classes(cfg):
+        return None
+    update_config_toml_values(
+        layout.config_toml, {"dataset": {"target_classes": classes}}
+    )
+    return classes
+
+
 def save_dataset_preset(
     layout: ProjectLayout,
     name: str,
@@ -511,8 +682,9 @@ def save_dataset_preset(
     A preset is source rules **plus the class list and split settings** — the
     complete answer to "what dataset is this", so switching between a
     pretraining corpus definition and a venue fine-tune definition is one
-    action. Passing ``cfg`` records the classes; omitting it writes a v1-shaped
-    rules-only preset, which is what pre-v2 callers get.
+    action. The recorded class list is the definition's own class space
+    (:func:`dataset_definition_classes`), so a preset always restores classes
+    that its rules can actually fill.
 
     Saving under an existing name (same slug) updates that preset in place.
     The saved preset becomes the active one.
@@ -528,9 +700,15 @@ def save_dataset_preset(
     rule_count, clip_count = _preset_rule_counts(rules)
     payload = load_dataset_presets(layout)
     existing = _find_dataset_preset(payload, slug)
-    classes = list(cfg.dataset.target_classes) if cfg is not None else None
+    classes = dataset_definition_classes(cfg, selection) or None
+    class_visuals, visuals_changed = ensure_class_visuals(selection, classes)
+    if visuals_changed:
+        # A legacy selection gains display identity the first time it is saved
+        # as a definition.  This is presentation state only; it does not mark
+        # train.csv/test.csv stale.
+        write_dataset_selection(layout, selection)
     record = {
-        "schema_version": DATASET_PRESET_SCHEMA_VERSION if cfg is not None else 1,
+        "schema_version": DATASET_PRESET_SCHEMA_VERSION if classes else 1,
         "name": display,
         "slug": slug,
         "rules": rules,
@@ -544,6 +722,7 @@ def save_dataset_preset(
         record["classes"] = classes
         record["classes_fingerprint"] = classes_fingerprint(classes)
         record["split"] = _preset_split_from_cfg(cfg)
+        record[CLASS_VISUALS_KEY] = class_visuals
     if existing is not None:
         payload["presets"] = [
             record if r is existing else r for r in payload.get("presets", [])
@@ -561,8 +740,8 @@ def apply_dataset_preset(
     *,
     apply_classes: bool = True,
 ) -> tuple[dict, dict]:
-    """Restore a preset's dataset definition: source rules, and for v2 presets
-    the class list and split settings too.
+    """Restore a preset's dataset definition: source rules, class list, and
+    split settings.
 
     Returns ``(selection, preset_record)``. Everything outside the compose keys
     (augmentation recipes/settings, feature/preview presets, dismissals) is
@@ -570,9 +749,10 @@ def apply_dataset_preset(
     state. Raises ``KeyError`` when the preset does not exist.
 
     Classes are written to ``config.toml`` because they live in config, not in
-    the selection. A v1 preset carries none, so it leaves the project's classes
-    alone rather than clearing them — `dataset_preset_state` flags those as
-    "no classes saved" so the difference is visible instead of silent.
+    the selection. Every preset restores a class space: a v2 preset carries one
+    explicitly, and an older rules-only preset has its classes derived from the
+    rules it restores, so loading a definition never leaves the project holding
+    the previous definition's classes.
     """
     payload = load_dataset_presets(layout)
     record = _find_dataset_preset(payload, name_or_slug)
@@ -586,34 +766,71 @@ def apply_dataset_preset(
     selection["updated_at"] = _utc_now_iso()
     write_dataset_selection(layout, selection)
 
-    classes = record.get("classes")
-    if apply_classes and isinstance(classes, list) and classes:
+    saved = record.get("classes")
+    # The saved list leads (it fixes the head's class order); anything its own
+    # rules name and the list missed is appended rather than silently dropped.
+    classes = dataset_definition_classes(
+        None,
+        selection,
+        extra=[str(c) for c in saved] if isinstance(saved, list) else None,
+    )
+    # Visual identity travels with a dataset preset just like its class list.
+    # Older presets have no such field; resolve a fresh stable map for them.
+    saved_visuals = _normalise_class_visuals(record.get(CLASS_VISUALS_KEY))
+    if saved_visuals:
+        selection[CLASS_VISUALS_KEY] = saved_visuals
+    class_visuals, _ = ensure_class_visuals(selection, classes)
+    selection[CLASS_VISUALS_KEY] = class_visuals
+    write_dataset_selection(layout, selection)
+    if apply_classes and classes:
         from sed.config import update_config_toml_values
 
-        updates: dict[str, dict] = {"dataset": {"target_classes": [str(c) for c in classes]}}
+        updates: dict[str, dict] = {"dataset": {"target_classes": classes}}
         split = record.get("split")
         if isinstance(split, dict):
             for key in ("val_fraction", "split_test_enabled", "split_test_fraction"):
                 if split.get(key) is not None:
                     updates["dataset"][key] = split[key]
         update_config_toml_values(layout.config_toml, updates)
+        record = dict(record)
+        record["classes"] = classes
 
     payload["active"] = str(record.get("slug") or "")
     write_dataset_presets(layout, payload)
     return selection, record
 
 
+#: Class space a blank dataset starts from — the same minimal list a brand-new
+#: project's config.toml is seeded with (see `project_config_template`), so
+#: "blank" and "new project" agree on what an empty dataset definition is.
+BLANK_DATASET_CLASSES: tuple[str, ...] = ("_negative",)
+
+
 def new_dataset_selection(layout: ProjectLayout) -> dict:
-    """Start an unnamed blank dataset while preserving augmentation/lab state."""
+    """Start an unnamed blank dataset while preserving augmentation/lab state.
+
+    Also resets `config.toml`'s class list to `BLANK_DATASET_CLASSES`,
+    mirroring `apply_dataset_preset` (which always restores a preset's own
+    classes). Without this, "blank" cleared every source rule but left the
+    previous definition's classes stranded with no rules left to fill them —
+    the class chips and assign dropdown kept showing a dataset that no longer
+    existed.
+    """
+    from sed.config import update_config_toml_values
+
     selection = load_dataset_selection(layout)
     for key in COMPOSE_SELECTION_KEYS:
         selection[key] = {}
+    ensure_class_visuals(selection, list(BLANK_DATASET_CLASSES))
     selection["ui_managed"] = True
     selection["updated_at"] = _utc_now_iso()
     write_dataset_selection(layout, selection)
     payload = load_dataset_presets(layout)
     payload["active"] = ""
     write_dataset_presets(layout, payload)
+    update_config_toml_values(
+        layout.config_toml, {"dataset": {"target_classes": list(BLANK_DATASET_CLASSES)}}
+    )
     return selection
 
 
@@ -674,7 +891,12 @@ def dataset_preset_state(
         if not isinstance(record, dict):
             continue
         classes = record.get("classes")
-        has_classes = isinstance(classes, list) and bool(classes)
+        if not (isinstance(classes, list) and classes):
+            # Rules-only presets predate class capture. Their class space is
+            # still knowable — it is what their own rules name — so report that
+            # rather than "rules only", which is what applying one now does.
+            classes = classes_in_selection(record.get("rules") or {})
+        has_classes = bool(classes)
         presets.append({
             "name": str(record.get("name") or record.get("slug") or ""),
             "slug": str(record.get("slug") or ""),
@@ -683,14 +905,13 @@ def dataset_preset_state(
             "updated_at": str(record.get("updated_at") or ""),
             "matches_current": str(record.get("rules_fingerprint") or "") == current,
             "schema_version": int(record.get("schema_version") or 1),
-            # v1 presets predate class capture: applying one leaves the project's
-            # classes as they are. Surfaced so the UI can say so rather than
-            # letting a switch look complete when it only restored rules.
+            # Every preset now reports the class space loading it will install,
+            # so the switch a preset performs is visible before pressing Load.
             "has_classes": has_classes,
             "classes": [str(c) for c in classes] if has_classes else [],
             "classes_match_current": (
                 None if (current_classes is None or not has_classes)
-                else str(record.get("classes_fingerprint") or "") == current_classes
+                else classes_fingerprint([str(c) for c in classes]) == current_classes
             ),
         })
         if record.get("slug") == active_slug:
@@ -702,15 +923,12 @@ def dataset_preset_state(
         active_record is not None
         and str(active_record.get("rules_fingerprint") or "") != current
     )
-    active_classes = active_record.get("classes") if active_record else None
-    if (
-        not modified
-        and current_classes is not None
-        and isinstance(active_classes, list)
-        and active_classes
-    ):
+    active_entry = next(
+        (p for p in presets if p["slug"] == active_slug and active_slug), None
+    )
+    if not modified and active_entry and active_entry["classes_match_current"] is False:
         # Rule-identical but a different class space is still a modified dataset.
-        modified = str(active_record.get("classes_fingerprint") or "") != current_classes
+        modified = True
     return {
         "active": active_slug,
         "active_name": str((active_record or {}).get("name") or ""),
@@ -1817,6 +2035,31 @@ def _split_manifest_record(
     }
 
 
+def split_frozen_test_state(layout: ProjectLayout) -> dict:
+    """What the automatic (split-derived) frozen test currently *is* on disk.
+
+    The Library tab's Test set panel is a three-state control — not built,
+    built at some percentage, or built but now switched off — and every one of
+    those states is decided by this manifest, not by the config toggle. Reading
+    it is two small file reads, so it is safe on a page-load path.
+    """
+    record, path = _load_split_frozen_manifest(layout)
+    keys = [k for k in (record.get("keys") or []) if k]
+    by_class = {
+        str(name): len({k for k in (paths or []) if k})
+        for name, paths in (record.get("by_class") or {}).items()
+    }
+    return {
+        "built": bool(keys),
+        "clips": len(keys),
+        "fraction": float(record.get("fraction") or 0.0),
+        "by_class": {name: n for name, n in sorted(by_class.items()) if n},
+        "classes": len([n for n in by_class.values() if n]),
+        "built_at": str(record.get("changed_at") or record.get("created_at") or ""),
+        "path": str(path) if path else "",
+    }
+
+
 def _write_split_frozen_manifest(layout: ProjectLayout, record: dict) -> None:
     path = split_frozen_test_path(layout)
     layout.dataset_dir.mkdir(parents=True, exist_ok=True)
@@ -1824,6 +2067,21 @@ def _write_split_frozen_manifest(layout: ProjectLayout, record: dict) -> None:
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(record, f, indent=2)
     tmp.replace(path)
+
+
+def _clear_split_frozen_manifest(layout: ProjectLayout) -> None:
+    """Delete the persisted automatic-holdout manifest (and legacy alias).
+
+    Called only for the explicit "return clips to the training pool" action
+    (``build_split_test=True`` while the toggle is off), so the automatic
+    holdout is fully reset rather than left on disk as a stale, unapplied
+    definition — see ``split_frozen_test_state``.
+    """
+    for path in (split_frozen_test_path(layout), pretraining_test_path(layout)):
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
 
 
 def _partition_split_frozen_keys(
@@ -2216,7 +2474,9 @@ def compose_dataset(
     ``build_split_test`` gates the split-derived frozen test carve (see
     ``_resolve_split_frozen_test``): routine composition (the default) only
     reuses an already-built split, never creates or resizes one. Pass True
-    only for an explicit, user-initiated "build frozen test set" action.
+    only for an explicit, user-initiated Test set panel action: it carves a
+    new holdout when the toggle is on, or clears the persisted one entirely
+    when the toggle is off (see ``_clear_split_frozen_manifest``).
 
     ``progress``, if given, is called with ``{"phase", "phase_detail",
     "progress", ...}`` updates so a caller (e.g. the inspect server's compose
@@ -2226,6 +2486,19 @@ def compose_dataset(
     """
     layout = ProjectLayout(project_id)
     prune_project_metadata(layout)
+    # The dataset definition owns the class space. Adopt anything it names that
+    # config has not caught up with (a rule added out-of-band, an older preset)
+    # so no source rule can point at a class composition would silently drop.
+    # Applied to the passed Config in place rather than by reloading it — the
+    # caller may be composing with settings it has not written to disk.
+    adopted = ensure_dataset_definition_classes(
+        layout, cfg, load_dataset_selection(layout)
+    )
+    if adopted:
+        log.info("adopted dataset-definition classes into config: %s", ", ".join(adopted))
+        cfg.dataset.target_classes = list(adopted)
+        cfg.dataset.classes = list(adopted)
+        cfg.model.classes = list(adopted)
     classes = list(cfg.model.classes)
     if not classes:
         raise ValueError(
@@ -2560,6 +2833,11 @@ def compose_dataset(
     _write_frozen_manifest(layout, frozen_manifest)
     if split_record is not None and split_record_needs_write:
         _write_split_frozen_manifest(layout, split_record)
+    elif not will_resolve_split and build_split_test:
+        # Explicit "return to training pool" action: fully reset the
+        # automatic holdout instead of leaving a stale, unapplied manifest
+        # on disk (see split_frozen_test_state).
+        _clear_split_frozen_manifest(layout)
     clear_dataset_dirty(layout)
     notify("write dataset", fraction=1.0, detail="dataset written")
 

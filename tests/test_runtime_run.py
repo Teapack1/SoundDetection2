@@ -93,8 +93,8 @@ def _cheers_arbiter(classes: list[str]) -> TriggerArbiter:
             "consecutive_frames": 1,
             "smoothing_enabled": False,
         },
-        negative_index=classes.index("_negative"),
-        negative_max=0.5,
+        negative_classes={"_negative"},
+        vetoes={"_negative": 0.5},
         margin_to_second_best=0.08,
         global_refractory_ms=0,
     )
@@ -112,13 +112,13 @@ def test_pool_mic_probabilities_best_uses_winning_mic_whole_vector():
         dtype=np.float32,
     )
 
-    best = pool_mic_probabilities(probs, "best", neg_idx=0)
+    best = pool_mic_probabilities(probs, "best", negative_idx={0})
     # "best" returns mic 0's self-consistent distribution — low _negative.
     np.testing.assert_allclose(best, probs[0])
     assert best[0] < 0.5
 
     # "max" lets the worst mic's _negative dominate the pooled vector.
-    pooled_max = pool_mic_probabilities(probs, "max", neg_idx=0)
+    pooled_max = pool_mic_probabilities(probs, "max", negative_idx={0})
     assert pooled_max[0] > 0.5
     np.testing.assert_allclose(pooled_max[3], 0.95, atol=1e-6)
 
@@ -135,7 +135,7 @@ def test_best_pooling_fires_where_max_pooling_is_blocked_by_negative_gate():
     )
 
     def _decide(mode: str):
-        pooled = pool_mic_probabilities(probs, mode, neg_idx=0)
+        pooled = pool_mic_probabilities(probs, mode, negative_idx={0})
         prob_dict = {c: float(p) for c, p in zip(classes, pooled)}
         return _cheers_arbiter(classes).step(prob_dict)
 

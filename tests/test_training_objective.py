@@ -238,14 +238,14 @@ def test_fixed_threshold_trigger_metrics_replay_runtime_gates():
     counts = fixed_threshold_trigger_counts(
         probabilities,
         targets,
-        negative_index=0,
+        negative_indices=[0],
         threshold=0.9,
         negative_max=0.5,
         margin_to_second_best=0.05,
     )
     recall, fp_per_1000 = summarize_fixed_threshold_counts(
         *counts,
-        negative_index=0,
+        negative_indices=[0],
     )
 
     assert counts[0].tolist() == [0, 1, 0]
@@ -267,12 +267,12 @@ def test_fixed_threshold_metrics_without_negative_clips_are_finite():
     counts = fixed_threshold_trigger_counts(
         torch.tensor([[0.95, 0.05], [0.10, 0.96]]),
         torch.tensor([0, 1]),
-        negative_index=None,
+        negative_indices=(),
         threshold=0.9,
     )
     recall, fp_per_1000 = summarize_fixed_threshold_counts(
         *counts,
-        negative_index=None,
+        negative_indices=(),
     )
 
     assert recall.item() == 1.0

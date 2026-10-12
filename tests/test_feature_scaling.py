@@ -98,7 +98,11 @@ def test_pcen_plus_fitted_scaling_is_legal_but_legacy_bool_stays_off():
 
 
 @pytest.mark.parametrize("bad", [
-    dict(scaling_method="minmax", db_norm=True, feature_type="linear"),
+    # db_norm already IS a fixed min-max, so a second normalization on top of it
+    # (a fitted z-score) is a contradiction.
+    dict(standardize=True, db_norm=True, feature_type="linear"),
+    # Fixed constants are never fitted, so they have to be supplied.
+    dict(scaling_method="zscore", scaling_source="fixed"),
     dict(scaling_method="zscore", scaling_stats={"mean": [0.0], "std": [0.0]}),
     dict(scaling_method="minmax", scaling_stats={"lo": [2.0], "hi": [1.0]}),
     dict(scaling_method="zscore", scaling_scope="per_band",
@@ -123,6 +127,11 @@ def test_pretrained_normalization_requires_no_scaling():
 
 def _wave(n=32000):
     return (np.random.default_rng(0).standard_normal(n) * 0.05).astype(np.float32)
+
+
+def _as_numpy(values):
+    """Extractors return torch on the torch path and numpy on the fallback."""
+    return np.asarray(values.detach().cpu().numpy() if hasattr(values, "detach") else values)
 
 
 def test_mel_torch_and_numpy_paths_agree_for_every_method_and_scope():
@@ -336,3 +345,270 @@ def test_per_band_welford_and_percentiles_match_direct_numpy(tmp_path):
     direct_std = values.transpose(1, 0, 2).reshape(64, -1).std(axis=1)
     np.testing.assert_allclose(result["stats"]["mean"], direct_mean, atol=1e-4)
     np.testing.assert_allclose(result["stats"]["std"], direct_std, atol=1e-4)
+
+
+# --- CED frontend --------------------------------------------------------------
+
+
+def test_ced_frontend_applies_the_fitted_scaling_in_both_paths():
+    """CED's power-to-dB mapping IS its compression stage, so dataset scaling
+    belongs on top of it exactly as it does on log-mel. Accepting the spec and
+    dropping it would train on one distribution and deploy on another."""
+    from sed.audio.features import CedFeatureExtractor, build_feature_extractor
+
+    base = dict(
+        frontend="ced", feature_type="mel", n_fft=512, win_length=512,
+        hop_length=160, n_mels=64, fmin=0, fmax=8000, window_seconds=0.4,
+    )
+    wave = _wave(6400)
+    plain = np.asarray(_as_numpy(build_feature_extractor(Config.model_validate({
+        "model": {"sample_rate": 16000}, "features": base,
+    }))(wave)))
+
+    cfg = Config.model_validate({
+        "model": {"sample_rate": 16000},
+        "features": {
+            **base, "scaling_method": "zscore", "scaling_scope": "per_band",
+            "scaling_stats": {
+                "mean": [round(float(v), 6) for v in plain[0].mean(axis=1)],
+                "std": [round(float(max(v, 1e-3)), 6) for v in plain[0].std(axis=1)],
+            },
+        },
+    })
+    # CED keeps only the canonical scaling_* fields — the legacy bool is an
+    # efficientat spelling and must not turn on here, or a reloaded snapshot
+    # would trip the efficientat-only guard.
+    assert cfg.features.standardize is False
+
+    scaled = np.asarray(_as_numpy(build_feature_extractor(cfg)(wave)))
+    assert abs(float(scaled.mean())) < 0.05
+    assert abs(float(scaled.std()) - 1.0) < 0.15
+
+    torch_free = CedFeatureExtractor(
+        sample_rate=16000, n_fft=512, win_length=512, hop_length=160,
+        n_mels=64, fmin=0, fmax=8000,
+        scaling=build_feature_extractor(cfg).scaling,
+    )._numpy(np.asarray(wave)[None, :])
+    assert torch_free.shape == scaled.shape
+    assert np.allclose(torch_free, scaled, atol=0.35)
+
+
+def test_ced_scaling_statistics_can_be_fitted(tmp_path):
+    """The fitter needs a CED branch or its constants could never be produced."""
+    from sed.data.feature_stats import fit_feature_scaling
+
+    cfg, layout = _fit_env(tmp_path, seconds=0.5, sr=16000)
+    features = FeaturesCfg(
+        frontend="ced", feature_type="mel", n_fft=512, win_length=512,
+        hop_length=160, n_mels=64, fmin=0, fmax=8000, window_seconds=0.4,
+        scaling_method="zscore", scaling_scope="per_band",
+    )
+    result = fit_feature_scaling(cfg, layout, features=features, sample_rate=16000)
+    assert result["bands"] == 64
+    assert len(result["stats"]["mean"]) == 64
+    assert all(v > 0 for v in result["stats"]["std"])
+
+
+# --- drift: does this dataset still fit the active constants? -------------------
+
+
+def _drift_cfg(stats, *, method="zscore", scope="per_band", sr=32000):
+    return Config.model_validate({
+        "model": {"sample_rate": sr},
+        "features": {
+            **_BASE_FEATURES, "scaling_method": method,
+            "scaling_scope": scope, "scaling_stats": stats,
+        },
+    })
+
+
+def test_scaling_drift_separates_a_fitting_dataset_from_a_shifted_one(tmp_path):
+    """A fine-tune inherits its parent's constants on purpose, so the actionable
+    question is whether the new material still lands inside them."""
+    from sed.data.feature_stats import (
+        _bare_extractor,
+        load_training_window,
+        measure_scaling_drift,
+    )
+
+    _cfg, layout = _fit_env(tmp_path)
+    with open(layout.dataset_dir / "train.csv", encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
+    probe = _drift_cfg({"mean": [0.0] * 64, "std": [1.0] * 64})
+    values = _as_numpy(_bare_extractor(probe.features, 32000)(
+        np.stack([load_training_window(r["path"], 32000, 1.0) for r in rows])
+    ))
+    mean = [round(float(v), 6) for v in values.mean(axis=(0, 2))]
+    std = [round(float(max(v, 1e-3)), 6) for v in values.std(axis=(0, 2))]
+
+    matched = measure_scaling_drift(_drift_cfg({"mean": mean, "std": std}), layout)
+    assert matched["status"] == "ok"
+    assert matched["max_mean_shift_sigma"] < 0.1
+    assert matched["clips"] > 0 and matched["groups"] > 0
+
+    shifted = measure_scaling_drift(
+        _drift_cfg({"mean": [m + 3.0 * s for m, s in zip(mean, std, strict=True)], "std": std}),
+        layout,
+    )
+    assert shifted["status"] == "error"
+    assert shifted["max_mean_shift_sigma"] > 1.0
+
+
+def test_scaling_drift_reports_clipping_for_minmax_and_skips_when_unscaled(tmp_path):
+    from sed.data.feature_stats import load_cached_scaling_drift, measure_scaling_drift
+
+    _cfg, layout = _fit_env(tmp_path)
+    narrow = _drift_cfg({"lo": [-4.0], "hi": [-3.9]}, method="minmax", scope="global")
+    result = measure_scaling_drift(narrow, layout)
+    assert result["status"] == "error"
+    assert result["clipped_fraction"] > 0.5
+
+    # Cached under the exact feature+dataset identity, so the advice panel can
+    # report it without re-reading audio — and never reports a stale one.
+    assert (load_cached_scaling_drift(narrow, layout) or {})["status"] == "error"
+    wide = _drift_cfg({"lo": [-40.0], "hi": [40.0]}, method="minmax", scope="global")
+    assert load_cached_scaling_drift(wide, layout) is None
+
+    unscaled = Config.model_validate({
+        "model": {"sample_rate": 32000}, "features": _BASE_FEATURES,
+    })
+    assert measure_scaling_drift(unscaled, layout)["status"] == "skipped"
+
+
+# --- the two axes -------------------------------------------------------------
+# A feature is a basis, a compression, and a normalization. The first two decide
+# what the numbers mean; the third only decides what range they arrive in. These
+# tests pin that separation, and pin that expressing the historical frontends in
+# it produces byte-identical values.
+
+
+def test_compression_and_normalization_are_independent_axes():
+    """Every compression accepts every normalization, for mel and for linear."""
+    for feature_type in ("mel", "linear"):
+        for compression in ("none", "log", "db", "pcen"):
+            bands = 128 if feature_type == "mel" else 463
+            f = FeaturesCfg.model_validate({
+                "feature_type": feature_type, "compression": compression,
+                "n_fft": 1024, "win_length": 882, "hop_length": 220,
+                "fmin": 80, "fmax": 20000,
+                "scaling_method": "minmax", "scaling_scope": "per_band",
+                "scaling_stats": {"lo": [0.0] * bands, "hi": [1.0] * bands},
+            })
+            assert f.compression == compression
+            assert (f.scaling_method, f.scaling_scope) == ("minmax", "per_band")
+
+
+def test_the_audioset_affine_is_stored_as_the_fixed_z_score_it_is():
+    """"No scaling" used to mean "(x + 4.5) / 5 anyway". Now it is written down."""
+    f = FeaturesCfg()
+    assert f.compression == "log"
+    assert (f.scaling_method, f.scaling_scope, f.scaling_source) == (
+        "zscore", "global", "fixed",
+    )
+    assert f.scaling_stats == {"mean": [-4.5], "std": [5.0]}
+    assert f.matches_pretrained_normalization()
+    # And it is not mistaken for something measured on a dataset.
+    assert f.standardize is False
+    assert f.normalization_label() == "z-score · global · fixed"
+
+
+def test_the_legacy_db_image_map_is_stored_as_a_fixed_minmax():
+    """db_norm bundled a compression and a normalization; both are named now."""
+    f = FeaturesCfg.model_validate({
+        "feature_type": "linear", "stft_engine": "scipy", "db_norm": True,
+        "db_min": -20.0, "db_max": 60.0, "n_fft": 190, "win_length": 190,
+        "hop_length": 167, "fmax": 22050,
+    })
+    assert f.compression == "db"
+    assert (f.scaling_method, f.scaling_scope, f.scaling_source) == (
+        "minmax", "global", "fixed",
+    )
+    assert f.scaling_stats == {"lo": [-20.0], "hi": [60.0]}
+    # The legacy spelling stays mirrored, so old readers keep working.
+    assert f.db_norm is True and (f.db_min, f.db_max) == (-20.0, 60.0)
+
+
+def test_switching_basis_drops_the_audioset_constants():
+    """AudioSet's affine describes log-mel; it must not follow a feature that
+    stops being one, where it would be an arbitrary offset and gain."""
+    f = FeaturesCfg()
+    linear = FeaturesCfg.model_validate({**f.model_dump(), "feature_type": "linear"})
+    assert linear.scaling_method == "none"
+    assert linear.scaling_stats == {}
+
+
+def test_fixed_constants_need_values_and_are_never_unresolved():
+    with pytest.raises(ValueError, match="never fitted"):
+        FeaturesCfg(scaling_method="minmax", scaling_source="fixed", scaling_stats={})
+    # "declared but not fitted yet" only describes constants that were going to
+    # be fitted, so an unresolved spec is a dataset one whatever it claims.
+    f = FeaturesCfg(
+        scaling_method="zscore", scaling_source="fixed",
+        scaling_stats={"mean": [0.0], "std": [1.0]},
+        standardize_stats_resolved=False,
+    )
+    assert f.scaling_source == "dataset"
+
+
+@pytest.mark.parametrize(
+    ("features", "expect"),
+    [
+        # The EfficientAT contract, written the old way and the new way.
+        ({}, lambda power: (np.log(power + 1e-5) + 4.5) / 5.0),
+        # A fitted global z-score over log-mel.
+        ({"standardize": True, "standardize_mean": -3.0, "standardize_std": 4.0},
+         lambda power: (np.log(power + 1e-5) + 3.0) / 4.0),
+        # dB compression with no normalization — previously impossible for mel.
+        ({"compression": "db"},
+         lambda power: 10.0 * np.log10(np.maximum(power, 1e-12))),
+    ],
+)
+def test_mel_pipeline_values_match_the_stages_written_out(features, expect):
+    from sed.audio.features import _mel_power_np, build_feature_extractor
+
+    wave = (np.random.default_rng(3).standard_normal(32000) * 0.1).astype(np.float32)
+    cfg = Config.model_validate({"features": features})
+    out = build_feature_extractor(cfg)(wave)
+    out = out.detach().cpu().numpy() if hasattr(out, "detach") else np.asarray(out)
+    power = _mel_power_np(wave, 32000, 1024, 800, 320, 128, 0, 15000)
+    # torch and librosa STFTs agree to float noise; on the dB scale that
+    # noise is proportionally larger because the values span tens of dB.
+    assert np.abs(out[0] - expect(power)).max() < 5e-3
+
+
+def test_legacy_db_image_values_are_bit_identical_through_the_new_stages():
+    from sed.audio.features import _linear_power_np, waveform_to_feature
+
+    wave = (np.random.default_rng(4).standard_normal(17640) * 0.1).astype(np.float32)
+    kwargs = dict(
+        feature_type="linear", stft_engine="scipy", n_fft=190, win_length=190,
+        hop_length=167, fmin=0, fmax=22050,
+    )
+    got = waveform_to_feature(
+        wave, 44100, db_norm=True, db_min=-20.0, db_max=60.0, **kwargs,
+    )
+    power = _linear_power_np(wave, 44100, 190, 190, 167, 0, 22050, stft_engine="scipy")
+    want = np.clip((10.0 * np.log10(np.maximum(power, 1e-12)) + 20.0) / 80.0, 0.0, 1.0)
+    assert np.array_equal(got, want.astype(np.float32))
+    # Naming the same thing canonically gives the same array.
+    canonical = waveform_to_feature(
+        wave, 44100, compression="db", scaling_method="minmax",
+        scaling_scope="global", scaling_source="fixed",
+        scaling_stats={"lo": [-20.0], "hi": [60.0]}, **kwargs,
+    )
+    assert np.array_equal(canonical, got)
+
+
+def test_scaling_can_be_fitted_on_any_compression():
+    """The fit runs in whatever domain the compression produced — dB and raw
+    power included, which the old fitter refused outright."""
+    from sed.data.feature_stats import _bare_extractor
+
+    wave = (np.random.default_rng(6).standard_normal(32000) * 0.1).astype(np.float32)
+    for compression in ("none", "log", "db", "pcen"):
+        f = FeaturesCfg.model_validate({**_BASE_FEATURES, "compression": compression})
+        out = _bare_extractor(f, 32000)(wave)
+        out = out.detach().cpu().numpy() if hasattr(out, "detach") else np.asarray(out)
+        assert np.isfinite(out).all()
+        # "Bare" means no normalization was applied, whatever the config says.
+        assert out.shape[1] == _BASE_FEATURES["n_mels"]

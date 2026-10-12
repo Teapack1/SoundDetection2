@@ -560,14 +560,21 @@ def _effective_scaling_method(features) -> str:
 
 
 def _feature_standardization_provenance(cfg: Config) -> dict[str, object]:
-    """Stable manifest record for dataset-fitted feature normalization."""
-    features = cfg.features
+    """Stable manifest record for the feature's normalization stage."""
+    from sed.config import resolved_features
+
+    features = resolved_features(cfg.features)
     scaling_stats = dict(getattr(features, "scaling_stats", {}) or {})
     method = _effective_scaling_method(features)
     return {
         "enabled": method != "none",
         "method": method,
         "scope": str(getattr(features, "scaling_scope", "global") or "global"),
+        # Where the constants came from: "dataset" (fitted here) or "fixed" (a
+        # checkpoint contract). Frozen into the manifest so a later comparison
+        # can tell a refit apart from an inherited contract.
+        "source": str(getattr(features, "scaling_source", "dataset") or "dataset"),
+        "compression": str(getattr(features, "compression", "log") or "log"),
         "feature_type": str(getattr(features, "feature_type", "mel")),
         "resolved": bool(getattr(features, "standardize_stats_resolved", True)),
         "mean": float(getattr(features, "standardize_mean", 0.0)),
@@ -597,25 +604,31 @@ def _validate_fitted_feature_scaling(cfg: Config, train_csv: Path) -> None:
     match. A parent fine-tune deliberately inherits its parent's exact
     normalization; refitting on the child data would invalidate encoder
     compatibility, so the parent's fitted provenance remains authoritative.
-    Resolved statistics without a dataset hash are a manual/checkpoint contract
-    (an external encoder's own constants) — legal for mel; the experimental
-    linear presets must always be fitted on this dataset.
+    Resolved statistics without a dataset hash are fixed constants — a
+    checkpoint contract or hand-entered values, e.g. AudioSet's fast-norm or the
+    legacy dB window. Those have no fit to be stale against, so they pass; a
+    dataset-sourced linear feature must always be fitted here.
     """
-    features = cfg.features
+    from sed.config import resolved_features
+
+    # Resolve first: a caller that flipped a feature flag in place would
+    # otherwise be gated against the previous feature's normalization.
+    features = resolved_features(cfg.features)
     if _effective_scaling_method(features) == "none":
         return
 
     provenance = _feature_standardization_provenance(cfg)
+    is_fitted = str(provenance.get("source") or "dataset") == "dataset"
     is_linear = str(getattr(features, "feature_type", "mel")) == "linear"
     expected_sha = str(provenance["dataset_sha256"]).strip().lower()
     problems: list[str] = []
     if not provenance["resolved"]:
         problems.append("statistics are not resolved")
     if not expected_sha:
-        if is_linear:
+        if is_linear and is_fitted:
             problems.append("statistics dataset SHA-256 is missing")
         elif not problems:
-            return  # resolved manual/checkpoint constants — no fit to check
+            return  # fixed constants, or a resolved manual contract — no fit to check
     if expected_sha and int(provenance["clips"]) <= 0:
         problems.append("statistics clip count must be positive")
     inherits_parent_contract = str(cfg.model.initialization) == "parent"

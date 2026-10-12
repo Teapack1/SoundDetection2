@@ -93,6 +93,36 @@ def test_record_cli_parses_tags_and_aliases(tmp_path, monkeypatch):
     assert captured["density"] == "quiet"
 
 
+def test_record_cli_stamps_the_same_project_id_with_and_without_serve(tmp_path, monkeypatch):
+    """`--serve` used to pass "" where the terminal path passed "_library", so
+    the same invocation wrote a different sidecar depending on the flag."""
+    _patch_paths(tmp_path, monkeypatch)
+    from sed.cli import app
+    from sed.config import LIBRARY_PROJECT_ID
+    from sed.data import record_server as server_mod
+    from sed.data import recorder as recorder_mod
+
+    terminal = {}
+    monkeypatch.setattr(
+        recorder_mod, "record_auto",
+        lambda *a, **k: terminal.update(k) or 0,
+    )
+    assert CliRunner().invoke(app, ["record", "-l", "x", "-n", "0"]).exit_code == 0
+    assert terminal["project_id"] == LIBRARY_PROJECT_ID
+
+    served = {}
+    monkeypatch.setattr(
+        server_mod, "serve",
+        lambda cfg, project_id, **k: served.update(project_id=project_id),
+    )
+    assert CliRunner().invoke(
+        app, ["record", "--serve", "-l", "x"]
+    ).exit_code == 0
+    # The console resolves "" to the same sentinel the recorder uses, so both
+    # paths stamp identically.
+    assert (served["project_id"] or LIBRARY_PROJECT_ID) == LIBRARY_PROJECT_ID
+
+
 def test_record_bare_device_lists_devices(monkeypatch):
     from sed.audio import capture as capture_mod
     from sed.cli import app

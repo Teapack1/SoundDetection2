@@ -140,7 +140,10 @@ def test_fitted_stat_provenance_is_reported_but_not_a_numeric_mismatch(
     assert payload["standardize_stats_dataset_sha256"] == "parent-dataset-sha"
     assert payload["standardize_stats_split_seed"] == 17
     assert payload["standardize_stats_clips"] == 512
-    assert payload["normalization"] == "zscore-ln-power"
+    # The label names both value axes, so two encoders that see different
+    # numbers can never read as the same frontend contract.
+    assert payload["compression"] == "log"
+    assert payload["normalization"] == "log+zscore-global-dataset"
     assert payload["resolved_feature_bands"] == 128
     assert payload["resolved_feature_frames"] == 40
     # 0.4 s of 32 kHz audio — the project's default model window.
@@ -364,6 +367,105 @@ def test_head_warm_starts_per_class_name_and_leaves_new_classes_random(
     assert torch.equal(linear.weight[2], head_before["1.weight"][2])
 
 
+def test_head_map_seeds_renamed_classes_from_one_parent_row(tmp_path, monkeypatch):
+    """The cross-stage case: a pretraining run labels the umbrella event and the
+    venue run labels variants of it, so exact matching warm-starts nothing.
+
+    Without a map every target row starts random at a fine-tune learning rate,
+    which is the observed cause of collapsed transfer runs.
+    """
+    _patch_dirs(tmp_path, monkeypatch)
+    from types import SimpleNamespace
+
+    from sed.train.model import SedModel
+    from sed.train.transfer import initialize_encoder_from_parent
+
+    _write_parent_bundle("pa", "run-a", num_classes=2)
+    run_dir = ProjectLayout("pa").model_dir("run-a")
+    (run_dir / "classes.json").write_text(
+        json.dumps(["_negative", "cheers"]), encoding="utf-8",
+    )
+
+    cfg = _make_cfg("pb", initialization="parent",
+                    parent_project="pa", parent_run="run-a")
+    cfg.training.transfer_head_map = {"riedel_wine": "cheers", "ikea_wine": "cheers"}
+    child_classes = ["_negative", "riedel_wine", "ikea_wine"]
+    child = SedModel("mn01", num_classes=len(child_classes), pretrained=False,
+                     n_bands=128, n_frames=100)
+
+    info = initialize_encoder_from_parent(
+        SimpleNamespace(model=child, classes=child_classes), cfg,
+    )
+    transfer = info["head_transfer"]
+    assert transfer["sources"] == {
+        "_negative": "exact",
+        "riedel_wine": "mapped:cheers",
+        "ikea_wine": "mapped:cheers",
+    }
+    assert transfer["new_classes"] == []
+
+    parent_state = torch.load(
+        run_dir / "checkpoint_best_epoch-000.ckpt", map_location="cpu", weights_only=False,
+    )["state_dict"]
+    source_row = parent_state["model.head.1.weight"][1]
+    linear = child.head[-1]
+    # Both mapped rows start from the parent's row but are not bit-identical:
+    # duplicated rows get a small deterministic jitter.
+    for row in (1, 2):
+        assert torch.allclose(linear.weight[row], source_row, atol=source_row.std() * 0.2)
+        assert torch.equal(linear.bias[row], parent_state["model.head.1.bias"][1])
+    assert not torch.equal(linear.weight[1], linear.weight[2])
+    # An exact match is still copied verbatim — jitter applies only to reuse.
+    assert torch.equal(linear.weight[0], parent_state["model.head.1.weight"][0])
+
+
+def test_head_map_jitter_is_seeded_by_the_training_seed(tmp_path, monkeypatch):
+    _patch_dirs(tmp_path, monkeypatch)
+    import torch as _torch
+
+    from sed.train.transfer import _warm_start_head
+
+    parent_names = ["_negative", "cheers"]
+    child_names = ["_negative", "a", "b"]
+    state = {
+        "model.head.1.weight": _torch.randn(2, 8),
+        "model.head.1.bias": _torch.randn(2),
+    }
+    head_map = {"a": "cheers", "b": "cheers"}
+
+    def run(seed):
+        head = _torch.nn.Sequential(_torch.nn.Dropout(0.0), _torch.nn.Linear(8, 3))
+        _warm_start_head(head, state, parent_names, child_names,
+                         head_map=head_map, seed=seed)
+        return head[-1].weight.detach().clone()
+
+    assert _torch.equal(run(42), run(42))
+    assert not _torch.equal(run(42), run(7))
+
+
+def test_head_map_ignores_a_source_the_parent_does_not_have(tmp_path, monkeypatch):
+    _patch_dirs(tmp_path, monkeypatch)
+    from sed.train.transfer import resolve_head_sources
+
+    sources = resolve_head_sources(
+        ["_negative", "cheers"], ["_negative", "riedel_wine"], {"riedel_wine": "nope"},
+    )
+    assert sources == {"_negative": "exact", "riedel_wine": "random"}
+
+
+def test_suggest_head_map_only_proposes_defensible_rows():
+    from sed.train.transfer import suggest_head_map
+
+    parent = ["_negative", "cheers", "clap"]
+    # Unrelated names get no suggestion — the operator maps them by hand rather
+    # than being handed a wrong parent row silently.
+    assert suggest_head_map(parent, ["_negative", "riedel_wine"]) == {}
+    # An umbrella name contained in the child's is the shape this pipeline makes.
+    assert suggest_head_map(parent, ["cheers_riedel_wine"]) == {"cheers_riedel_wine": "cheers"}
+    # Separator/case differences are the same class.
+    assert suggest_head_map(["Cheers-Loud"], ["cheers_loud"]) == {"cheers_loud": "Cheers-Loud"}
+
+
 def test_head_warm_start_can_be_switched_off(tmp_path, monkeypatch):
     _patch_dirs(tmp_path, monkeypatch)
     from types import SimpleNamespace
@@ -394,6 +496,7 @@ def test_recipe_select_endpoint_persists_parent_and_adopts_feature(tmp_path, mon
     parent's feature contract, and freeze both into config.toml."""
     import threading
     import time
+    import urllib.error
     import urllib.request
     from http.server import ThreadingHTTPServer
 
@@ -451,5 +554,49 @@ def test_recipe_select_endpoint_persists_parent_and_adopts_feature(tmp_path, mon
         # project's [features] + model.sample_rate.
         assert saved.model.sample_rate == 16000
         assert saved.features.n_mels == 64
+
+        # The picker also carries the parent's class list, so the head-map
+        # editor can render before anything is trained.
+        parent = next(
+            c for c in candidates["candidates"]
+            if (c["parent_project"], c["parent_run"]) == ("pa", "run-a")
+        )
+        assert "classes" in parent and "head_sources" in parent
+
+        # Head-map rows persist with the recipe, and a source the parent does
+        # not have is refused rather than silently dropped at train time.
+        target_classes = list(load_config("pc").dataset.target_classes)
+        parent_classes = parent["classes"]
+        child = next((c for c in target_classes if c not in parent_classes), None)
+        source = next((c for c in parent_classes if c not in target_classes), None)
+        if child and source:
+            def select(head_map):
+                payload = json.dumps({
+                    "architecture_id": "efficientat-mn", "task": "clip", "weight_id": "",
+                    "backbone": "mn01", "initialization": "parent", "params": {},
+                    "parent_project": "pa", "parent_run": "run-a",
+                    "adopt_parent_feature": True, "feature": None,
+                    "transfer_head_map": head_map,
+                }).encode()
+                request = urllib.request.Request(
+                    f"{base}/api/model-recipe/select", data=payload,
+                    headers={"Content-Type": "application/json"}, method="POST",
+                )
+                try:
+                    return json.loads(urllib.request.urlopen(request, timeout=60).read())
+                except urllib.error.HTTPError as exc:
+                    return json.loads(exc.read())
+
+            good = select({child: source})
+            assert good["ok"] is True, good
+            assert good["recipe"]["transfer_head_map"] == {child: source}
+            assert good["head_sources"][child] == f"mapped:{source}"
+            assert load_config("pc").training.transfer_head_map == {child: source}
+
+            bad = select({child: "__not_a_parent_class__"})
+            assert bad["ok"] is False
+            assert "does not have" in bad["error"]
+            # The rejected write must not have replaced the good rows.
+            assert load_config("pc").training.transfer_head_map == {child: source}
     finally:
         httpd.shutdown()

@@ -184,6 +184,55 @@ def feature_advice(features, sample_rate: int) -> list[dict]:
             ),
         })
 
+    # --- what actually normalizes the values ---------------------------------
+    # With no dataset scaling the mel path still applies an affine — AudioSet's
+    # fixed (x + 4.5) / 5. That constant was fitted at 32 kHz / 128 mel / 15 kHz
+    # fmax, so on any other geometry it is an arbitrary offset and gain rather
+    # than a normalization.
+    scaling_method = str(getattr(features, "scaling_method", "none") or "none").lower()
+    scaling_source = str(getattr(features, "scaling_source", "dataset") or "dataset").lower()
+    fitted = scaling_method != "none" and scaling_source == "dataset"
+    on_contract = bool(
+        callable(getattr(features, "matches_pretrained_normalization", None))
+        and features.matches_pretrained_normalization()
+        and sample_rate == 32000
+        and n_mels == 128
+        and fmax_eff == 15000
+    )
+    if not fitted and not on_contract and not bool(
+        getattr(features, "pcen", False)
+    ) and not bool(getattr(features, "db_norm", False)):
+        out.append({
+            "severity": "warn", "code": "scaling_none_off_contract",
+            "message": (
+                "Nothing about this feature's normalization was measured on your data. "
+                "The values reach the model through AudioSet's fixed (x + 4.5) / 5 affine "
+                "— a constant measured at 32 kHz / 128 mel / 15 kHz fmax, which this "
+                "feature is not. Fitting per-band statistics on your own training split is "
+                "the standard practice and gives every band comparable scale; the constants "
+                "are frozen into the bundle and reused in evaluation, calibration and "
+                "deployment."
+            ),
+            "suggest": {
+                "scaling_method": "zscore", "scaling_scope": "per_band",
+                "scaling_source": "dataset",
+            },
+        })
+    elif fitted and str(
+        getattr(features, "scaling_scope", "global") or "global"
+    ) == "global" and ftype == "mel" and n_mels >= 64:
+        out.append({
+            "severity": "info", "code": "scaling_global_on_dense_bands",
+            "message": (
+                f"Scaling is fitted as one value pair for all {n_mels} bands. A mel "
+                "spectrogram's band energies differ by orders of magnitude between the "
+                "low and high end, so a single scale leaves the quiet upper partials — "
+                "the ones carrying glass identity — near the bottom of the input range. "
+                "Per-band is the usual choice at this resolution."
+            ),
+            "suggest": {"scaling_scope": "per_band"},
+        })
+
     out.sort(key=lambda f: SEVERITY_ORDER.index(f["severity"]))
     return out
 
@@ -230,6 +279,31 @@ def model_advice(model, features, sample_rate: int) -> list[dict]:
             "suggest": {"initialization": "random"},
         })
 
+    # A non-native geometry on the task-specific encoder is legal and buildable
+    # — say what it costs rather than refusing to run it.
+    if backbone == "clink-cnn-v2":
+        try:
+            from types import SimpleNamespace
+
+            from sed.config import clink_cnn_v2_native_deviations
+
+            deviations = clink_cnn_v2_native_deviations(
+                SimpleNamespace(model=model, features=features)
+            )
+        except Exception:
+            deviations = []
+        if deviations:
+            out.append({
+                "severity": "info", "code": "clink_cnn_v2_off_native_geometry",
+                "message": (
+                    "This is not ClinkCNN-v2's native geometry (" + "; ".join(deviations)
+                    + "). The trunk is fully convolutional with an adaptive frequency "
+                    "pool, so it builds and trains here — but the receptive fields and "
+                    "the frequency-coordinate planes were sized for 44.1 kHz over 0.4 s, "
+                    "so treat this as an experiment rather than the tuned configuration."
+                ),
+            })
+
     # AudioSet MobileNets are strong, but their weights were fitted at a
     # specific geometry; far from it, the prior is worth less than it looks.
     if backbone.startswith(("mn", "dymn")) and (pretrained or init == "upstream"):
@@ -263,8 +337,76 @@ SMALL_TRANSFER_ROWS = 2000
 SPECAUG_FREQ_MASK_WARN_SHARE = 0.10
 
 
+# Origin buckets whose names say "this is a near-miss", not "this is room
+# tone". Kept deliberately small and English/German-mixed to match the library's
+# actual folder names; it only powers a suggestion, never a rule.
+_NEAR_MISS_HINTS: tuple[str, ...] = (
+    "metal", "cutlery", "cuttlery", "besteck", "fork", "knife", "spoon",
+    "glass", "glas", "bottle", "flasche", "klopf", "schnalz", "tap", "clink",
+)
+
+
+def pipeline_stage(cfg) -> dict:
+    """Which stage of the two-stage workflow this run is.
+
+    Stage one shapes a general encoder on a large corpus; stage two adapts it to
+    one venue's glassware. They want different depths, different regularization
+    and a different class space, so almost every other finding reads differently
+    depending on which one this is.
+    """
+    initialization = str(getattr(cfg.model, "initialization", "upstream") or "upstream")
+    if initialization == "parent":
+        return {
+            "stage": 2,
+            "label": "venue fine-tune",
+            "parent_project": str(getattr(cfg.model, "parent_project", "") or ""),
+            "parent_run": str(getattr(cfg.model, "parent_run", "") or ""),
+            "frontend_source": "inherited from the parent run",
+        }
+    return {
+        "stage": 1,
+        "label": "domain pretrain",
+        "parent_project": "",
+        "parent_run": "",
+        "frontend_source": (
+            "this project"
+            if str(getattr(cfg.features, "scaling_source", "dataset")) == "dataset"
+            and str(getattr(cfg.features, "scaling_method", "none")) != "none"
+            else "frontend default"
+        ),
+    }
+
+
 def _target_classes(cfg) -> list[str]:
     return [str(c) for c in getattr(cfg.model, "classes", []) if str(c) != "_negative"]
+
+
+def _cold_head_classes(cfg) -> list[str]:
+    """Classes whose classifier row would start random on a parent transfer.
+
+    Reads the parent's real class list, so the answer is the same one
+    ``initialize_encoder_from_parent`` will produce at train time. An
+    unreadable parent yields no finding rather than a guess.
+    """
+    try:
+        from sed.train.transfer import parent_classes, resolve_head_sources
+    except Exception:  # torch-free callers still get the rest
+        return []
+    parent_project = str(getattr(cfg.model, "parent_project", "") or "")
+    parent_run = str(getattr(cfg.model, "parent_run", "") or "")
+    if not parent_project or not parent_run:
+        return []
+    try:
+        names = parent_classes(parent_project, parent_run)
+    except Exception:
+        return []
+    children = [str(c) for c in getattr(cfg.model, "classes", [])]
+    if not names or not children:
+        return []
+    sources = resolve_head_sources(
+        names, children, dict(getattr(cfg.training, "transfer_head_map", {}) or {}),
+    )
+    return [name for name, source in sources.items() if source == "random"]
 
 
 def training_advice(cfg, dataset: dict | None = None) -> list[dict]:
@@ -286,6 +428,7 @@ def training_advice(cfg, dataset: dict | None = None) -> list[dict]:
     out: list[dict] = []
     data = dict(dataset or {})
     rows = int(data.get("rows") or 0)
+    drift = data.get("scaling_drift") if isinstance(data.get("scaling_drift"), dict) else None
     training = cfg.training
     features = cfg.features
     targets = _target_classes(cfg)
@@ -297,6 +440,40 @@ def training_advice(cfg, dataset: dict | None = None) -> list[dict]:
     # Two or more target classes that are variants of the same event: telling
     # them apart is a different problem from detecting the event at all.
     fine_grained = len(targets) >= 2
+
+    # --- is there anything to absorb the near-misses? -----------------------
+    # One `_negative` row has to model room tone, music, speech and cutlery at
+    # once. It handles the first three easily and the last one badly, because
+    # cutlery shares the target's attack and its bright partials — and cutlery
+    # is what actually fires in a venue. A separate class gives the model a
+    # place to put that decision, and (since the decision layer now lets a
+    # non-firing class win a window) an effect at inference.
+    roles = {}
+    try:
+        roles = cfg.class_roles([str(c) for c in getattr(cfg.model, "classes", [])])
+    except Exception:
+        roles = {}
+    has_suppressor = any(role == "suppressor" for role in roles.values())
+    near_miss_origins = sorted({
+        str(name) for name in (data.get("negative_origins") or [])
+        if any(hint in str(name).lower() for hint in _NEAR_MISS_HINTS)
+    })
+    if not has_suppressor and near_miss_origins:
+        out.append({
+            "severity": "info", "code": "near_miss_negatives_unsplit",
+            "message": (
+                "The `_negative` class is drawing from source buckets that sound like "
+                "near-misses rather than background: "
+                + ", ".join(near_miss_origins[:6])
+                + (" and others" if len(near_miss_origins) > 6 else "")
+                + ". Everything else — room tone, music, speech, mixed clips — can stay "
+                "in `_negative`; moving just these into a `hardnegs` class gives the "
+                "model a place to put the decision it actually gets wrong. Leave it out "
+                "of `[targets]` (or set enabled = false) and it competes for each window "
+                "without ever firing, so winning it suppresses the trigger."
+            ),
+            "detail": {"origins": near_miss_origins},
+        })
 
     # --- separating sibling classes ----------------------------------------
     if fine_grained:
@@ -341,6 +518,21 @@ def training_advice(cfg, dataset: dict | None = None) -> list[dict]:
     # --- what the head starts from -----------------------------------------
     if from_parent:
         head_init = str(getattr(training, "transfer_head_init", "matching_classes"))
+        cold = _cold_head_classes(cfg) if head_init != "random" else []
+        if cold:
+            out.append({
+                "severity": "warn", "code": "finetune_positive_rows_cold",
+                "message": (
+                    f"{len(cold)} classifier row(s) start random on a transfer run: "
+                    + ", ".join(cold) + ". The encoder transfers whole, but a random row "
+                    "has to be re-derived from this dataset at the fine-tune learning rate — "
+                    "a budget sized for a warm head. When the parent already models the same "
+                    "event under a different name (a general clink class versus your named "
+                    "glasses), map those rows onto it in the Model tab; otherwise expect to "
+                    "need a higher head LR or a deeper fine-tune."
+                ),
+                "detail": {"classes": cold},
+            })
         if head_init == "random":
             out.append({
                 "severity": "info", "code": "head_discarded_on_transfer",
@@ -353,6 +545,41 @@ def training_advice(cfg, dataset: dict | None = None) -> list[dict]:
                 ),
                 "suggest": {"transfer_head_init": "matching_classes"},
             })
+
+    # --- does this data still fit the frozen frontend scale? ----------------
+    # A parent fine-tune inherits its parent's fitted constants on purpose: they
+    # are part of the encoder's numeric contract. That makes the useful question
+    # the other one — are these clips still inside that scale?
+    if drift and str(drift.get("status")) in ("warn", "error"):
+        if str(drift.get("method")) == "zscore":
+            detail = (
+                f"the worst band's mean sits {drift.get('max_mean_shift_sigma')} standard "
+                f"deviations from the fitted one (band {drift.get('worst_band')}, spread ratio "
+                f"{drift.get('worst_band_std_ratio')})"
+            )
+        else:
+            detail = (
+                f"{float(drift.get('clipped_fraction') or 0.0):.1%} of values fall outside "
+                "the fitted range and are clipped"
+            )
+        out.append({
+            "severity": "warn" if str(drift.get("status")) == "warn" else "error",
+            "code": "scaling_drifted_from_this_dataset",
+            "message": (
+                f"These clips do not sit inside the active feature scaling — {detail}. "
+                + (
+                    "The scaling is inherited from the parent run and must stay that way "
+                    "(refitting it would change the input distribution the transferred "
+                    "encoder expects), so the fix is on the audio side: check gain "
+                    "staging, microphone and distance against the material the parent was "
+                    "fitted on."
+                    if from_parent else
+                    "Re-estimate the statistics from the current training split in the "
+                    "Audio Features tab."
+                )
+            ),
+            "detail": dict(drift),
+        })
 
     # --- BatchNorm: what the exported model will normalize with -------------
     freeze_bn = bool(getattr(training, "freeze_batchnorm", False))
@@ -489,6 +716,7 @@ def config_advice(cfg, dataset: dict | None = None) -> dict:
     """All advisory findings for a project config, grouped by area."""
     sample_rate = int(getattr(cfg.model, "sample_rate", 0) or 0)
     return {
+        "stage": pipeline_stage(cfg),
         "features": feature_advice(cfg.features, sample_rate),
         "model": model_advice(cfg.model, cfg.features, sample_rate),
         "training": training_advice(cfg, dataset),

@@ -12,7 +12,7 @@ import logging
 import re
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 if sys.version_info >= (3, 11):
     import tomllib
@@ -33,8 +33,30 @@ LIBRARY_DIR = REPO_ROOT / "data_library"
 PRESETS_DIR = REPO_ROOT / "presets"
 FEATURE_PRESETS_DIR = PRESETS_DIR / "audio_features"
 PROJECT_CONFIG_NAME = "config.toml"
+# The project id a clip carries when it was not recorded for any project.
+# Not a real project directory: it is the shared pool every project's default
+# source rule accepts alongside its own id (see data/source_filters.py), which
+# is what makes project-less recording expand the library for everyone.
+LIBRARY_PROJECT_ID = "_library"
 _TOML_NULL_SENTINEL = "__SED_TOML_NULL__"
 
+
+# An audio feature is built on two independent axes, and every frontend in this
+# repo is describable as a point on both (see FeaturesCfg):
+#   compression — how STFT power becomes the numbers (feature generation)
+#   normalization — how those numbers are mapped into the model's range
+FEATURE_COMPRESSIONS: tuple[str, ...] = ("none", "log", "db", "pcen")
+FEATURE_SCALING_METHODS: tuple[str, ...] = ("none", "zscore", "minmax")
+FEATURE_SCALING_SCOPES: tuple[str, ...] = ("global", "per_band")
+# "fixed" constants come from a checkpoint contract or are typed by hand and are
+# never fitted; "dataset" constants are fitted on the training split.
+FEATURE_SCALING_SOURCES: tuple[str, ...] = ("fixed", "dataset")
+
+# EfficientAT's published "fast normalization", (x + 4.5) / 5 over natural-log
+# mel. It is a global z-score with fixed constants measured on AudioSet, so it
+# is stored as one — there is no second, hidden normalization mechanism.
+EFFICIENTAT_FAST_NORM_MEAN: float = -4.5
+EFFICIENTAT_FAST_NORM_STD: float = 5.0
 
 EFFICIENTAT_PRETRAINED_FEATURE_CONTRACT: dict[str, Any] = {
     "features.frontend": "efficientat",
@@ -47,9 +69,16 @@ EFFICIENTAT_PRETRAINED_FEATURE_CONTRACT: dict[str, Any] = {
     "features.fmin": 0,
     "features.fmax": 15000,
     "features.window_seconds": 1.0,
-    # The AudioSet checkpoints expect the fast-norm affine; any dataset-fitted
-    # scaling replaces it and is off-contract.
-    "features.scaling_method": "none",
+    # The AudioSet checkpoints expect natural-log mel put through their own
+    # fixed affine. Fitting the constants on a dataset instead replaces it and
+    # is off-contract.
+    "features.compression": "log",
+    "features.scaling_method": "zscore",
+    "features.scaling_scope": "global",
+    "features.scaling_source": "fixed",
+    "features.scaling_stats": {
+        "mean": [EFFICIENTAT_FAST_NORM_MEAN], "std": [EFFICIENTAT_FAST_NORM_STD],
+    },
 }
 
 
@@ -68,22 +97,54 @@ CLINK_CNN_V2_FEATURE_CONTRACT: dict[str, Any] = {
     "features.fmin": 80,
     "features.fmax": 20000,
     "features.window_seconds": 0.4,
-    "features.log_power": True,
     "features.stft_engine": "librosa",
-    "features.db_norm": False,
     "features.colormap": "none",
-    "features.pcen": False,
-    "features.standardize": False,
+    # Natural-log mel through the EfficientAT affine — this architecture trains
+    # from scratch, so the affine is a starting point rather than a checkpoint
+    # requirement; the Audio Features lab can replace it with fitted constants.
+    "features.compression": "log",
+    "features.scaling_method": "zscore",
+    "features.scaling_scope": "global",
+    "features.scaling_source": "fixed",
+    "features.scaling_stats": {
+        "mean": [EFFICIENTAT_FAST_NORM_MEAN], "std": [EFFICIENTAT_FAST_NORM_STD],
+    },
 }
 
 
+def clink_cnn_v2_native_deviations(cfg: "Config") -> list[str]:
+    """Ways this config departs from ClinkCNN-v2's *native* geometry.
+
+    Advisory, never blocking. The encoder is fully convolutional with an
+    adaptive frequency pool, so a different sample rate or window length builds
+    and trains — it is simply not the geometry the architecture was designed
+    around, which is worth saying once rather than refusing to run.
+    """
+    if str(cfg.model.backbone) != "clink-cnn-v2":
+        return []
+    out: list[str] = []
+    if int(cfg.model.sample_rate) != 44_100:
+        out.append(
+            f"model.sample_rate={cfg.model.sample_rate!r} (native 44100)"
+        )
+    if not math.isclose(float(cfg.features.window_seconds), 0.4, rel_tol=0.0, abs_tol=1e-9):
+        out.append(
+            f"features.window_seconds={cfg.features.window_seconds!r} (native 0.4)"
+        )
+    return out
+
+
 def clink_cnn_v2_feature_mismatches(cfg: "Config") -> list[str]:
-    """Return unsupported frontend properties for ClinkCNN-v2.
+    """Return *structurally* unsupported frontend properties for ClinkCNN-v2.
 
     ClinkCNN-v2 remains one fixed learned topology, but its convolutional trunk
     and adaptive frequency pool can consume several resolved one-channel
-    spectrogram geometries. The native contract above is the default, not a
-    checkpoint restriction. Parent transfer remains stricter and compares the
+    spectrogram geometries. Only the properties the trunk genuinely cannot
+    consume are listed here — a channel count it has no stem for, a value domain
+    it was not built to read, or a resolved shape outside its pooling range.
+    Sample rate and window length are *preferences*, not requirements, and are
+    reported advisorily by :func:`clink_cnn_v2_native_deviations` instead, so any
+    rate stays runnable. Parent transfer remains stricter and compares the
     complete frontend signature in :mod:`sed.train.transfer`.
     """
     if str(cfg.model.backbone) != "clink-cnn-v2":
@@ -98,17 +159,9 @@ def clink_cnn_v2_feature_mismatches(cfg: "Config") -> list[str]:
         mismatches.append(
             f"features.feature_type={f.feature_type!r} (expected 'mel' or 'linear')"
         )
-    if int(cfg.model.sample_rate) != 44_100:
-        mismatches.append(
-            f"model.sample_rate={cfg.model.sample_rate!r} (expected 44100)"
-        )
     if int(cfg.model.channels) != 1:
         mismatches.append(
             f"model.channels={cfg.model.channels!r} (expected 1)"
-        )
-    if not math.isclose(float(f.window_seconds), 0.4, rel_tol=0.0, abs_tol=1e-9):
-        mismatches.append(
-            f"features.window_seconds={f.window_seconds!r} (expected 0.4)"
         )
     if str(f.colormap) != "none":
         mismatches.append(
@@ -132,12 +185,10 @@ def clink_cnn_v2_feature_mismatches(cfg: "Config") -> list[str]:
     # Import lazily: features imports Config helpers at runtime, while Config
     # validation must remain import-cycle free for all other backbones.
     if not mismatches:
-        from sed.audio.features import (
-            feature_band_count,
-            feature_frame_count_for_cfg,
-            mel_filter_diagnostics,
-        )
+        from sed.audio.features import feature_band_count, feature_frame_count_for_cfg
 
+        # The frequency pyramid and temporal attentive pooling do have real
+        # limits: outside these the trunk cannot produce an embedding at all.
         bands = feature_band_count(f, int(cfg.model.sample_rate))
         frames = feature_frame_count_for_cfg(cfg)
         if not 32 <= int(bands) <= 1024:
@@ -148,17 +199,9 @@ def clink_cnn_v2_feature_mismatches(cfg: "Config") -> list[str]:
             mismatches.append(
                 f"resolved time frames={frames} (expected 25..201)"
             )
-        if str(f.feature_type) == "mel":
-            diagnostics = mel_filter_diagnostics(
-                int(f.n_mels), int(f.n_fft), int(cfg.model.sample_rate),
-                float(f.fmin), float(f.fmax),
-            )
-            if int(diagnostics["empty_rows"]) > 0:
-                mismatches.append(
-                    f"features.n_mels={f.n_mels} with n_fft={f.n_fft} creates "
-                    f"{diagnostics['empty_rows']} empty mel filters; use at most "
-                    f"{diagnostics['max_usable_n_mels']} mels or raise n_fft"
-                )
+    # Empty mel filters are a feature-design cost, not a structural limit — the
+    # trunk consumes the constant rows fine. `advice.feature_advice` explains the
+    # n_fft/time-resolution tension behind them (code `empty_mel_filters`).
     return mismatches
 
 
@@ -398,7 +441,20 @@ class FeaturesCfg(BaseModel):
     # the crop is placed around the onset, not the clip centre (see
     # Config.window_lead_in_s and sed.train.datamodule.SedDataset._crop_start).
     window_seconds: float = 0.4
-    # Linear only: log-power vs raw power. Ignored for mel and when pcen is on.
+    # --- Feature generation: magnitude compression -----------------------
+    # What maps STFT power to the values the network sees, before ANY
+    # normalization. One axis with the same choices for mel and linear:
+    #   none — linear power (what the STFT produces)
+    #   log  — natural log, ln(power + 1e-5)
+    #   db   — decibels, 10*log10(power)
+    #   pcen — per-channel energy normalization (librosa.pcen); an adaptive
+    #          gain control, so it is a compression that also self-normalizes
+    # This is a *feature generation* choice: it decides what the numbers mean.
+    # How those numbers are then mapped into the model's numeric range is the
+    # separate `scaling_*` axis below. `log_power`, `db_norm` and `pcen` are the
+    # older per-feature-type spellings and are kept mirrored by the validator.
+    compression: str = "log"
+    # Legacy spelling, linear only: log-power vs raw power (compression log/none).
     log_power: bool = True
     # Linear only: STFT engine. "librosa" is the standard frontend (pre-emphasis,
     # Hann window, centered frames). "scipy" reproduces the legacy soundDetection
@@ -406,11 +462,13 @@ class FeaturesCfg(BaseModel):
     # per-segment mean detrend, no pre-emphasis, no centering, and amplitudes at
     # int16 full-scale (the legacy system read WAVs as raw int16).
     stft_engine: str = "librosa"
-    # Linear only: legacy fixed-range dB normalization. When on, the feature is
-    # 10·log10(power) mapped from [db_min, db_max] dB to [0, 1] and clipped —
-    # exactly the legacy system's image normalization. Overrides log_power; the
-    # defaults are the legacy system's -20..60 dB (int16-scale PSD) range.
+    # Legacy spelling of "dB compression + a fixed min-max normalization over
+    # [db_min, db_max]" — the legacy soundDetection image normalization. Kept as
+    # an input alias and mirrored back by the validator; the canonical form is
+    # compression="db" with scaling_method="minmax", scaling_source="fixed".
     db_norm: bool = False
+    # Edges of a fixed min-max normalization, in the compressed domain's own
+    # units (dB for db compression). The legacy system used -20..60 dB.
     db_min: float = -20.0
     db_max: float = 60.0
     # Colormap image render (the legacy soundDetection model input). When
@@ -422,9 +480,9 @@ class FeaturesCfg(BaseModel):
     # SmallerVGGNet model. "none" keeps the single-channel spectrogram.
     colormap: str = "none"
     image_size: int = 96
-    # Per-Channel Energy Normalization (librosa.pcen) applied to the mel OR linear
-    # power spectrogram instead of the efficientat log+fast-norm. Incompatible
-    # with the AudioSet-pretrained weights (different value distribution), so it
+    # Legacy spelling of compression="pcen": Per-Channel Energy Normalization
+    # (librosa.pcen) over the mel OR linear power spectrogram. Incompatible with
+    # the AudioSet-pretrained weights (different value distribution), so it
     # requires a from-scratch backbone. Off by default.
     pcen: bool = False
     pcen_time_constant: float = 0.4
@@ -432,27 +490,36 @@ class FeaturesCfg(BaseModel):
     pcen_bias: float = 2.0
     pcen_power: float = 0.5
     pcen_eps: float = 1e-6
-    # Standardized log-mel (z-score): raw natural-log mel standardized as
-    # (log_mel - mean) / std instead of the efficientat fast-norm affine. The
-    # common SED normalization. It changes the EfficientAT-pretrained value
-    # distribution, so use it only for scratch models or a checkpoint carrying
-    # the same explicit statistics.
+    # Legacy spelling of a dataset-fitted global z-score over the compressed
+    # values: (x - mean) / std. Mirrored by the validator onto scaling_method =
+    # "zscore" / scaling_scope = "global" / scaling_source = "dataset".
     standardize: bool = False
     standardize_mean: float = 0.0
     standardize_std: float = 1.0
-    # Dataset-fitted scaling (the generalized normalization). Applied after the
-    # per-sample compression (natural log or PCEN), with constants fitted on
-    # the live grouped TRAINING split only and frozen into the model bundle:
-    #   zscore — (x - mean) / std;  minmax — clip((x - lo) / (hi - lo), 0, 1)
-    # with robust p1/p99 edges. scope "global" fits one value pair over all
-    # bands; "per_band" fits one pair per feature row (mel band / linear bin).
-    # ``standardize`` above is the legacy spelling of zscore+global and is kept
-    # mirrored by the validator so old bundles and presets load unchanged.
+    # --- Value normalization ---------------------------------------------
+    # The one normalization axis, applied AFTER the compression above and
+    # nowhere else. It never changes what the numbers mean, only the range they
+    # arrive in:
+    #   none   — the compressed values reach the model unchanged
+    #   zscore — (x - mean) / std
+    #   minmax — clip((x - lo) / (hi - lo), 0, 1)
+    # scope "global" uses one value pair over all bands; "per_band" uses one
+    # pair per feature row (mel band / linear bin) — the usual SED choice at
+    # high band counts. The constants come from one of two places:
+    #   dataset — fitted on the live grouped TRAINING split only (validation
+    #             excluded) and frozen into the model bundle
+    #   fixed   — pinned by a checkpoint contract or typed by hand; nothing is
+    #             fitted, so the training launch gate does not demand a fit.
+    # Both EfficientAT's (x + 4.5) / 5 fast-norm and the legacy [-20, 60] dB
+    # image map are ordinary "fixed" specs — z-score and min-max respectively —
+    # so mel and linear features are normalized by the same mechanism.
     scaling_method: str = "none"    # none | zscore | minmax
     scaling_scope: str = "global"   # global | per_band
+    scaling_source: str = "dataset" # dataset | fixed
     # zscore: {"mean": [...], "std": [...]}; minmax: {"lo": [...], "hi": [...]}.
-    # One entry per statistic when global. Empty = not fitted yet (the training
-    # launch gate enforces fitting; extractors pass values through unscaled).
+    # One entry per statistic when global. Empty with source="dataset" = not
+    # fitted yet (the training launch gate enforces fitting; extractors pass
+    # values through unscaled until then).
     scaling_stats: dict[str, list[float]] = Field(default_factory=dict)
     # Dataset-fitted scaling provenance (shared by every scaling_method).
     # Existing manually specified mel contracts remain resolved by default;
@@ -479,6 +546,7 @@ class FeaturesCfg(BaseModel):
         self.feature_type = str(self.feature_type or "mel").lower()
         if self.feature_type not in ("mel", "linear"):
             raise ValueError("features.feature_type must be 'mel' or 'linear'")
+        self._resolve_compression()
         if self.n_fft <= 0 or self.win_length <= 0 or self.hop_length <= 0:
             raise ValueError("features n_fft, win_length, and hop_length must be positive")
         if self.window_seconds <= 0:
@@ -495,14 +563,12 @@ class FeaturesCfg(BaseModel):
         self.stft_engine = str(self.stft_engine or "librosa").lower()
         if self.stft_engine not in ("librosa", "scipy"):
             raise ValueError("features.stft_engine must be 'librosa' or 'scipy'")
-        # The scipy engine and dB normalization are linear-feature options; the
-        # mel path always uses the efficientat frontend, so a mel config carrying
-        # them would silently mean something else — reject it instead.
+        # The scipy engine reproduces the legacy linear PSD; the mel path always
+        # uses the efficientat frontend, so a mel config carrying it would
+        # silently mean something else — reject it instead.
         if self.feature_type == "mel" and self.stft_engine != "librosa":
             raise ValueError("features.stft_engine='scipy' requires feature_type='linear'")
-        if self.feature_type == "mel" and self.db_norm:
-            raise ValueError("features.db_norm requires feature_type='linear'")
-        if self.db_norm and self.db_max <= self.db_min:
+        if self.db_max <= self.db_min:
             raise ValueError("features.db_max must be greater than db_min")
         self.colormap = str(self.colormap or "none").lower()
         if self.colormap not in ("none", "jet"):
@@ -523,75 +589,13 @@ class FeaturesCfg(BaseModel):
                 "features.colormap='jet' is the legacy reproduction mode and requires "
                 "linear SciPy STFT with db_norm=True and the fixed [-20, 60] dB range"
             )
-        if self.standardize:
-            if self.pcen:
-                raise ValueError("features.standardize is incompatible with pcen")
-            if self.frontend != "efficientat":
-                raise ValueError("features.standardize requires the efficientat frontend")
-            if self.feature_type == "linear" and not self.log_power:
-                raise ValueError(
-                    "features.standardize requires natural-log linear power"
-                )
-            if self.feature_type == "linear" and self.db_norm:
-                raise ValueError(
-                    "features.standardize is incompatible with legacy dB mapping"
-                )
-            if self.standardize_std <= 0:
-                raise ValueError("features.standardize_std must be positive")
+        if self.standardize and self.standardize_std <= 0:
+            raise ValueError("features.standardize_std must be positive")
         if self.standardize_stats_clips < 0:
             raise ValueError("features.standardize_stats_clips must be >= 0")
         if not 0.0 <= self.standardize_stats_val_fraction < 1.0:
             raise ValueError("features.standardize_stats_val_fraction must be in [0, 1)")
-        # --- Dataset-fitted scaling (generalized normalization) --------------
-        self.scaling_method = str(self.scaling_method or "none").lower()
-        if self.scaling_method not in ("none", "zscore", "minmax"):
-            raise ValueError("features.scaling_method must be 'none', 'zscore', or 'minmax'")
-        self.scaling_scope = str(self.scaling_scope or "global").lower()
-        if self.scaling_scope not in ("global", "per_band"):
-            raise ValueError("features.scaling_scope must be 'global' or 'per_band'")
-        # Legacy migration: ``standardize`` is the old spelling of the fitted
-        # global z-score. The scaling_* fields are canonical; the bool and its
-        # scalars stay mirrored for the non-PCEN global z-score so old bundles,
-        # presets, and extractor call sites keep working unchanged.
-        if self.standardize and self.scaling_method == "none":
-            self.scaling_method = "zscore"
-            self.scaling_scope = "global"
-            if not self.scaling_stats:
-                self.scaling_stats = {
-                    "mean": [float(self.standardize_mean)],
-                    "std": [float(self.standardize_std)],
-                }
-        if (
-            self.scaling_method == "zscore"
-            and self.scaling_scope == "global"
-            and not self.pcen
-        ):
-            if self.scaling_stats.get("mean") and self.scaling_stats.get("std"):
-                self.standardize_mean = float(self.scaling_stats["mean"][0])
-                self.standardize_std = float(self.scaling_stats["std"][0])
-            else:
-                self.scaling_stats = {
-                    "mean": [float(self.standardize_mean)],
-                    "std": [float(self.standardize_std)],
-                }
-            self.standardize = True
-        else:
-            self.standardize = False
-        if self.scaling_method != "none":
-            if self.frontend != "efficientat":
-                raise ValueError("features.scaling_method requires the efficientat frontend")
-            if self.db_norm:
-                raise ValueError(
-                    "features.scaling_method is incompatible with the legacy dB mapping"
-                )
-            if self.colormap != "none":
-                raise ValueError(
-                    "features.scaling_method is incompatible with a colormap image render"
-                )
-            if self.feature_type == "linear" and not (self.log_power or self.pcen):
-                raise ValueError(
-                    "features.scaling_method on a linear feature requires log power or PCEN"
-                )
+        self._resolve_scaling()
         self._check_scaling_stats()
         if self.frontend == "ced":
             if self.feature_type != "mel":
@@ -607,6 +611,184 @@ class FeaturesCfg(BaseModel):
             if self.colormap != "none":
                 raise ValueError("features.frontend='ced' is 1-channel only; colormap must be 'none'")
         return self
+
+    def _resolve_compression(self) -> None:
+        """Settle the compression axis and keep the legacy flags mirrored.
+
+        ``compression`` is canonical. When a config was written with only the
+        old per-feature-type flags (``pcen`` / ``db_norm`` / ``log_power``) it
+        is derived from them, so every stored project, preset and frozen bundle
+        keeps producing byte-identical values.
+        """
+        if self.pcen:
+            implied = "pcen"
+        elif self.db_norm or self.frontend == "ced":
+            # The CED checkpoints are a dB-mel contract; naming it makes the
+            # frontend describable in the same vocabulary as everything else.
+            implied = "db"
+        elif self.feature_type == "linear" and not self.log_power:
+            implied = "none"
+        else:
+            implied = "log"
+        value = str(self.compression or "").lower()
+        # The canonical field wins, except when it still holds the default while
+        # the old flags name something else — that is a config written before the
+        # field existed, or one whose flags were edited without it.
+        if value not in FEATURE_COMPRESSIONS or (value == "log" and implied != "log"):
+            value = implied
+        if value not in FEATURE_COMPRESSIONS:
+            raise ValueError(
+                "features.compression must be one of " + ", ".join(FEATURE_COMPRESSIONS)
+            )
+        self.compression = value
+        # Mirror back so readers of the old flags stay correct.
+        self.pcen = value == "pcen"
+        self.log_power = value != "none"
+        if value == "pcen" and self.pcen_power <= 0:
+            raise ValueError("features.pcen_power must be positive")
+        if value == "pcen" and self.colormap != "none":
+            raise ValueError("features.colormap is incompatible with pcen")
+
+    def _resolve_scaling(self) -> None:
+        """Settle the normalization axis and keep the legacy flags mirrored.
+
+        Three older spellings all become ordinary ``scaling_*`` specs, so the
+        pipeline has exactly one normalization stage:
+
+        * ``db_norm``           → fixed min-max over ``[db_min, db_max]``
+        * ``standardize``       → dataset z-score, global scope
+        * the implicit EfficientAT ``(x + 4.5) / 5`` fast-norm, which was never
+          a config field at all → fixed z-score, ``mean=-4.5``, ``std=5``
+
+        Each mapping is numerically exact, so an existing project keeps feeding
+        its model the same values while gaining an explicit description of them.
+        """
+        self.scaling_method = str(self.scaling_method or "none").lower()
+        if self.scaling_method not in ("none", "zscore", "minmax"):
+            raise ValueError("features.scaling_method must be 'none', 'zscore', or 'minmax'")
+        self.scaling_scope = str(self.scaling_scope or "global").lower()
+        if self.scaling_scope not in ("global", "per_band"):
+            raise ValueError("features.scaling_scope must be 'global' or 'per_band'")
+        self.scaling_source = str(self.scaling_source or "dataset").lower()
+        if self.scaling_source not in FEATURE_SCALING_SOURCES:
+            raise ValueError(
+                "features.scaling_source must be one of "
+                + ", ".join(FEATURE_SCALING_SOURCES)
+            )
+
+        if self.db_norm and self.standardize:
+            raise ValueError(
+                "features.db_norm and features.standardize are two different "
+                "normalizations of the same values — choose one"
+            )
+        # Is the current spec still 'unset' as far as the legacy flags go? Either
+        # literally none, or the implicit fast-norm a previous validation filled
+        # in (so a config re-validated after an in-place edit still migrates).
+        is_fast_norm = (
+            self.scaling_method == "zscore"
+            and self.scaling_source == "fixed"
+            and self.scaling_scope == "global"
+            and self.scaling_stats.get("mean") == [EFFICIENTAT_FAST_NORM_MEAN]
+            and self.scaling_stats.get("std") == [EFFICIENTAT_FAST_NORM_STD]
+        )
+        if is_fast_norm and not (
+            self.frontend == "efficientat"
+            and self.feature_type == "mel"
+            and self.compression == "log"
+            and self.colormap == "none"
+        ):
+            # AudioSet's affine describes log-mel and nothing else. Switching
+            # basis or compression must not silently drag its constants along —
+            # they would be an arbitrary offset and gain on the new values.
+            self.scaling_method, self.scaling_stats = "none", {}
+            self.scaling_source = "dataset"
+            is_fast_norm = False
+        unset = self.scaling_method == "none" or is_fast_norm
+        if self.db_norm and unset:
+            self.scaling_method, self.scaling_scope = "minmax", "global"
+            self.scaling_source = "fixed"
+            self.scaling_stats = {
+                "lo": [float(self.db_min)], "hi": [float(self.db_max)],
+            }
+        elif self.standardize and unset:
+            self.scaling_method, self.scaling_scope = "zscore", "global"
+            self.scaling_source = "dataset"
+            self.scaling_stats = {
+                "mean": [float(self.standardize_mean)],
+                "std": [float(self.standardize_std)],
+            }
+        elif (
+            self.scaling_method == "none"
+            # Stats without a method are a mistake, not an implicit contract;
+            # _check_scaling_stats reports it rather than being overwritten here.
+            and not self.scaling_stats
+            and self.frontend == "efficientat"
+            and self.feature_type == "mel"
+            and self.compression == "log"
+            and self.colormap == "none"
+        ):
+            # The AudioSet fast-norm, made explicit. Exactly (x + 4.5) / 5.
+            self.scaling_method, self.scaling_scope = "zscore", "global"
+            self.scaling_source = "fixed"
+            self.scaling_stats = {
+                "mean": [EFFICIENTAT_FAST_NORM_MEAN],
+                "std": [EFFICIENTAT_FAST_NORM_STD],
+            }
+
+        if self.scaling_source == "fixed" and not self.standardize_stats_resolved:
+            # "Declared but not fitted yet" is only meaningful for constants that
+            # were going to be fitted. Fixed constants are complete by
+            # construction, so an unresolved spec is a dataset one.
+            self.scaling_source = "dataset"
+        fixed = self.scaling_source == "fixed"
+        if fixed and self.scaling_method != "none" and not self.scaling_stats:
+            raise ValueError(
+                "features.scaling_source='fixed' needs explicit features.scaling_stats — "
+                "fixed constants are never fitted"
+            )
+
+        # --- legacy mirrors -------------------------------------------------
+        lo = (self.scaling_stats.get("lo") or [None])[0]
+        hi = (self.scaling_stats.get("hi") or [None])[0]
+        self.db_norm = bool(
+            self.compression == "db"
+            and self.scaling_method == "minmax"
+            and self.scaling_scope == "global"
+            and fixed
+            and lo is not None
+            and hi is not None
+        )
+        if self.db_norm:
+            self.db_min, self.db_max = float(lo), float(hi)
+        # ``standardize`` keeps its exact historical meaning: a *fitted* global
+        # z-score over log values, replacing the efficientat frontend's own
+        # affine. Fixed contract constants, PCEN and dB z-scores are expressible
+        # only canonically, so the bool never widens beyond what old bundles and
+        # presets meant by it.
+        self.standardize = bool(
+            self.scaling_method == "zscore"
+            and self.scaling_scope == "global"
+            and self.scaling_source == "dataset"
+            and self.compression == "log"
+            and self.frontend == "efficientat"
+        )
+        if self.standardize:
+            if self.scaling_stats.get("mean") and self.scaling_stats.get("std"):
+                self.standardize_mean = float(self.scaling_stats["mean"][0])
+                self.standardize_std = float(self.scaling_stats["std"][0])
+            else:
+                self.scaling_stats = {
+                    "mean": [float(self.standardize_mean)],
+                    "std": [float(self.standardize_std)],
+                }
+            if self.standardize_std <= 0:
+                raise ValueError("features.standardize_std must be positive")
+
+        if self.scaling_method != "none" and self.colormap != "none" and not self.db_norm:
+            raise ValueError(
+                "features.colormap renders an already-[0,1] image, so it only accepts the "
+                "fixed dB min-max normalization (db_norm)"
+            )
 
     def _check_scaling_stats(self) -> None:
         """Coerce + sanity-check whatever fitted scaling statistics are present.
@@ -659,10 +841,34 @@ class FeaturesCfg(BaseModel):
         return (
             self.frontend == "efficientat"
             and self.feature_type == "mel"
-            and not self.pcen
-            and not self.standardize
-            and self.scaling_method == "none"
+            and self.compression == "log"
+            and self.scaling_method == "zscore"
+            and self.scaling_scope == "global"
+            and self.scaling_source == "fixed"
+            and abs(
+                float((self.scaling_stats.get("mean") or [0.0])[0])
+                - EFFICIENTAT_FAST_NORM_MEAN
+            ) < 1e-9
+            and abs(
+                float((self.scaling_stats.get("std") or [1.0])[0])
+                - EFFICIENTAT_FAST_NORM_STD
+            ) < 1e-9
         )
+
+    def compression_label(self) -> str:
+        """Human name of the compression stage, for UI and manifests."""
+        return {
+            "none": "linear power", "log": "log power",
+            "db": "decibels", "pcen": "PCEN (adaptive gain)",
+        }[self.compression]
+
+    def normalization_label(self) -> str:
+        """Human name of the normalization stage, for UI and manifests."""
+        if self.scaling_method == "none":
+            return "none"
+        name = "z-score" if self.scaling_method == "zscore" else "min-max"
+        scope = "per band" if self.scaling_scope == "per_band" else "global"
+        return f"{name} · {scope} · {self.scaling_source}"
 
 
 class OnsetCfg(BaseModel):
@@ -675,26 +881,26 @@ class OnsetCfg(BaseModel):
     trigger_n_mels: int = 64
     median_window_s: float = 5.0
     mad_k: float = 3.0
-    preroll_ms: int = 300
+    preroll_ms: int = 120
     # Derived from record_seconds and preroll_ms; recording code uses this value.
-    postroll_ms: int = 700
+    postroll_ms: int = 280
     # Global delay between accepted recordings. Unlike the detector's small
     # internal anti-double-trigger refractory, this applies across all selected
     # mics: once any mic starts a recording group, no mic can start another group
     # until this cooldown expires.
-    recording_cooldown_ms: int = 1500
+    recording_cooldown_ms: int = 600
     # Operators tune min_flux_db; code keeps the matching linear value for the
     # onset detector.
     min_flux: float = 1e-4
     min_flux_db: float = -80.0
-    record_seconds: float = 1.0
+    record_seconds: float = 0.4
     # Per-clip preroll randomisation. When True, each onset-triggered clip gets
     # a preroll drawn uniformly from `preroll_ms_range`; the postroll auto-
     # adjusts so the total saved length stays exactly record_seconds. Replaces
     # the post-processing time-shift augmentation — temporal jitter now lives
     # at recording time so the spectrogram is never wrapped or zero-padded.
     randomize_preroll: bool = True
-    preroll_ms_range: tuple[int, int] = (100, 700)
+    preroll_ms_range: tuple[int, int] = (60, 240)
     # Multichannel triggering. With "any" each recorded channel runs its own
     # Multichannel triggering. With "any" each recorded channel runs its own
     # onset detector and ANY of them can trigger a clip; near-simultaneous hits
@@ -972,6 +1178,21 @@ class TrainingCfg(BaseModel):
     # budget the presets assume. "random" restores the older behaviour of always
     # starting the head from scratch.
     transfer_head_init: str = "matching_classes"  # matching_classes | random
+    # Explicit "this run's class ← parent class" rows for the classifier warm
+    # start, applied on top of exact-name matching (which never needs an entry).
+    #
+    # The two stages of this pipeline rarely share positive class names: stage
+    # one labels the umbrella event (`cheers`) and stage two labels the vessels
+    # (`riedel_wine`, …), so exact matching warm-starts `_negative` and leaves
+    # every target row random — at a fine-tune learning rate that is the usual
+    # cause of a collapsed transfer. Mapping the vessels onto the parent's
+    # `cheers` row starts them from a solution that already lives in this exact
+    # embedding. Several children may share one parent row; each copy gets a
+    # small deterministic jitter so they do not start bit-identical.
+    #
+    # Ignored unless `model.initialization = "parent"` and
+    # `transfer_head_init = "matching_classes"`.
+    transfer_head_map: dict[str, str] = Field(default_factory=dict)
     # Per-stage LR decay applied stem→head across trainable backbone stages
     # (1.0 = uniform lr_backbone, as before; <1.0 gives earlier stages a lower LR).
     lr_layer_decay: float = 1.0
@@ -1172,6 +1393,20 @@ class TrainingCfg(BaseModel):
             raise ValueError(
                 "training.transfer_head_init must be 'matching_classes' or 'random'"
             )
+        head_map: dict[str, str] = {}
+        for child, parent in (self.transfer_head_map or {}).items():
+            child_name = str(child).strip()
+            parent_name = str(parent).strip()
+            if not child_name or not parent_name:
+                raise ValueError(
+                    "training.transfer_head_map entries need a non-empty class name "
+                    "on both sides"
+                )
+            # A self-mapping is what exact matching already does; keeping it would
+            # only make the resolved provenance lie about where the row came from.
+            if child_name != parent_name:
+                head_map[child_name] = parent_name
+        self.transfer_head_map = head_map
         if self.calibrate_per_1000 < 0:
             raise ValueError("training.calibrate_per_1000 must be >= 0")
         if self.calibrate_negsrc not in {"venue", "library"}:
@@ -1546,17 +1781,51 @@ class InspectCfg(BaseModel):
     max_thumbs_per_class: int = 200
 
 
+# Class names that read as a hard-negative bucket rather than a lighting cue, so
+# a project that adds one without an explicit `[targets]` entry gets suppressor
+# behaviour by default. Only a default — `[targets] <class> = { enabled = true }`
+# always wins, and any other name can be made a suppressor the same way.
+_SUPPRESSOR_CLASS_NAMES: frozenset[str] = frozenset({
+    "hardneg", "hardnegs", "hard_neg", "hard_negs",
+    "hard_negative", "hard_negatives", "hardnegative", "hardnegatives",
+})
+
+
 class TargetCfg(BaseModel):
     """One inference class → trigger / threshold / mining / ArtNet spec.
 
     `[targets]` is the single place that lists the classes inference cares about
     and how each behaves:
       - `enabled`   eligible to fire a trigger (and ArtNet, if configured).
+                    A class with `enabled = false` is a *suppressor*: it stays a
+                    model output and still competes for the window, so when it
+                    wins the system abstains instead of firing the runner-up.
+                    That is how a `hardnegs` class earns its keep — see
+                    `Config.class_roles`.
+      - `veto_max`  suppressor-only. When set, the window is discarded outright
+                    if this class scores above it, exactly like
+                    `inference.negative_max` does for `_negative`. Leave it unset
+                    for a suppressor that should only compete.
       - `threshold` per-class decision threshold; falls back to legacy
                     `[thresholds].<class>` then `inference.default_threshold`
                     (for `_negative`, `inference.negative_max`).
       - `mine`      save detections of this class when mining is on (`--mine`
                     or `mining.enabled`). `_negative` may set `mine = true`.
+      - `mine_threshold`  confidence a class must clear to be mined, independent
+                    of `threshold` (the deployment/trigger decision). Falls back
+                    to the legacy `mining.per_class_min_confidence` map, then to
+                    `threshold`/`class_threshold` when unset — see
+                    `Config.mine_threshold`. Lets a class be mined at a looser
+                    (or tighter) bar than the one that fires it.
+      - `role`      explicit override of `Config.class_roles`'s `target` /
+                    `negative` / `suppressor` classification. Leave unset to use
+                    the `enabled`-based default described there — `role` only
+                    needs setting to make a class *other than* `_negative`
+                    behave as a veto/background class (role = "negative"), e.g.
+                    to split one large `_negative` pool into named buckets such
+                    as `hardneg` / `cutlery` that each stay individually
+                    trainable but still pool into the shared veto gate and
+                    false-alarm metric.
       - `channel` / `value`  DMX channel + value sent on trigger.
 
     Example: 3 glass classes share channel 1 by using distinct values:
@@ -1567,9 +1836,30 @@ class TargetCfg(BaseModel):
     """
     enabled: bool = True
     threshold: float | None = None         # per-class decision threshold (see Config.class_threshold)
+    veto_max: float | None = None          # suppressor-only hard veto (see class docstring)
     mine: bool = False                     # save mined clips of this class when mining is on
+    mine_threshold: float | None = None    # per-class mining confidence (see Config.mine_threshold)
+    role: Literal["target", "negative", "suppressor"] | None = None  # explicit role override
     channel: int = 1                       # 1-indexed DMX channel
     value: int = 255                       # DMX value 0-255 sent on trigger
+
+    @model_validator(mode="after")
+    def _check_target(self) -> "TargetCfg":
+        if self.veto_max is not None and not (0.0 < float(self.veto_max) <= 1.0):
+            raise ValueError("[targets] veto_max must be in (0, 1]")
+        if self.veto_max is not None and self.enabled and self.role is None:
+            raise ValueError(
+                "[targets] veto_max applies to suppressor classes only "
+                "(enabled = false); an enabled class cannot veto itself"
+            )
+        if self.veto_max is not None and self.role == "target":
+            raise ValueError(
+                "[targets] veto_max applies to negative/suppressor classes only "
+                "(role != \"target\"); a target class cannot veto itself"
+            )
+        if self.mine_threshold is not None and not (0.0 < float(self.mine_threshold) <= 1.0):
+            raise ValueError("[targets] mine_threshold must be in (0, 1]")
+        return self
 
 
 class ProjectMeta(BaseModel):
@@ -1599,22 +1889,73 @@ class Config(BaseModel):
     targets: dict[str, TargetCfg] = Field(default_factory=dict)
     thresholds: dict[str, float] = Field(default_factory=dict)
 
+    def _role_for(self, cls: str) -> str:
+        """Resolve one class's role — the single source of truth `class_roles` fans out.
+
+        Precedence, most specific first:
+          1. Explicit `[targets].<cls>.role` — always wins.
+          2. The literal name `_negative` → `"negative"`, unconditionally. This
+             sits *above* the legacy `enabled` tier on purpose: a `[targets]`
+             entry that exists only to set `mine = true` (leaving `enabled` at
+             its default `True`) must not be reinterpreted as `role="target"`.
+          3. A `[targets]` entry with no `role` — legacy `enabled`-bool tier:
+             `"target"` if enabled else `"suppressor"`.
+          4. No entry at all — a name that reads as a hard-negative bucket
+             (`_SUPPRESSOR_CLASS_NAMES`) defaults to `"suppressor"`, anything
+             else to `"target"`.
+
+        Any class other than `_negative` can be given `role = "negative"`
+        explicitly, which is what lets a project split one large `_negative`
+        pool into named, individually-trainable buckets (`hardneg`, `cutlery`,
+        `vosec`, …) that still all act as background for the veto gate, the
+        loss's negative focusing, the sampler's background mass, and the
+        deployment false-alarm rate.
+        """
+        name = str(cls)
+        target = self.targets.get(name)
+        if target is not None and target.role is not None:
+            return target.role
+        if name == "_negative":
+            return "negative"
+        if target is not None:
+            return "target" if target.enabled else "suppressor"
+        return "suppressor" if name.lower() in _SUPPRESSOR_CLASS_NAMES else "target"
+
     def class_threshold(self, cls: str) -> float:
         """Effective decision threshold for one class.
 
-        Resolution order: per-class `[targets].<cls>.threshold` → (for
-        `_negative`) `inference.negative_max` → legacy `[thresholds].<cls>` →
+        Resolution order: per-class `[targets].<cls>.threshold` → (for any
+        `role == "negative"` class, which includes `_negative` by default)
+        `inference.negative_max` → legacy `[thresholds].<cls>` →
         `inference.default_threshold`. The legacy `[thresholds]` block is kept
         as a fallback so older configs and frozen model snapshots keep working.
         """
         target = self.targets.get(cls)
         if target is not None and target.threshold is not None:
             return float(target.threshold)
-        if cls == "_negative":
+        if self._role_for(cls) == "negative":
             return float(self.inference.negative_max)
         if cls in self.thresholds:
             return float(self.thresholds[cls])
         return float(self.inference.default_threshold)
+
+    def mine_threshold(self, cls: str) -> float:
+        """Effective mining confidence for one class — independent of `class_threshold`.
+
+        Resolution order: per-class `[targets].<cls>.mine_threshold` → legacy
+        `mining.per_class_min_confidence[cls]` → `class_threshold(cls)` (today's
+        implicit behaviour, unchanged when neither is set). Lets a class be
+        mined at a different bar than the one that fires/vetoes it — e.g.
+        capturing near-miss `_negative`/`hardneg` clips well below
+        `negative_max` for human review, without lowering the live veto.
+        """
+        target = self.targets.get(cls)
+        if target is not None and target.mine_threshold is not None:
+            return float(target.mine_threshold)
+        legacy = self.mining.per_class_min_confidence.get(cls)
+        if legacy is not None:
+            return float(legacy)
+        return self.class_threshold(cls)
 
     def effective_thresholds(self, classes: list[str]) -> dict[str, float]:
         """`class_threshold` for every class, as a dict."""
@@ -1645,6 +1986,44 @@ class Config(BaseModel):
     def mining_classes(self) -> set[str]:
         """Classes flagged for mining in `[targets]` (may include `_negative`)."""
         return {cls for cls, target in self.targets.items() if target.mine}
+
+    def class_roles(self, classes: list[str]) -> dict[str, str]:
+        """What each model output does at decision time.
+
+        ``"negative"``   — never competes for the window, only vetoes it
+                           (`_negative` by default; any class can be given
+                           `role = "negative"` explicitly — see `_role_for`).
+        ``"target"``     — may fire a trigger.
+        ``"suppressor"`` — a real output that never fires, but competes for the
+                           window so that when it wins, nothing fires. This is
+                           what makes a hard-negative class (cutlery, metal,
+                           glass handling) reduce false positives instead of
+                           being ignored.
+
+        See `_role_for` for the full resolution order and precedence.
+        """
+        return {str(cls): self._role_for(str(cls)) for cls in classes}
+
+    def class_vetoes(self, classes: list[str]) -> dict[str, float]:
+        """Every negative/suppressor class that hard-vetoes a window, and at what score.
+
+        A `role == "negative"` class (which includes `_negative` by default)
+        vetoes at `inference.negative_max` unless it sets its own explicit
+        `[targets] <class>.veto_max`. A `role == "suppressor"` class only
+        vetoes if it sets `veto_max` explicitly — competing for the window is
+        its default behaviour, vetoing is opt-in.
+        """
+        out: dict[str, float] = {}
+        roles = self.class_roles(classes)
+        for cls, role in roles.items():
+            if role not in ("negative", "suppressor"):
+                continue
+            target = self.targets.get(cls)
+            if target is not None and target.veto_max is not None:
+                out[cls] = float(target.veto_max)
+            elif role == "negative":
+                out[cls] = float(self.inference.negative_max)
+        return out
 
     @model_validator(mode="before")
     @classmethod
@@ -1842,13 +2221,48 @@ def _set_toml_key(text: str, section: str, key: str, value: Any) -> str:
     return text[:body_start] + new_body + text[body_end:]
 
 
-def update_config_toml_values(path: Path, updates: dict[str, dict[str, Any]]) -> None:
+def _remove_toml_key(text: str, section: str, key: str) -> str:
+    """Remove ``key`` from ``[section]`` in TOML text, if present.
+
+    Mirrors `_set_toml_key`'s section/body location logic exactly, so a key
+    written by one is reliably found and dropped by the other. A missing
+    section or key is a no-op, not an error — deleting something already gone
+    is the common case on a rename/remove round-trip.
+    """
+    header_re = re.compile(rf"(?m)^\[{re.escape(section)}\][^\n]*$")
+    hm = header_re.search(text)
+    if not hm:
+        return text
+    body_start = text.find("\n", hm.end())
+    if body_start == -1:
+        return text
+    body_start += 1
+    nm = re.compile(r"(?m)^\[[^\]]+\][^\n]*$").search(text, body_start)
+    body_end = nm.start() if nm else len(text)
+    body = text[body_start:body_end]
+    key_re = re.compile(rf"(?m)^\s*{re.escape(key)}\s*=.*\n?")
+    new_body = key_re.sub("", body, count=1)
+    return text[:body_start] + new_body + text[body_end:]
+
+
+def update_config_toml_values(
+    path: Path,
+    updates: dict[str, dict[str, Any]],
+    *,
+    removals: dict[str, list[str]] | None = None,
+) -> None:
     """Write nested ``{section: {key: value}}`` into a project config.toml.
 
     Hand-edited comments and unrelated keys are preserved (regex surgery rather
-    than a full re-dump), mirroring ``registry.set_active_model``.
+    than a full re-dump), mirroring ``registry.set_active_model``. ``removals``
+    (``{section: [key, ...]}``) deletes keys instead — applied first, so a
+    rename that both drops an old key and sets a new one in the same section
+    cannot have the deletion undo the write.
     """
     text = path.read_text(encoding="utf-8") if path.exists() else ""
+    for section, keys in (removals or {}).items():
+        for key in keys:
+            text = _remove_toml_key(text, section, key)
     for section, kv in updates.items():
         for key, value in kv.items():
             text = _set_toml_key(text, section, key, value)
@@ -2035,6 +2449,24 @@ def list_projects() -> list[str]:
     return sorted(p.name for p in PROJECTS_DIR.iterdir() if p.is_dir())
 
 
+def resolved_features(features: "FeaturesCfg") -> "FeaturesCfg":
+    """Re-run feature validation so the two axes reflect any in-place edits.
+
+    ``compression`` and the ``scaling_*`` fields are settled by the validator
+    from whatever spelling a config arrived in. A caller that mutates a live
+    Config (``cfg.features.pcen = True``, ``cfg.features.feature_type =
+    "linear"``) bypasses that, leaving the canonical fields describing the
+    previous feature. Anything that reads them to make a decision — the training
+    launch gate, the SpecAugment fill, the manifest record — resolves through
+    here first. Falls back to the input if the mutated combination is invalid,
+    so a diagnostic path never turns into a crash.
+    """
+    try:
+        return FeaturesCfg.model_validate(features.model_dump())
+    except Exception:  # noqa: BLE001
+        return features
+
+
 def effective_split_test_enabled(cfg: "Config") -> bool:
     """Effective unified split-test toggle: off unless explicitly configured."""
     configured = getattr(cfg.dataset, "split_test_enabled", None)
@@ -2087,11 +2519,11 @@ microphone_type = "generic" # description of mic, or list for multi-mic setup e.
 
 [onset]
 min_flux_db = -80
-record_seconds = 1.0 # saved clip length; keep >= features.window_seconds
-preroll_ms = 300 # lead-in when recording; capped at 30% of the model window
-recording_cooldown_ms = 1500 # global delay between accepted recordings
+record_seconds = 0.4 # saved clip length; keep >= features.window_seconds
+preroll_ms = 120 # lead-in when recording; capped at 30% of the model window
+recording_cooldown_ms = 600 # global delay between accepted recordings
 randomize_preroll = true
-preroll_ms_range = [100, 700]
+preroll_ms_range = [60, 240]
 multi_mic_trigger = "any" # any (save fired) | any_all (save all) | mix (downmix) | ch0 (mic 0)
 cross_channel_merge_ms = 500 # for "any"/"any_all": merge mic onsets into one clip
 

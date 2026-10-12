@@ -138,6 +138,7 @@ def test_val_fraction_changes_val_size(tmp_path, monkeypatch):
 class _RowsDataset:
     def __init__(self, rows: list[dict[str, str]]):
         self.rows = rows
+        self.negative_role_classes = {"_negative"}
 
     def __len__(self) -> int:
         return len(self.rows)

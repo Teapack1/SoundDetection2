@@ -40,6 +40,11 @@ LINEAR_DISPLAY_RANGE: tuple[float, float] = (-11.5, 2.0)
 # from-scratch backbone).
 FEATURE_TYPES: tuple[str, ...] = ("mel", "linear")
 
+# Magnitude compression — the feature-generation axis. Mirrors
+# sed.config.FEATURE_COMPRESSIONS, duplicated here so this module stays
+# importable in torch-free / config-free deployments.
+FEATURE_COMPRESSIONS: tuple[str, ...] = ("none", "log", "db", "pcen")
+
 # STFT engines for the linear feature. "librosa" is the standard frontend
 # (pre-emphasis + Hann + centered frames); "scipy" reproduces the legacy
 # soundDetection system's scipy.signal.spectrogram exactly (Tukey 0.25 window,
@@ -172,18 +177,23 @@ PCEN_DEFAULTS: dict = {
 
 @dataclass(frozen=True)
 class ScalingSpec:
-    """Resolved dataset-fitted scaling for one feature (see FeaturesCfg).
+    """Resolved value normalization for one feature (see FeaturesCfg).
 
-    ``a``/``b`` are the fitted constants — mean/std for ``zscore``, lo/hi for
-    ``minmax`` — shaped ``(1,)`` for global scope or ``(F,)`` per band. A
-    ``declared`` spec without constants (not fitted yet) is applied as the
-    identity on the compressed (log/PCEN) domain: the fast-norm affine is still
-    suppressed so previews and the statistics fit see the true value domain.
+    This is the feature pipeline's ONLY normalization stage. ``a``/``b`` are the
+    constants — mean/std for ``zscore``, lo/hi for ``minmax`` — shaped ``(1,)``
+    for global scope or ``(F,)`` per band, and ``source`` records where they
+    came from: ``fixed`` (a checkpoint contract or hand-entered values, e.g.
+    EfficientAT's (x + 4.5) / 5 or the legacy [-20, 60] dB map) or ``dataset``
+    (fitted on the training split). A ``declared`` dataset spec without
+    constants is not fitted yet and applies as the identity, so previews and the
+    statistics fit see the true compressed domain.
     """
 
     method: str = "none"           # none | zscore | minmax
     a: np.ndarray | None = None    # zscore: mean; minmax: lo
     b: np.ndarray | None = None    # zscore: std;  minmax: hi
+    scope: str = "global"          # global | per_band
+    source: str = "dataset"        # fixed | dataset
 
     @property
     def declared(self) -> bool:
@@ -193,19 +203,58 @@ class ScalingSpec:
     def active(self) -> bool:
         return self.declared and self.a is not None and self.b is not None
 
+    def describe(self) -> str:
+        if not self.declared:
+            return "none"
+        name = "z-score" if self.method == "zscore" else "min-max"
+        return f"{name} · {self.scope} · {self.source}"
 
-def scaling_spec_from_stats(method: str, stats: dict | None) -> ScalingSpec:
-    """Build a ScalingSpec from ``features.scaling_method`` + ``scaling_stats``."""
+
+def scaling_spec_from_stats(
+    method: str, stats: dict | None, scope: str = "global", source: str = "dataset"
+) -> ScalingSpec:
+    """Build a ScalingSpec from the ``features.scaling_*`` fields."""
     method = str(method or "none").lower()
+    scope = str(scope or "global").lower()
+    source = str(source or "dataset").lower()
     if method == "none":
-        return ScalingSpec()
+        return ScalingSpec(scope=scope, source=source)
     keys = ("mean", "std") if method == "zscore" else ("lo", "hi")
     stats = stats or {}
     a = np.asarray(stats.get(keys[0]) or [], dtype=np.float32)
     b = np.asarray(stats.get(keys[1]) or [], dtype=np.float32)
     if a.size == 0 or a.shape != b.shape:
-        return ScalingSpec(method=method)
-    return ScalingSpec(method=method, a=a, b=b)
+        return ScalingSpec(method=method, scope=scope, source=source)
+    return ScalingSpec(method=method, a=a, b=b, scope=scope, source=source)
+
+
+def efficientat_fast_norm_spec() -> ScalingSpec:
+    """EfficientAT's published (x + 4.5) / 5 affine, as an ordinary fixed spec.
+
+    Kept here so torch-free/direct callers of :class:`MelExtractor` (which
+    predate the explicit config axis) still get the AudioSet contract by default
+    instead of unnormalized log-mel.
+    """
+    from sed.config import EFFICIENTAT_FAST_NORM_MEAN, EFFICIENTAT_FAST_NORM_STD
+
+    return ScalingSpec(
+        method="zscore",
+        a=np.asarray([EFFICIENTAT_FAST_NORM_MEAN], dtype=np.float32),
+        b=np.asarray([EFFICIENTAT_FAST_NORM_STD], dtype=np.float32),
+        scope="global",
+        source="fixed",
+    )
+
+
+def _is_bare_efficientat_logmel(features) -> bool:
+    """Whether a feature is plain log-mel on the efficientat frontend."""
+    return (
+        str(getattr(features, "frontend", "efficientat") or "efficientat").lower()
+        == "efficientat"
+        and str(getattr(features, "feature_type", "mel") or "mel") == "mel"
+        and str(getattr(features, "colormap", "none") or "none").lower() == "none"
+        and feature_compression(features) == "log"
+    )
 
 
 def resolve_feature_scaling(features, n_bands: int | None = None) -> ScalingSpec:
@@ -218,7 +267,15 @@ def resolve_feature_scaling(features, n_bands: int | None = None) -> ScalingSpec
     spec = scaling_spec_from_stats(
         getattr(features, "scaling_method", "none"),
         getattr(features, "scaling_stats", None),
+        getattr(features, "scaling_scope", "global"),
+        getattr(features, "scaling_source", "dataset"),
     )
+    if not spec.declared and _is_bare_efficientat_logmel(features):
+        # Plain log-mel on the efficientat frontend IS the AudioSet contract —
+        # its affine is a fixed z-score, not the absence of one. Config
+        # validation records that explicitly; objects built without the field
+        # (bare namespaces, older snapshots) get it resolved here.
+        spec = efficientat_fast_norm_spec()
     if (
         spec.active
         and spec.a is not None
@@ -267,6 +324,58 @@ def apply_feature_scaling_torch(x, spec: ScalingSpec):
     return ((x - a) / (b - a)).clamp(0.0, 1.0)
 
 
+# Floors for the compression stage. LOG_EPS is EfficientAT's own 1e-5 (the mel
+# contract depends on it byte-for-byte); DB_FLOOR is -120 dB, low enough that any
+# sane dB window clips it to the bottom exactly as -inf would, while keeping the
+# values finite for everything downstream.
+LOG_EPS: float = 1e-5
+DB_FLOOR_POWER: float = 1e-12
+
+
+def compress_power(
+    power: np.ndarray,
+    compression: str = "log",
+    *,
+    sample_rate: int = 32000,
+    hop_length: int = 320,
+    pcen_params: dict | None = None,
+) -> np.ndarray:
+    """Power spectrogram → the compressed values, for any feature type.
+
+    This is the feature-generation stage: it decides what the numbers mean.
+    Mapping those numbers into the model's range is a separate stage
+    (:func:`apply_feature_scaling`), so mel and linear are compressed and
+    normalized by exactly the same two steps.
+    """
+    kind = str(compression or "log").lower()
+    arr = np.asarray(power, dtype=np.float32)
+    if kind == "none":
+        return arr
+    if kind == "log":
+        return np.log(arr + LOG_EPS).astype(np.float32)
+    if kind == "db":
+        return (10.0 * np.log10(np.maximum(arr, DB_FLOOR_POWER))).astype(np.float32)
+    if kind == "pcen":
+        return _apply_pcen(arr, sample_rate, hop_length, pcen_params)
+    raise ValueError(f"unsupported features.compression {compression!r}")
+
+
+def compress_power_torch(x, compression: str = "log"):
+    """Torch twin of :func:`compress_power` for the batched extractors.
+
+    PCEN has no torch implementation here — the extractors that offer it route
+    through the shared numpy path instead.
+    """
+    kind = str(compression or "log").lower()
+    if kind == "none":
+        return x
+    if kind == "log":
+        return (x + LOG_EPS).log()
+    if kind == "db":
+        return 10.0 * torch.log10(x.clamp_min(DB_FLOOR_POWER))
+    raise ValueError(f"features.compression {compression!r} has no torch path")
+
+
 def preview_display_range(
     feature_type: str, log_power: bool = True, pcen: bool = False,
     db_norm: bool = False,
@@ -310,23 +419,69 @@ def robust_display_range(
 def display_range_for_spec(
     spec: np.ndarray, feature_type: str, log_power: bool = True, pcen: bool = False,
     db_norm: bool = False, scaling_method: str = "none",
+    scaling_source: str = "dataset", scaling_stats: dict | None = None,
 ) -> tuple[float | None, float | None]:
-    """Display range for a rendered spec: robust percentiles for linear/PCEN
-    (wide dynamic range), the calibrated absolute range for the mel contract.
-    The legacy dB normalization renders on its true absolute [0, 1] range — the
-    image IS the normalized feature, exactly as the legacy system drew it.
-    Dataset-scaled features render on their own domain: min-max is exactly
-    [0, 1]; z-scored values autoscale by robust percentiles."""
+    """Display range for a rendered spec, decided by the normalization stage.
+
+    A min-max normalization always lands in exactly [0, 1] — including the
+    legacy dB image map, which is one. The AudioSet fast-norm is a known fixed
+    z-score, so it keeps its calibrated absolute range and quiet/loud clips stay
+    comparable; any other z-score, and every unnormalized feature with a wide
+    dynamic range, autoscales by robust percentiles.
+    """
     method = str(scaling_method or "none").lower()
     if method == "minmax":
         return (0.0, 1.0)
     if method == "zscore":
+        stats = scaling_stats or {}
+        mean = (stats.get("mean") or [None])[0]
+        std = (stats.get("std") or [None])[0]
+        if (
+            str(scaling_source or "").lower() == "fixed"
+            and mean is not None and std is not None
+            and abs(float(mean) + 4.5) < 1e-9 and abs(float(std) - 5.0) < 1e-9
+        ):
+            return EFFICIENTAT_DISPLAY_RANGE
         return robust_display_range(spec)
     if str(feature_type) == "linear" and db_norm and not pcen:
         return (0.0, 1.0)
     if pcen or str(feature_type) == "linear":
         return robust_display_range(spec)
     return preview_display_range(feature_type, log_power, pcen)
+
+
+def legacy_implied_compression(features) -> str:
+    """The compression the old per-feature-type flags describe.
+
+    ``pcen`` and ``db_norm`` are opt-in booleans, so they win where set;
+    ``log_power=False`` means raw power on a linear feature; the CED frontend
+    is a dB-mel by construction.
+    """
+    if bool(getattr(features, "pcen", False)):
+        return "pcen"
+    if bool(getattr(features, "db_norm", False)):
+        return "db"
+    if str(getattr(features, "frontend", "efficientat")).lower() == "ced":
+        return "db"
+    if (str(getattr(features, "feature_type", "mel")) == "linear"
+            and not bool(getattr(features, "log_power", True))):
+        return "none"
+    return "log"
+
+
+def feature_compression(features) -> str:
+    """The compression stage of a FeaturesCfg (or any compatible object).
+
+    The canonical ``compression`` field wins, except when it still holds the
+    default "log" while the older flags name something else — that is either a
+    config written before this field existed, or a live object whose ``pcen`` /
+    ``db_norm`` was flipped in place without re-validating.
+    """
+    value = str(getattr(features, "compression", "") or "").lower()
+    implied = legacy_implied_compression(features)
+    if value not in FEATURE_COMPRESSIONS or (value == "log" and implied != "log"):
+        return implied
+    return value
 
 
 def pcen_params_from_features(features) -> dict:
@@ -398,6 +553,27 @@ def _task_verdicts(task: str, fmap_t: int | None) -> list[dict]:
              "frame-level event timing."}]
 
 
+def _contract_scaling_spec(contract: dict) -> ScalingSpec:
+    """The normalization a checkpoint contract pins, as a ScalingSpec.
+
+    Older contract dicts spell it with ``features.standardize`` + mean/std;
+    current ones name the method, scope, source and constants outright.
+    """
+    method = str(contract.get("features.scaling_method", "") or "").lower()
+    stats = dict(contract.get("features.scaling_stats", {}) or {})
+    if not method and bool(contract.get("features.standardize", False)):
+        method, stats = "zscore", {
+            "mean": [float(contract.get("features.standardize_mean", 0.0))],
+            "std": [float(contract.get("features.standardize_std", 1.0))],
+        }
+    return scaling_spec_from_stats(
+        method or "none",
+        stats,
+        str(contract.get("features.scaling_scope", "global") or "global"),
+        str(contract.get("features.scaling_source", "fixed") or "fixed"),
+    )
+
+
 def _contract_mismatch_verdicts(
     features,
     sample_rate: int,
@@ -423,49 +599,38 @@ def _contract_mismatch_verdicts(
         checks.append(("feature_type", ftype, "mel", "high",
             "a linear/other spectrogram is a different basis than the mel input the weights "
             "learned — the pretrained filters do not transfer"))
-    if bool(getattr(features, "pcen", False)):
-        checks.append(("pcen", "on", "off", "high",
-            "PCEN's adaptive gain replaces the log + fast-norm the weights expect, so the "
-            "input distribution no longer matches pretraining"))
-    want_std = bool(contract.get("features.standardize", False))
-    have_std = bool(getattr(features, "standardize", False))
-    want_scaling = str(
-        contract.get("features.scaling_method", "") or ("zscore" if want_std else "none")
-    ).lower()
-    have_scaling = str(
-        getattr(features, "scaling_method", "") or ("zscore" if have_std else "none")
-    ).lower()
-    want_scope = str(contract.get("features.scaling_scope", "global") or "global").lower()
-    have_scope = str(getattr(features, "scaling_scope", "global") or "global").lower()
-
-    def _scaling_label(method: str, scope: str) -> str:
-        return method if method == "none" else f"{method} ({scope})"
-
-    if (have_scaling, have_scope if have_scaling != "none" else "global") != (
-        want_scaling, want_scope if want_scaling != "none" else "global",
+    # Axis 1: compression — what the numbers mean.
+    have_compression = feature_compression(features)
+    want_compression = str(contract.get("features.compression", "log") or "log").lower()
+    if have_compression != want_compression:
+        checks.append(("compression", have_compression, want_compression, "high",
+            "the checkpoint learned on a different magnitude compression, so the same sound "
+            "arrives with a different value distribution and dynamic range"))
+    # Axis 2: normalization — what range those numbers arrive in.
+    want_scaling = _contract_scaling_spec(contract)
+    have_scaling = resolve_feature_scaling(features)
+    if (have_scaling.method, have_scaling.scope, have_scaling.source) != (
+        want_scaling.method, want_scaling.scope, want_scaling.source,
     ):
-        checks.append(("dataset scaling",
-            _scaling_label(have_scaling, have_scope),
-            _scaling_label(want_scaling, want_scope), "high",
-            "the checkpoint expects a specific value normalization — dataset-fitted scaling "
-            "and the fast-norm affine produce different input distributions"))
-    elif want_scaling == "zscore" and want_scope == "global":
-        mean = float(getattr(features, "standardize_mean", 0.0))
-        std = float(getattr(features, "standardize_std", 1.0))
-        want_mean = float(contract.get("features.standardize_mean", 0.0))
-        want_stdv = float(contract.get("features.standardize_std", 1.0))
-        if abs(mean - want_mean) > 1e-3 or abs(std - want_stdv) > 1e-3:
-            checks.append(("standardize mean/std", f"{mean:.4f} / {std:.4f}",
-                f"{want_mean:.4f} / {want_stdv:.4f}", "medium",
-                "different normalization statistics shift/scale every input value relative to "
-                "what the checkpoint saw in pretraining"))
-    elif want_scaling != "none":
-        want_stats = dict(contract.get("features.scaling_stats", {}) or {})
-        have_stats = dict(getattr(features, "scaling_stats", {}) or {})
-        if want_stats and want_stats != have_stats:
-            checks.append(("scaling statistics", "fitted values", "checkpoint values", "medium",
-                "different fitted constants shift/scale every input value relative to what "
-                "the checkpoint saw in pretraining"))
+        checks.append(("normalization",
+            have_scaling.describe(), want_scaling.describe(), "high",
+            "the checkpoint expects one specific value normalization — swapping its fixed "
+            "affine for dataset-fitted constants (or vice versa) moves every input value"))
+    elif want_scaling.active and have_scaling.active:
+        same = (
+            have_scaling.a.shape == want_scaling.a.shape
+            and bool(np.allclose(have_scaling.a, want_scaling.a, atol=1e-3))
+            and bool(np.allclose(have_scaling.b, want_scaling.b, atol=1e-3))
+        )
+        if not same:
+            def _fmt(spec: ScalingSpec) -> str:
+                if spec.a.size == 1:
+                    return f"{float(spec.a[0]):.4g} / {float(spec.b[0]):.4g}"
+                return f"{spec.a.size} fitted band pairs"
+            checks.append(("normalization constants", _fmt(have_scaling), _fmt(want_scaling),
+                "medium",
+                "different constants shift/scale every input value relative to what the "
+                "checkpoint saw in pretraining"))
     if int(sample_rate) != int(contract["model.sample_rate"]):
         checks.append(("sample_rate", int(sample_rate), int(contract["model.sample_rate"]), "high",
             "changes the Hz each mel bin covers, so pretrained frequency filters land on "
@@ -651,9 +816,10 @@ def model_fit_report(features, backbone: str, pretrained: bool, sample_rate: int
     except Exception:  # noqa: BLE001
         contract = None
     contract = dict(contract or EFFICIENTAT_PRETRAINED_FEATURE_CONTRACT)
+    # Geometry, then the two value axes — a feature is on-contract only when the
+    # checkpoint would see the same numbers in the same range.
     on_contract = (
         str(getattr(features, "feature_type", "mel")) == "mel"
-        and not bool(getattr(features, "pcen", False))
         and n_bands == contract["features.n_mels"]
         and int(sample_rate) == contract["model.sample_rate"]
         and int(getattr(features, "n_fft", 0)) == int(contract["features.n_fft"])
@@ -662,10 +828,7 @@ def model_fit_report(features, backbone: str, pretrained: bool, sample_rate: int
         and int(getattr(features, "fmin", 0)) == int(contract["features.fmin"])
         and int(getattr(features, "fmax", 0)) == int(contract["features.fmax"])
         and in_ch == int(contract.get("model.channels", MN_INPUT_CHANNELS))
-        and bool(getattr(features, "standardize", False))
-        == bool(contract.get("features.standardize", False))
-        and str(getattr(features, "scaling_method", "none") or "none")
-        == str(contract.get("features.scaling_method", "none") or "none")
+        and not _contract_mismatch_verdicts(features, sample_rate, n_bands, in_ch, contract)
     )
 
     verdicts: list[dict] = []
@@ -960,14 +1123,17 @@ def mel_geometry_warning(features, sample_rate: int) -> tuple[dict | None, dict 
 
 
 class MelExtractor:
-    """Waveform → normalized mel features.
+    """Waveform → mel features, as compression then normalization.
 
-    Follows the vendored EfficientAT preprocessing: pre-emphasis, STFT, Kaldi
-    mel banks, natural log, and the (x + 4.5) / 5 fast normalization. With
-    ``standardize`` the fast-norm affine is replaced by a z-score over the raw
-    natural-log mel: ``(log_mel - standardize_mean) / standardize_std`` — the
-    common SED normalization. Everything up to the log stays byte-identical to
-    the EfficientAT preprocessing contract.
+    Everything up to the mel power spectrogram is byte-identical to the vendored
+    EfficientAT preprocessing (pre-emphasis, STFT, Kaldi mel banks). After that
+    come the two configurable stages: ``compression`` (log by default, the
+    AudioSet contract) and ``scaling``, the single normalization stage.
+
+    Callers that pass neither get the full EfficientAT contract — log plus its
+    published (x + 4.5) / 5 affine, expressed as an ordinary fixed z-score. The
+    legacy ``standardize`` arguments remain accepted and build the equivalent
+    dataset-sourced z-score spec.
     """
 
     def __init__(
@@ -985,6 +1151,7 @@ class MelExtractor:
         standardize_mean: float = 0.0,
         standardize_std: float = 1.0,
         scaling: ScalingSpec | None = None,
+        compression: str = "log",
     ):
         self.sample_rate = sample_rate
         self.n_fft = n_fft
@@ -994,15 +1161,25 @@ class MelExtractor:
         self.fmin = fmin
         self.fmax = fmax
         self.frontend = _require_efficientat(frontend)
+        self.compression = str(compression or "log").lower()
         self.standardize = bool(standardize)
         self.standardize_mean = float(standardize_mean)
         self.standardize_std = float(standardize_std)
-        # A declared ScalingSpec supersedes both the fast-norm affine and the
-        # legacy scalar standardize (the config keeps them mirrored for the
-        # global z-score, so the math is identical either way).
-        self.scaling = scaling if scaling is not None else ScalingSpec()
         if self.standardize and self.standardize_std <= 0:
             raise ValueError("standardize_std must be positive")
+        if scaling is not None:
+            self.scaling = scaling
+        elif self.standardize:
+            self.scaling = ScalingSpec(
+                method="zscore",
+                a=np.asarray([self.standardize_mean], dtype=np.float32),
+                b=np.asarray([self.standardize_std], dtype=np.float32),
+                scope="global", source="dataset",
+            )
+        elif self.compression == "log":
+            self.scaling = efficientat_fast_norm_spec()
+        else:
+            self.scaling = ScalingSpec()
 
         if _HAS_TORCH:
             self.window = torch.hann_window(win_length, periodic=False).to(device)
@@ -1052,12 +1229,9 @@ class MelExtractor:
         power = spec.abs().pow(2.0)
         mel_basis = self.mel_basis.to(device=waveform.device, dtype=power.dtype)
         melspec = torch.matmul(mel_basis, power)
-        melspec = (melspec + 0.00001).log()
-        if self.scaling.declared:
-            return apply_feature_scaling_torch(melspec, self.scaling)
-        if self.standardize:
-            return (melspec - self.standardize_mean) / self.standardize_std
-        return (melspec + 4.5) / 5.0
+        return apply_feature_scaling_torch(
+            compress_power_torch(melspec, self.compression), self.scaling
+        )
 
     # --- numpy fallback for inference-only (torch-free) deployments ------
 
@@ -1091,13 +1265,13 @@ class MelExtractor:
             )
             power = np.abs(stft).astype(np.float32) ** 2
             mel = mel_basis @ power
-            log_mel = np.log(mel + 0.00001)
-            if self.scaling.declared:
-                out.append(apply_feature_scaling(log_mel, self.scaling))
-            elif self.standardize:
-                out.append((log_mel - self.standardize_mean) / self.standardize_std)
-            else:
-                out.append((log_mel + 4.5) / 5.0)
+            out.append(apply_feature_scaling(
+                compress_power(
+                    mel, self.compression,
+                    sample_rate=self.sample_rate, hop_length=self.hop_length,
+                ),
+                self.scaling,
+            ))
         return np.stack(out, axis=0).astype(np.float32)
 
 
@@ -1119,8 +1293,16 @@ class CedFeatureExtractor:
         fmin: int = 0,
         fmax: int = 8000,
         device: str = "cpu",
+        scaling: ScalingSpec | None = None,
         **_ignored,
     ):
+        # CED's power→dB mapping IS its compression stage (compression="db",
+        # pinned to the checkpoint's own top_db=120 implementation). Whatever
+        # normalization is configured then applies on top of it, exactly as for
+        # log-mel. Silently dropping it would train on one distribution and
+        # deploy on another.
+        self.compression = "db"
+        self.scaling = scaling if scaling is not None else ScalingSpec()
         self.sample_rate = int(sample_rate)
         self.n_fft = int(n_fft)
         self.win_length = int(win_length)
@@ -1154,7 +1336,7 @@ class CedFeatureExtractor:
         if waveform.ndim == 1:
             waveform = waveform.unsqueeze(0)
         mel = self.mel(waveform)
-        return self.db(mel)
+        return apply_feature_scaling_torch(self.db(mel), self.scaling)
 
     def _numpy(self, waveform: np.ndarray) -> np.ndarray:
         import librosa
@@ -1182,7 +1364,10 @@ class CedFeatureExtractor:
                 htk=True,
                 norm=None,
             )
-            out.append(librosa.power_to_db(mel, ref=1.0, top_db=120).astype(np.float32))
+            out.append(apply_feature_scaling(
+                librosa.power_to_db(mel, ref=1.0, top_db=120).astype(np.float32),
+                self.scaling,
+            ))
         return np.stack(out, axis=0).astype(np.float32)
 
 
@@ -1191,7 +1376,7 @@ def waveform_to_logmel(
     sample_rate: int = 32000,
     **kwargs,
 ) -> np.ndarray:
-    """Convenience for one-shot feature extraction in pure numpy land."""
+    """Convenience for one-shot mel extraction in pure numpy land."""
     extractor = MelExtractor(sample_rate=sample_rate, **kwargs)
     feats = extractor(wave)
     if _HAS_TORCH and isinstance(feats, torch.Tensor):
@@ -1386,43 +1571,55 @@ def waveform_to_linear(
     standardize_mean: float = 0.0,
     standardize_std: float = 1.0,
     scaling: ScalingSpec | None = None,
+    compression: str | None = None,
+    pcen_params: dict | None = None,
     **_ignored,
 ) -> np.ndarray:
-    """Linear STFT power spectrogram (n_bins, T).
+    """Linear STFT spectrogram (n_bins, T), compressed then normalized.
 
     With the default librosa engine it mirrors the mel frontend's pre-emphasis +
     STFT so the two views are directly comparable; the scipy engine reproduces
     the legacy soundDetection PSD instead (see ``_scipy_psd_power_np``).
-    Frequency bins are cropped to [fmin, fmax]. Normalization is one of:
-    ``db_norm`` — the legacy fixed-range map, 10·log10(power) scaled from
-    [db_min, db_max] dB to [0, 1] and clipped; ``log_power`` — natural-log power
-    (absolute, comparable across clips), optionally dataset-scaled through a
-    declared ``scaling`` spec (which supersedes the legacy scalar standardize);
-    else raw power.
+    Frequency bins are cropped to [fmin, fmax], the values are compressed
+    (``compression``), then the single normalization stage is applied.
+
+    The legacy ``db_norm`` / ``log_power`` / ``standardize`` arguments are still
+    accepted and are translated into that same pair, so old call sites produce
+    identical output.
     """
     power = _linear_power_np(
         wave, sample_rate, n_fft, win_length, hop_length, fmin, fmax,
         stft_engine=stft_engine,
     )
-    if db_norm:
-        # Floor at -120 dB instead of -inf: identical output for any sane
-        # [db_min, db_max] range (a -120 dB bin clips to 0 exactly like -inf
-        # did), but downstream math never sees non-finite values.
-        db = 10.0 * np.log10(np.maximum(power, 1e-12))
-        scaled = (db - float(db_min)) / (float(db_max) - float(db_min))
-        return np.clip(scaled, 0.0, 1.0).astype(np.float32)
-    if log_power:
-        logged = np.log(power + 0.00001).astype(np.float32)
-        if scaling is not None and scaling.declared:
-            return apply_feature_scaling(logged, scaling)
-        if standardize:
+    kind = str(compression).lower() if compression else (
+        "db" if db_norm else ("log" if log_power else "none")
+    )
+    values = compress_power(
+        power, kind, sample_rate=sample_rate, hop_length=hop_length,
+        pcen_params=pcen_params,
+    )
+    if scaling is None:
+        if db_norm:
+            # The legacy fixed-range dB image map is a fixed min-max, and
+            # apply_feature_scaling's minmax already clips to [0, 1].
+            scaling = ScalingSpec(
+                method="minmax",
+                a=np.asarray([float(db_min)], dtype=np.float32),
+                b=np.asarray([float(db_max)], dtype=np.float32),
+                scope="global", source="fixed",
+            )
+        elif standardize:
             if float(standardize_std) <= 0.0:
                 raise ValueError("standardize_std must be positive")
-            logged = (
-                (logged - float(standardize_mean)) / float(standardize_std)
-            ).astype(np.float32)
-        return logged
-    return power.astype(np.float32)
+            scaling = ScalingSpec(
+                method="zscore",
+                a=np.asarray([float(standardize_mean)], dtype=np.float32),
+                b=np.asarray([float(standardize_std)], dtype=np.float32),
+                scope="global", source="dataset",
+            )
+        else:
+            scaling = ScalingSpec()
+    return apply_feature_scaling(values, scaling)
 
 
 def waveform_to_feature(
@@ -1449,64 +1646,85 @@ def waveform_to_feature(
     standardize_std: float = 1.0,
     scaling: ScalingSpec | None = None,
     scaling_method: str = "none",
+    scaling_scope: str = "global",
+    scaling_source: str = "dataset",
     scaling_stats: dict | None = None,
+    compression: str | None = None,
     **_ignored,
 ) -> np.ndarray:
-    """One clip → (n_bands, T) for the requested feature. Single numpy source of
-    truth shared by the preview, the trainable FeatureExtractor, and analysis.
+    """One clip → (n_bands, T). Single numpy source of truth, shared by the
+    preview, the trainable FeatureExtractor, and analysis.
 
-    - mel + efficientat (no PCEN): the AudioSet-pretrained log-mel contract,
-      or the standardized (z-score) log-mel when ``standardize`` is on.
-    - mel/linear + PCEN: power spectrogram → librosa.pcen.
-    - linear (no PCEN): linear STFT power (librosa or legacy scipy engine),
-      normalized as legacy fixed-range dB (db_norm), log, or raw power.
+    Three stages, identical for every feature type:
 
-    A dataset-fitted ``scaling`` spec (or the ``scaling_method``/``scaling_stats``
-    pair from a FeaturesCfg) applies after the compression — on natural-log
-    values or on the PCEN output — superseding the legacy scalar standardize.
+    1. **basis** — linear STFT bins (librosa or the legacy scipy PSD engine) or
+       Kaldi mel banks, cropped to [fmin, fmax]
+    2. **compression** — ``none`` | ``log`` | ``db`` | ``pcen``
+    3. **normalization** — the ``scaling`` spec: nothing, a z-score, or a
+       min-max, with constants either fixed (a checkpoint contract, e.g. the
+       AudioSet fast-norm or the legacy [-20, 60] dB map) or fitted on the
+       dataset.
+
+    The legacy ``pcen`` / ``log_power`` / ``db_norm`` / ``standardize`` flags are
+    still accepted and map onto those stages unchanged.
     """
     feature_type = str(feature_type)
     if scaling is None:
-        scaling = scaling_spec_from_stats(scaling_method, scaling_stats)
-    if pcen:
-        if feature_type == "linear":
-            power = _linear_power_np(
-                wave, sample_rate, n_fft, win_length, hop_length, fmin, fmax,
-                stft_engine=stft_engine,
-            )
-        else:
-            power = _mel_power_np(wave, sample_rate, n_fft, win_length, hop_length, n_mels, fmin, fmax)
-        return apply_feature_scaling(
-            _apply_pcen(power, sample_rate, hop_length, pcen_params), scaling
+        scaling = scaling_spec_from_stats(
+            scaling_method, scaling_stats, scaling_scope, scaling_source
         )
-    if feature_type == "linear":
-        return waveform_to_linear(
-            wave, sample_rate, n_fft=n_fft, win_length=win_length,
-            hop_length=hop_length, fmin=fmin, fmax=fmax, log_power=log_power,
-            stft_engine=stft_engine, db_norm=db_norm, db_min=db_min, db_max=db_max,
-            standardize=standardize, standardize_mean=standardize_mean,
-            standardize_std=standardize_std, scaling=scaling,
-        )
-    if str(frontend or "efficientat").lower() == "ced":
+    if str(frontend or "efficientat").lower() == "ced" and feature_type != "linear":
         return waveform_to_ced_dbmel(
             wave, sample_rate, n_fft=n_fft, win_length=win_length,
             hop_length=hop_length, n_mels=n_mels, fmin=fmin, fmax=fmax,
+            scaling=scaling,
         )[0]
+    kind = str(compression).lower() if compression else (
+        "pcen" if pcen else ("db" if db_norm else ("log" if log_power else "none"))
+    )
+    if feature_type == "linear":
+        return waveform_to_linear(
+            wave, sample_rate, n_fft=n_fft, win_length=win_length,
+            hop_length=hop_length, fmin=fmin, fmax=fmax,
+            stft_engine=stft_engine, db_min=db_min, db_max=db_max,
+            compression=kind, pcen_params=pcen_params,
+            # A legacy db_norm call carries no explicit spec; waveform_to_linear
+            # then builds the fixed [db_min, db_max] min-max itself.
+            scaling=None if (scaling is None or not scaling.declared) and db_norm else scaling,
+            db_norm=db_norm,
+        )
+    if kind == "pcen":
+        # PCEN has no torch path, so it works from the shared numpy mel power.
+        power = _mel_power_np(
+            wave, sample_rate, n_fft, win_length, hop_length, n_mels, fmin, fmax
+        )
+        return apply_feature_scaling(
+            compress_power(
+                power, "pcen", sample_rate=sample_rate, hop_length=hop_length,
+                pcen_params=pcen_params,
+            ),
+            scaling,
+        )
+    # Everything else stays on MelExtractor so training, export and this preview
+    # share one implementation of the EfficientAT mel pipeline.
     return waveform_to_logmel(
         wave, sample_rate, frontend=frontend, n_fft=n_fft, win_length=win_length,
         hop_length=hop_length, n_mels=n_mels, fmin=fmin, fmax=fmax,
+        compression=kind,
         standardize=standardize, standardize_mean=standardize_mean,
-        standardize_std=standardize_std, scaling=scaling,
+        standardize_std=standardize_std,
+        scaling=scaling if scaling.declared else None,
     )[0]
 
 
 class LinearExtractor:
-    """Batched standard linear-STFT frontend with a NumPy fallback.
+    """Batched linear-STFT frontend with a NumPy fallback.
 
     The operation order matches the EfficientAT-style mel frontend through the
     STFT: pre-emphasis 0.97, centered symmetric-Hann analysis, power, frequency
-    cropping, natural log, then an optional persisted global z-score. Legacy
-    scipy/dB and PCEN paths intentionally remain in :class:`FeatureExtractor`.
+    cropping — then the same two configurable stages every feature has,
+    ``compression`` and ``scaling``. The legacy scipy PSD engine, PCEN and the
+    colormap render stay in :class:`FeatureExtractor`.
     """
 
     def __init__(
@@ -1522,6 +1740,7 @@ class LinearExtractor:
         standardize_mean: float = 0.0,
         standardize_std: float = 1.0,
         scaling: ScalingSpec | None = None,
+        compression: str = "log",
         device: str = "cpu",
     ):
         self.sample_rate = int(sample_rate)
@@ -1530,12 +1749,23 @@ class LinearExtractor:
         self.hop_length = int(hop_length)
         self.fmin = int(fmin)
         self.fmax = int(fmax)
+        self.compression = str(compression or "log").lower()
         self.standardize = bool(standardize)
         self.standardize_mean = float(standardize_mean)
         self.standardize_std = float(standardize_std)
-        self.scaling = scaling if scaling is not None else ScalingSpec()
         if self.standardize and self.standardize_std <= 0.0:
             raise ValueError("standardize_std must be positive")
+        if scaling is not None:
+            self.scaling = scaling
+        elif self.standardize:
+            self.scaling = ScalingSpec(
+                method="zscore",
+                a=np.asarray([self.standardize_mean], dtype=np.float32),
+                b=np.asarray([self.standardize_std], dtype=np.float32),
+                scope="global", source="dataset",
+            )
+        else:
+            self.scaling = ScalingSpec()
         self._mask_np = _linear_freq_mask(
             self.n_fft, self.sample_rate, self.fmin, self.fmax,
         )
@@ -1569,14 +1799,10 @@ class LinearExtractor:
             return_complex=True,
         )
         mask = self.frequency_mask.to(device=waveform.device)
-        logged = (spectrum.abs().square()[:, mask, :] + 0.00001).log()
-        if self.scaling.declared:
-            return apply_feature_scaling_torch(logged, self.scaling)
-        if self.standardize:
-            logged = (
-                logged - self.standardize_mean
-            ) / self.standardize_std
-        return logged
+        power = spectrum.abs().square()[:, mask, :]
+        return apply_feature_scaling_torch(
+            compress_power_torch(power, self.compression), self.scaling
+        )
 
     def _numpy(self, waveform: np.ndarray) -> np.ndarray:
         if waveform.ndim == 1:
@@ -1590,11 +1816,8 @@ class LinearExtractor:
                 hop_length=self.hop_length,
                 fmin=self.fmin,
                 fmax=self.fmax,
-                log_power=True,
                 stft_engine="librosa",
-                standardize=self.standardize,
-                standardize_mean=self.standardize_mean,
-                standardize_std=self.standardize_std,
+                compression=self.compression,
                 scaling=self.scaling,
             )
             for w in waveform
@@ -1636,6 +1859,7 @@ class FeatureExtractor:
         standardize_mean: float = 0.0,
         standardize_std: float = 1.0,
         scaling: ScalingSpec | None = None,
+        compression: str | None = None,
         device: str = "cpu",  # accepted for drop-in parity; numpy path is CPU
     ):
         self.sample_rate = sample_rate
@@ -1643,6 +1867,7 @@ class FeatureExtractor:
         self.image_size = int(image_size)
         self.kwargs = dict(
             feature_type=str(feature_type),
+            compression=compression,
             pcen=bool(pcen),
             pcen_params=dict(pcen_params) if pcen_params else None,
             n_fft=n_fft,
@@ -1694,9 +1919,10 @@ def build_feature_extractor(cfg):
     validate_clink_cnn_v2_feature_contract(cfg, phase="feature extraction")
     f = cfg.features
     sr = int(cfg.model.sample_rate)
-    # Resolve the dataset-fitted scaling once, validating per-band vector
+    # Resolve the one normalization stage once, validating per-band vector
     # lengths against the actual feature geometry.
     scaling = resolve_feature_scaling(f, n_bands=feature_band_count(f, sr))
+    compression = feature_compression(f)
     if str(getattr(f, "frontend", "efficientat")).lower() == "ced":
         return CedFeatureExtractor(
             sample_rate=sr,
@@ -1707,12 +1933,13 @@ def build_feature_extractor(cfg):
             fmin=f.fmin,
             fmax=f.fmax,
             device="cpu",
+            scaling=scaling,
         )
     # A colormap image render is always a FeatureExtractor (never the plain
-    # MelExtractor), even for a mel base, so the image stage is applied.
-    # Standardized log-mel stays on MelExtractor too — same STFT/mel pipeline,
-    # only the final normalization differs.
-    if (str(f.feature_type) == "mel" and not bool(getattr(f, "pcen", False))
+    # Mel/Linear extractor), even for a mel base, so the image stage is applied.
+    # Every non-PCEN mel stays on MelExtractor whatever its compression and
+    # normalization: those are the two stages after a shared STFT/mel pipeline.
+    if (str(f.feature_type) == "mel" and compression != "pcen"
             and str(getattr(f, "colormap", "none")).lower() == "none"):
         return MelExtractor(
             sample_rate=sr,
@@ -1724,16 +1951,12 @@ def build_feature_extractor(cfg):
             fmax=f.fmax,
             frontend=f.frontend,
             device="cpu",
-            standardize=bool(getattr(f, "standardize", False)),
-            standardize_mean=float(getattr(f, "standardize_mean", 0.0)),
-            standardize_std=float(getattr(f, "standardize_std", 1.0)),
+            compression=compression,
             scaling=scaling,
         )
     if (
         str(f.feature_type) == "linear"
-        and not bool(getattr(f, "pcen", False))
-        and bool(getattr(f, "log_power", True))
-        and not bool(getattr(f, "db_norm", False))
+        and compression in ("none", "log", "db")
         and str(getattr(f, "stft_engine", "librosa")) == "librosa"
         and str(getattr(f, "colormap", "none")) == "none"
     ):
@@ -1744,9 +1967,7 @@ def build_feature_extractor(cfg):
             hop_length=f.hop_length,
             fmin=f.fmin,
             fmax=f.fmax,
-            standardize=bool(getattr(f, "standardize", False)),
-            standardize_mean=float(getattr(f, "standardize_mean", 0.0)),
-            standardize_std=float(getattr(f, "standardize_std", 1.0)),
+            compression=compression,
             scaling=scaling,
             device="cpu",
         )
@@ -1759,18 +1980,13 @@ def build_feature_extractor(cfg):
         fmin=f.fmin,
         fmax=f.fmax,
         feature_type=f.feature_type,
-        pcen=bool(getattr(f, "pcen", False)),
+        compression=compression,
         pcen_params=pcen_params_from_features(f),
-        log_power=bool(getattr(f, "log_power", True)),
         stft_engine=str(getattr(f, "stft_engine", "librosa")),
-        db_norm=bool(getattr(f, "db_norm", False)),
         db_min=float(getattr(f, "db_min", -20.0)),
         db_max=float(getattr(f, "db_max", 60.0)),
         colormap=str(getattr(f, "colormap", "none")),
         image_size=int(getattr(f, "image_size", 96)),
         frontend=f.frontend,
-        standardize=bool(getattr(f, "standardize", False)),
-        standardize_mean=float(getattr(f, "standardize_mean", 0.0)),
-        standardize_std=float(getattr(f, "standardize_std", 1.0)),
         scaling=scaling,
     )

@@ -157,6 +157,14 @@ class StreamingSuperflux:
         if rms > self._peak_rms:
             self._peak_rms = rms
 
+        # `_frame` prepends the samples left over from last call, so frame 0
+        # does NOT start at the beginning of `block`. Capture how far back it
+        # actually reaches before framing consumes it — without this the
+        # reported onset index is late by the tail length, which sawtooths
+        # through [0, hop) block to block: up to 32 ms of jitter written
+        # straight into each clip's `onset_offset_s`, the crop centre training
+        # trusts to find the transient.
+        tail_before = int(self._tail.shape[0])
         frames = self._frame(block)
         if frames.shape[0] == 0:
             return []
@@ -169,7 +177,7 @@ class StreamingSuperflux:
 
         events: list[OnsetEvent] = []
         sample_idx_of_first_frame = (
-            write_idx_at_end - block.shape[0] + (self._n_fft // 2)
+            write_idx_at_end - block.shape[0] - tail_before + (self._n_fft // 2)
         )
 
         for f_i in range(mel_log.shape[0]):

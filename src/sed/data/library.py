@@ -914,6 +914,20 @@ class Library:
         self.rebuild_manifest()
         return True
 
+    def remove_clips(self, paths: list[str | Path] | set[str | Path]) -> list[LibraryClip]:
+        """Delete these clips' files and drop their manifest rows in one pass.
+
+        The bulk counterpart to :meth:`remove_clip`, which rebuilds the whole
+        manifest per clip — fine for undoing one take, but quadratic when a
+        recording run of several hundred clips is discarded at once.
+
+        Returns the clip records that were removed from the index.
+        """
+        wavs = [Path(p) for p in paths]
+        for wav in wavs:
+            self._delete_file_pair(wav)
+        return self.remove_paths_from_manifest([str(w) for w in wavs])
+
     def remove_paths_from_manifest(
         self, paths: list[str | Path] | set[str | Path],
     ) -> list[LibraryClip]:

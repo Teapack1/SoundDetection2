@@ -11,19 +11,29 @@ parents' manifests.
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
-from sed.config import Config, ProjectLayout, load_config_snapshot
+from sed.config import (
+    EFFICIENTAT_FAST_NORM_MEAN,
+    EFFICIENTAT_FAST_NORM_STD,
+    Config,
+    ProjectLayout,
+    load_config_snapshot,
+)
 from sed.train.model_lab import recipe_from_config, recipe_signature
 from sed.train.registry import get_checkpoint
 from sed.util import sha256_file
+
+log = logging.getLogger(__name__)
 
 
 def _feature_signature(cfg: Config) -> dict[str, Any]:
     from sed.audio.features import (
         feature_band_count,
         feature_channels,
+        feature_compression,
         feature_frame_count_for_cfg,
         window_sample_count,
     )
@@ -36,8 +46,10 @@ def _feature_signature(cfg: Config) -> dict[str, Any]:
     db_norm = bool(f.db_norm)
     standardize = bool(f.standardize)
     log_power = bool(f.log_power)
+    compression = feature_compression(f)
     scaling_method = str(getattr(f, "scaling_method", "none") or "none")
     scaling_scope = str(getattr(f, "scaling_scope", "global") or "global")
+    scaling_source = str(getattr(f, "scaling_source", "dataset") or "dataset")
     scaling_stats = {
         str(k): [float(v) for v in (vals or [])]
         for k, vals in (getattr(f, "scaling_stats", {}) or {}).items()
@@ -45,8 +57,20 @@ def _feature_signature(cfg: Config) -> dict[str, Any]:
     if scaling_method == "none" and standardize:
         # Configs mutated without re-validation: the legacy bool still declares
         # the fitted global z-score (validation normally mirrors these).
-        scaling_method, scaling_scope = "zscore", "global"
+        scaling_method, scaling_scope, scaling_source = "zscore", "global", "dataset"
+    is_fast_norm = (
+        scaling_method == "zscore" and scaling_scope == "global"
+        and scaling_source == "fixed"
+        and scaling_stats.get("mean") == [EFFICIENTAT_FAST_NORM_MEAN]
+        and scaling_stats.get("std") == [EFFICIENTAT_FAST_NORM_STD]
+    )
 
+    log_transform_for = {
+        "none": None,
+        "log": "ln(power+1e-5)",
+        "db": "10*log10(max(power,1e-12))",
+        "pcen": None,
+    }
     if frontend == "ced":
         spectral_basis = "htk-mel"
         normalization = "power-db-ref-1-top-120"
@@ -67,27 +91,18 @@ def _feature_signature(cfg: Config) -> dict[str, Any]:
         stft_detrend = None if stft_engine == "librosa" else "constant"
         stft_scaling = "magnitude-squared" if stft_engine == "librosa" else "psd-density"
         input_amplitude_scale = 1.0 if stft_engine == "librosa" else 32767.0
-        if pcen:
-            normalization = "pcen" if scaling_method == "none" else f"pcen+{scaling_method}"
-            log_transform = None
-        elif db_norm:
+        log_transform = log_transform_for[compression]
+        # The label names both stages, so two runs whose encoders see different
+        # numbers can never read as the same contract.
+        if db_norm:
             normalization = "legacy-fixed-db"
-            log_transform = "10*log10(max(power,1e-12))"
-        elif scaling_method == "minmax" and (feature_type == "mel" or log_power):
-            normalization = "minmax-ln-power"
-            log_transform = "ln(power+1e-5)"
-        elif scaling_method == "zscore" and (feature_type == "mel" or log_power):
-            normalization = "zscore-ln-power"
-            log_transform = "ln(power+1e-5)"
-        elif feature_type == "mel":
+        elif is_fast_norm:
             normalization = "efficientat-fast-norm"
-            log_transform = "ln(power+1e-5)"
-        elif log_power:
-            normalization = "ln-power"
-            log_transform = "ln(power+1e-5)"
+        elif scaling_method == "none":
+            normalization = {"none": "raw-power", "log": "ln-power",
+                             "db": "db-power", "pcen": "pcen"}[compression]
         else:
-            normalization = "raw-power"
-            log_transform = None
+            normalization = f"{compression}+{scaling_method}-{scaling_scope}-{scaling_source}"
 
     return {
         # Version the derived semantics as well as storing every configurable
@@ -111,6 +126,10 @@ def _feature_signature(cfg: Config) -> dict[str, Any]:
         "fmin": int(f.fmin),
         "fmax": int(f.fmax),
         "stft_engine": stft_engine,
+        # The two value axes. Both belong to the encoder's numeric contract:
+        # a different compression or a different normalization means the
+        # transferred weights see different numbers for the same sound.
+        "compression": compression,
         "log_power": log_power,
         "db_norm": db_norm,
         "db_min": float(f.db_min),
@@ -124,10 +143,11 @@ def _feature_signature(cfg: Config) -> dict[str, Any]:
         "standardize": standardize,
         "standardize_mean": float(f.standardize_mean),
         "standardize_std": float(f.standardize_std),
-        # Dataset-fitted scaling constants ARE the encoder's numeric contract:
-        # two runs match only when method, scope, and every fitted value agree.
+        # The normalization constants ARE part of that contract: two runs match
+        # only when method, scope, source, and every constant agree.
         "scaling_method": scaling_method,
         "scaling_scope": scaling_scope,
+        "scaling_source": scaling_source,
         "scaling_stats": scaling_stats,
         "colormap": str(f.colormap),
         "image_size": int(f.image_size),
@@ -281,55 +301,237 @@ def parent_classes(parent_project: str, parent_run: str) -> list[str]:
     return []
 
 
+def _normalize_class_name(name: str) -> str:
+    """Comparison form for class names: case, separators and spacing folded."""
+    return "".join(ch for ch in str(name).lower() if ch.isalnum())
+
+
+def _name_tokens(name: str) -> list[str]:
+    """Split a class name into its underscore/hyphen/space separated tokens."""
+    out: list[str] = []
+    current = ""
+    for ch in str(name).lower():
+        if ch.isalnum():
+            current += ch
+        elif current:
+            out.append(current)
+            current = ""
+    if current:
+        out.append(current)
+    return out
+
+
+def suggest_head_map(
+    parent_names: list[str], child_names: list[str],
+) -> dict[str, str]:
+    """Propose ``{child class: parent class}`` rows for the classifier warm start.
+
+    A *suggestion* for the Model tab's parent picker — nothing here is applied
+    automatically, and the operator edits every row.  Exact matches are omitted
+    because :func:`_warm_start_head` already handles them, so the result contains
+    only the cross-name rows that would otherwise start random.
+
+    Resolution, most to least confident:
+
+    1. the same name after folding case and separators (``cheers_loud`` ↔
+       ``cheers-loud``);
+    2. an *umbrella* parent whose name is a token of the child's, which is the
+       shape this pipeline actually produces — stage one labels ``cheers`` and
+       stage two labels ``cheers_riedel_wine``;
+    3. an umbrella parent whose normalized name is a prefix of the child's, for
+       names written without a separator.
+
+    A child that matches nothing is left out and keeps its random row.
+    """
+    parents = [str(name) for name in parent_names]
+    exact = set(parents)
+    by_normalized: dict[str, str] = {}
+    for name in parents:
+        by_normalized.setdefault(_normalize_class_name(name), name)
+
+    out: dict[str, str] = {}
+    for child in (str(name) for name in child_names):
+        if child in exact:
+            continue
+        normalized = _normalize_class_name(child)
+        match = by_normalized.get(normalized)
+        if match is None:
+            tokens = set(_name_tokens(child))
+            # Prefer the longest umbrella name: with `cheers` and `cheers_thin`
+            # both present, `cheers_thin_riedel` should follow the specific one.
+            candidates = [
+                name for name in parents
+                if _normalize_class_name(name) in tokens
+                or set(_name_tokens(name)) <= tokens
+            ]
+            if not candidates:
+                candidates = [
+                    name for name in parents
+                    if len(_normalize_class_name(name)) >= 3
+                    and normalized.startswith(_normalize_class_name(name))
+                ]
+            if candidates:
+                match = max(candidates, key=lambda name: len(_normalize_class_name(name)))
+        if match is not None and match != child:
+            out[child] = match
+    return out
+
+
+def resolve_head_sources(
+    parent_names: list[str],
+    child_names: list[str],
+    head_map: dict[str, str] | None = None,
+) -> dict[str, str]:
+    """Where each child class's classifier row comes from.
+
+    Values are ``"exact"``, ``"mapped:<parent class>"`` or ``"random"``.  Shared
+    by the warm start, the advice checks and the Model tab, so all three agree on
+    what a configuration will actually do.
+    """
+    available = set(str(name) for name in parent_names)
+    mapping = {str(k): str(v) for k, v in (head_map or {}).items()}
+    out: dict[str, str] = {}
+    for child in (str(name) for name in child_names):
+        if child in available:
+            out[child] = "exact"
+            continue
+        source = mapping.get(child)
+        out[child] = f"mapped:{source}" if source in available else "random"
+    return out
+
+
+# Rows copied from one shared parent row would otherwise start bit-identical.
+# Their gradients differ from the first step (the labels differ), so this is not
+# required for learning — it just removes an exact tie that makes early argmax
+# and margin behaviour degenerate. Scaled by the source row's own spread.
+_HEAD_JITTER_SCALE = 0.02
+
+
 def _warm_start_head(
-    head: Any, parent_state: dict, parent_names: list[str], child_names: list[str],
+    head: Any,
+    parent_state: dict,
+    parent_names: list[str],
+    child_names: list[str],
+    head_map: dict[str, str] | None = None,
+    seed: int = 0,
 ) -> dict[str, Any]:
-    """Copy the parent's classifier row/bias for every shared class name.
+    """Copy the parent's classifier row/bias into each child class's row.
 
     The head is a fresh ``Linear`` over the *same* embedding the parent's head
     read (identical backbone, identical params — ``parent_compatibility`` already
-    enforced both), so a shared class's fitted row is a far better starting point
-    than a random one.  Classes the parent never saw keep their random
-    initialization, and a shape mismatch aborts the warm start rather than
-    silently corrupting the head.
+    enforced both), so a fitted row is a far better starting point than a random
+    one.  A row is taken for a class the parent also had (exact name) or for a
+    class ``head_map`` points at a parent class — the cross-stage case, where
+    several vessel classes all start from the parent's umbrella ``cheers`` row.
+    Classes with neither keep their random initialization, and a shape mismatch
+    aborts the warm start rather than silently corrupting the head.
     """
     import torch
 
     weight = parent_state.get("model.head.1.weight")
     bias = parent_state.get("model.head.1.bias")
+    sources = resolve_head_sources(parent_names, child_names, head_map)
+    failed = lambda reason: {  # noqa: E731
+        "sources": {name: "random" for name in child_names},
+        "transferred_classes": [],
+        "mapped_classes": {},
+        "new_classes": list(child_names),
+        "skipped_reason": reason,
+    }
     if not isinstance(weight, torch.Tensor) or not isinstance(bias, torch.Tensor):
-        return {"transferred_classes": [], "skipped_reason": "parent has no linear head state"}
+        return failed("parent has no linear head state")
     linear = head[-1] if isinstance(head, torch.nn.Sequential) else head
     if not isinstance(linear, torch.nn.Linear):
-        return {"transferred_classes": [], "skipped_reason": "child head is not a Linear"}
+        return failed("child head is not a Linear")
     if int(weight.shape[1]) != int(linear.weight.shape[1]):
-        return {
-            "transferred_classes": [],
-            "skipped_reason": (
-                f"embedding width differs (parent {int(weight.shape[1])}, "
-                f"child {int(linear.weight.shape[1])})"
-            ),
-        }
+        return failed(
+            f"embedding width differs (parent {int(weight.shape[1])}, "
+            f"child {int(linear.weight.shape[1])})"
+        )
     if int(weight.shape[0]) != len(parent_names):
-        return {
-            "transferred_classes": [],
-            "skipped_reason": "parent head rows do not match its recorded class list",
-        }
+        return failed("parent head rows do not match its recorded class list")
+
     parent_index = {name: i for i, name in enumerate(parent_names)}
+    generator = torch.Generator().manual_seed(int(seed))
+
+    def _source_parent(name: str) -> str | None:
+        source = sources.get(name, "random")
+        if source == "exact":
+            return name
+        if source.startswith("mapped:"):
+            return source.split(":", 1)[1]
+        return None
+
+    # How many child rows read each *parent row*: a row used once is copied
+    # verbatim, and only genuinely duplicated rows are jittered.
+    reuse: dict[str, int] = {}
+    for name in child_names:
+        parent_name = _source_parent(str(name))
+        if parent_name is not None:
+            reuse[parent_name] = reuse.get(parent_name, 0) + 1
+
     transferred: list[str] = []
+    mapped: dict[str, str] = {}
     with torch.no_grad():
         for child_row, name in enumerate(child_names):
-            source = parent_index.get(name)
-            if source is None:
+            source = sources.get(name, "random")
+            parent_name = _source_parent(str(name))
+            if parent_name is None:
                 continue
-            linear.weight[child_row].copy_(weight[source].to(linear.weight.dtype))
-            linear.bias[child_row].copy_(bias[source].to(linear.bias.dtype))
-            transferred.append(name)
+            row = parent_index[parent_name]
+            new_weight = weight[row].to(linear.weight.dtype).clone()
+            new_bias = bias[row].to(linear.bias.dtype).clone()
+            if reuse.get(parent_name, 0) > 1:
+                spread = float(new_weight.std().item() or 0.0)
+                if spread > 0:
+                    noise = torch.empty(
+                        new_weight.shape, dtype=torch.float32,
+                    ).normal_(0.0, spread * _HEAD_JITTER_SCALE, generator=generator)
+                    new_weight += noise.to(new_weight.dtype)
+            linear.weight[child_row].copy_(new_weight)
+            linear.bias[child_row].copy_(new_bias)
+            if source == "exact":
+                transferred.append(name)
+            else:
+                mapped[name] = parent_name
+
+    new_classes = [name for name, src in sources.items() if src == "random"]
     return {
+        "sources": sources,
         "transferred_classes": transferred,
-        "new_classes": [name for name in child_names if name not in parent_index],
-        "skipped_reason": "" if transferred else "no class names in common",
+        "mapped_classes": mapped,
+        "new_classes": new_classes,
+        "skipped_reason": (
+            "" if (transferred or mapped) else "no class names in common and no head map"
+        ),
     }
+
+
+def _log_head_transfer(report: dict[str, Any]) -> None:
+    """Name every classifier row's starting point in the training log.
+
+    A cold target row is the difference between a fine-tune that converges in
+    its epoch budget and one that collapses, so it belongs in the run log rather
+    than only in the manifest.
+    """
+    if report.get("skipped_reason"):
+        log.warning("head warm start skipped: %s", report["skipped_reason"])
+        return
+    for name, source in (report.get("sources") or {}).items():
+        if source == "exact":
+            log.info("head[%s] ← parent %r (same class name)", name, name)
+        elif source.startswith("mapped:"):
+            log.info("head[%s] ← parent %r (mapped)", name, source.split(":", 1)[1])
+        else:
+            log.info("head[%s] random — no parent row", name)
+    cold = [n for n, s in (report.get("sources") or {}).items() if s == "random"]
+    if cold:
+        log.warning(
+            "%d classifier row(s) start random on a transfer run: %s. "
+            "Map them onto a parent class (training.transfer_head_map) if the "
+            "parent already models the same event under another name.",
+            len(cold), ", ".join(sorted(cold)),
+        )
 
 
 def initialize_encoder_from_parent(model: Any, cfg: Config) -> dict[str, Any]:
@@ -361,20 +563,39 @@ def initialize_encoder_from_parent(model: Any, cfg: Config) -> dict[str, Any]:
         )
     info["mode"] = "parent"
     info["head_init"] = str(getattr(cfg.training, "transfer_head_init", "matching_classes"))
+    head_map = dict(getattr(cfg.training, "transfer_head_map", {}) or {})
+    info["head_map"] = head_map
     if info["head_init"] == "matching_classes":
         parent_names = parent_classes(cfg.model.parent_project, cfg.model.parent_run)
         child_names = [str(name) for name in getattr(model, "classes", [])]
         if parent_names and child_names:
             info["head_transfer"] = _warm_start_head(
-                model.model.head, state, parent_names, child_names,
+                model.model.head,
+                state,
+                parent_names,
+                child_names,
+                head_map=head_map,
+                seed=int(getattr(cfg.training, "seed", 0) or 0),
             )
+            _log_head_transfer(info["head_transfer"])
         else:
             info["head_transfer"] = {
+                "sources": {name: "random" for name in child_names},
                 "transferred_classes": [],
+                "mapped_classes": {},
+                "new_classes": list(child_names),
                 "skipped_reason": "parent or child class list unavailable",
             }
     else:
-        info["head_transfer"] = {"transferred_classes": [], "skipped_reason": "disabled by config"}
+        info["head_transfer"] = {
+            "sources": {
+                str(name): "random" for name in getattr(model, "classes", [])
+            },
+            "transferred_classes": [],
+            "mapped_classes": {},
+            "new_classes": [str(name) for name in getattr(model, "classes", [])],
+            "skipped_reason": "disabled by config",
+        }
     info.update(parent_provenance_chain(cfg.model.parent_project, cfg.model.parent_run))
     return info
 
@@ -389,6 +610,8 @@ def compatible_parent_runs(cfg: Config) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     from sed.config import list_projects
 
+    child_classes = [str(name) for name in (cfg.dataset.target_classes or cfg.model.classes or [])]
+    configured_head_map = dict(getattr(cfg.training, "transfer_head_map", {}) or {})
     for project_id in list_projects():
         layout = ProjectLayout(project_id)
         for run_id in layout.list_models():
@@ -410,6 +633,18 @@ def compatible_parent_runs(cfg: Config) -> list[dict[str, Any]]:
             info["selection_metric"] = str(training.get("selection_metric", "") or "")
             info["task"] = str(recipe.get("task", "") or "")
             info["backbone"] = str(recipe.get("backbone", "") or "")
+            # The parent's class list drives the Model tab's head-map editor: the
+            # picker has to show which rows this run can warm-start from before
+            # the run is configured, not after it has trained.
+            names = parent_classes(project_id, run_id)
+            info["classes"] = names
+            info["head_map_suggestion"] = (
+                suggest_head_map(names, child_classes) if names and child_classes else {}
+            )
+            info["head_sources"] = (
+                resolve_head_sources(names, child_classes, configured_head_map)
+                if names and child_classes else {}
+            )
             config_path = layout.model_dir(run_id) / "training_config.json"
             try:
                 info["feature"] = parent_feature_payload(load_config_snapshot(config_path))
@@ -426,5 +661,7 @@ __all__ = [
     "parent_compatibility",
     "parent_feature_payload",
     "parent_provenance_chain",
+    "resolve_head_sources",
     "sha256_file",
+    "suggest_head_map",
 ]

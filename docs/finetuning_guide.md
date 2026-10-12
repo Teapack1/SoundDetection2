@@ -7,7 +7,9 @@ domain-specific run initialized from a previous run's encoder, whose job is not
 Everything here is reachable from the Train tab. The **Recommendations** panel at
 the top of that tab reports the same findings live for your current config
 (`sed.train.advice`), so treat this document as the reasoning and the panel as
-the checklist.
+the checklist. Stage one — designing the corpus, the class space, the frontend
+and the architecture this stage inherits — is
+[pretraining_guide.md](pretraining_guide.md).
 
 ---
 
@@ -65,6 +67,47 @@ What matters for stage two:
 
 The Audio Features tab flags all of these against this task.
 
+**Normalization is inherited too — and must be.** The parent's fitted scaling
+constants are part of the encoder's numeric contract: refitting them on venue
+data would move the input distribution the transferred weights expect. The
+training launch gate enforces this, and the Audio Features tab disables
+*Estimate from dataset* for a parent-initialized run and labels the state card
+*inherited from parent*.
+
+So the useful question here is the opposite one: **do the venue clips still land
+inside the parent's scale?** *Check fit on this dataset* measures exactly that,
+without changing anything — how far each band's mean sits from the fitted one, in
+fitted standard deviations. A large systematic offset points at gain staging, a
+different microphone, or a different distance, and the advice panel raises
+`scaling_drifted_from_this_dataset`. The fix is on the audio side, never by
+refitting.
+
+---
+
+## 2b. The venue class space
+
+Same three roles as stage one (see
+[pretraining_guide.md](pretraining_guide.md#2-classes-three-roles-not-a-taxonomy)):
+
+- **targets** — one class per vessel, plus any other event the venue acts on;
+- **`hardnegs`** — the near-misses this venue actually produces: cutlery, metal,
+  glass handling and placement. Left out of `[targets]` (or `enabled = false`) it
+  competes for every window without ever firing, so winning suppresses the
+  trigger. Carry it over from stage one so its row warm-starts by name;
+- **`_negative`** — everything else, uncategorised.
+
+Recording targets, clips only:
+
+| | per class |
+|---|---|
+| vessel classes | 200–400 clips across 4–8 sessions and 3–5 positions |
+| `hardnegs` | several hundred, at venue density |
+| `_negative` | 800–2000 |
+| frozen test | 20–100 per class, never trained on |
+
+There is no continuous-recording step: threshold calibration runs against
+recorded negative *clips*, and the budget is expressed per 1000 clips.
+
 ---
 
 ## 3. Depth: how much of the encoder to adapt
@@ -101,18 +144,51 @@ recipes. If you set the value by hand, compute it from the ratio you want:
 
 ---
 
-## 4. The classifier head
+## 4. The classifier head — the most common cause of a collapsed transfer
 
-When initializing from a previous run, the head transfers **per class name**:
-every class present in both runs starts from the parent's fitted weight row and
-bias, and genuinely new classes start random. This is `training.transfer_head_init
-= "matching_classes"` (the default).
+The encoder always transfers whole. What each **output row** of the classifier
+starts from is a separate decision, and it is the one that decides whether the
+run converges inside its epoch budget.
 
-The parent's rows were fitted against the exact embedding the child starts from,
-so a shared class begins near its solution instead of spending the first third
-of the budget getting back there. Set it to `"random"` only when you are
-deliberately measuring a cold-head baseline. The training log names which classes
-were warm-started.
+A row that starts from a fitted parent row begins near its solution — the
+parent's rows were fitted against the exact embedding this run starts from. A row
+that starts random has to be re-derived from a few hundred venue clips at a
+*fine-tune* learning rate, which is a budget sized for a warm head. In this
+project's own run history that is the difference between a `last_two` transfer
+scoring 1.0 and the same configuration scoring 0.09 — and doubling the epochs
+does not fix it, because the schedule was never the problem.
+
+**Exact name matches are automatic.** The trap is that the two stages usually
+share no positive class names at all: stage one labels the umbrella event
+(`cheers`) and stage two labels the vessels (`riedel_wine`, `ikea_wine`,
+`riedel_veloce`). The intersection is `{_negative}`, so every target row starts
+random unless you say otherwise.
+
+**Say otherwise in the Model tab.** The parent picker shows a *Classifier rows*
+table — one row per class in this run, with the parent class it starts from:
+
+| this run | starts from | |
+|---|---|---|
+| `_negative` | `_negative` | reuses the parent's own row |
+| `riedel_wine` | `cheers` ▾ | starts from the parent's row |
+| `riedel_veloce` | `cheers` ▾ | starts from the parent's row |
+| `ikea_wine` | `cheers` ▾ | starts from the parent's row |
+| `hardnegs` | `hardnegs` | reuses the parent's own row |
+
+Rows that would start random are highlighted, and the panel raises
+`finetune_positive_rows_cold` while any remain. Names with an obvious
+relationship (`cheers` → `cheers_riedel_wine`, or the same name written with a
+different separator) are pre-filled as a suggestion; unrelated names are left for
+you rather than guessed at. The choices are saved as
+`training.transfer_head_map` and recorded per class in the run manifest, and the
+training log names every row's origin.
+
+Several classes may start from the same parent row — that is the normal case
+here. Each copy gets a small deterministic jitter (2 % of the row's own spread,
+seeded from the training seed) so they do not begin bit-identical.
+
+`training.transfer_head_init = "random"` ignores the table entirely and starts
+every row cold. Use it only to measure a cold-head baseline deliberately.
 
 **Head LR.** Keep `lr_head` within ~5× `lr_backbone`. A fresh classifier learning
 20× faster fits the training set on the parent's *unchanged* features within a
@@ -206,10 +282,13 @@ scales, and scoring an uncalibrated decision layer makes runs incomparable.
 
 | symptom | first thing to check |
 |---|---|
+| **Collapses to near-zero recall, and more epochs change nothing** | the **Classifier rows** table — how many target rows start random? A cold row at a fine-tune LR cannot be re-derived inside this budget. This is the single most common cause. |
 | Detects clinks, cannot name the glass | `fmax`, band count, SpecAugment frequency mask width — is the partial comb in the input and un-masked? |
 | Val loss falls very slowly, noisily | BatchNorm re-estimating from a thin sample (`freeze_batchnorm`), or an LR ramp longer than patience |
 | Barely better than the parent | head LR ≫ backbone LR, or a depth too shallow to represent the distinction |
 | Good val, poor deployed | frozen BatchNorm shipped without `bn_recalibrate`; uncalibrated thresholds |
+| Fires on cutlery in the venue | is there a suppressor class at all, and does `sed check deploy` report its role as `suppressor` rather than `target`? |
+| Everything looks shifted / oddly flat | *Check fit on this dataset* — the venue may sit outside the inherited scaling |
 | Overfits within a few epochs | too few independent recording *groups*, not too few clips — check the split diagnostics before adding regularization |
 
 The last row is worth stressing: the ceiling on generalization is the number of

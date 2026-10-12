@@ -81,32 +81,47 @@ def _sampling_group_key(row: dict, row_index: int) -> str:
     return f"row:{row_index}"
 
 
-def _class_balance_weights(rows: list[dict], mode: str) -> torch.Tensor:
+def _class_balance_weights(
+    rows: list[dict],
+    mode: str,
+    *,
+    negative_classes: set[str] | None = None,
+) -> torch.Tensor:
     """Return normalized per-row probabilities for one balance mode.
 
     ``sqrt`` uses square-root-tempered mass at the background/target and target
     class levels. ``balanced`` gives background and targets 50% each, then
     divides target mass uniformly. In both modes, a recording group's mass is
     proportional to ``sqrt(size)`` and clips are uniform inside the group.
+
+    ``negative_classes`` (default ``{"_negative"}``) is the full set of
+    background/role="negative" classes — when more than one is present (e.g.
+    `_negative` split alongside a curated `hardneg` bucket), their combined
+    row count is what gets the 50%/sqrt-tempered background mass, individually
+    reweighted by size so a small bucket isn't oversampled relative to a large
+    one.
     """
     if not rows:
         return torch.empty(0, dtype=torch.double)
     if mode not in {"sqrt", "balanced"}:
         raise ValueError(f"unsupported class-balance mode: {mode!r}")
+    negative_classes = {"_negative"} if negative_classes is None else set(negative_classes)
 
     by_class: dict[str, list[int]] = defaultdict(list)
     for index, row in enumerate(rows):
         by_class[str(row.get("class_name") or "")].append(index)
 
     class_names = sorted(by_class)
-    target_classes = [name for name in class_names if name != "_negative"]
-    if "_negative" in by_class and target_classes:
+    present_negative_classes = [name for name in class_names if name in negative_classes]
+    target_classes = [name for name in class_names if name not in negative_classes]
+    if present_negative_classes and target_classes:
+        negative_sizes = {name: len(by_class[name]) for name in present_negative_classes}
+        negative_size = sum(negative_sizes.values())
         if mode == "balanced":
             negative_mass = 0.5
             target_mass = 0.5
             target_weights = {name: 1.0 for name in target_classes}
         else:
-            negative_size = len(by_class["_negative"])
             target_size = sum(len(by_class[name]) for name in target_classes)
             root_denominator = math.sqrt(negative_size) + math.sqrt(target_size)
             negative_mass = math.sqrt(negative_size) / root_denominator
@@ -114,8 +129,15 @@ def _class_balance_weights(rows: list[dict], mode: str) -> torch.Tensor:
             target_weights = {
                 name: math.sqrt(len(by_class[name])) for name in target_classes
             }
+        negative_weights = {
+            name: math.sqrt(size) for name, size in negative_sizes.items()
+        }
+        negative_denominator = sum(negative_weights.values())
         target_denominator = sum(target_weights.values())
-        class_mass = {"_negative": negative_mass}
+        class_mass = {
+            name: negative_mass * negative_weights[name] / negative_denominator
+            for name in present_negative_classes
+        }
         class_mass.update({
             name: target_mass * target_weights[name] / target_denominator
             for name in target_classes
@@ -149,40 +171,31 @@ def _class_balance_weights(rows: list[dict], mode: str) -> torch.Tensor:
 def _specaugment_fill(cfg: Config) -> float | torch.Tensor:
     """Feature-domain fill for SpecAugment masks — scalar or ``(F, 1)`` tensor.
 
-    The EfficientAT contract masked raw log-mel values with 0.0 before applying
-    fast normalization, so the equivalent post-normalization fill is 0.9. A
-    dataset-scaled feature carries that same raw 0.0 through its own scaling:
-    z-score → ``(0 − mean)/std`` (a per-band vector when fitted per band),
-    min-max → ``clip((0 − lo)/(hi − lo))``. Linear, raw-power, and PCEN
-    features without an affine keep the plain zero fill.
+    Masking means "no energy here", which is 0.0 in the compressed domain. What
+    that becomes at the model's input depends only on the normalization stage,
+    so the fill is that stage applied to 0.0: z-score → ``(0 − mean)/std`` (a
+    per-band vector when fitted per band), min-max → ``clip((0 − lo)/(hi − lo))``,
+    none → plain 0.0. The EfficientAT contract falls out of this unchanged: its
+    fixed (x + 4.5) / 5 affine turns 0.0 into 0.9, the value that frontend has
+    always used.
     """
     from sed.audio.features import resolve_feature_scaling
+    from sed.config import resolved_features
 
-    f = cfg.features
-    spec = resolve_feature_scaling(f)
-    if spec.declared:
-        if not spec.active:
-            return 0.0
-        a = np.asarray(spec.a, dtype=np.float32)
-        b = np.asarray(spec.b, dtype=np.float32)
-        if spec.method == "zscore":
-            fill = (0.0 - a) / b
-        else:
-            fill = np.clip((0.0 - a) / (b - a), 0.0, 1.0).astype(np.float32)
-        if fill.size == 1:
-            return float(fill[0])
-        return torch.from_numpy(fill.reshape(-1, 1))
-    if (
-        str(getattr(f, "feature_type", "mel")) == "mel"
-        and not bool(getattr(f, "pcen", False))
-        and str(getattr(f, "frontend", "efficientat")) == "efficientat"
-    ):
-        if bool(getattr(f, "standardize", False)):
-            # Legacy scalar z-score on a config mutated without re-validation.
-            std = float(getattr(f, "standardize_std", 1.0)) or 1.0
-            return (0.0 - float(getattr(f, "standardize_mean", 0.0))) / std
-        return (0.0 + 4.5) / 5.0
-    return 0.0
+    # Resolve through validation: the fill depends entirely on the normalization
+    # stage, which an in-place feature edit would leave describing the old one.
+    spec = resolve_feature_scaling(resolved_features(cfg.features))
+    if not spec.active:
+        return 0.0
+    a = np.asarray(spec.a, dtype=np.float32)
+    b = np.asarray(spec.b, dtype=np.float32)
+    if spec.method == "zscore":
+        fill = (0.0 - a) / b
+    else:
+        fill = np.clip((0.0 - a) / (b - a), 0.0, 1.0).astype(np.float32)
+    if fill.size == 1:
+        return float(fill[0])
+    return torch.from_numpy(fill.reshape(-1, 1))
 
 
 def _apply_spec_mask(
@@ -274,6 +287,14 @@ class SedDataset(Dataset):
         self.cfg = cfg
         self.classes = classes
         self.class_index = {c: i for i, c in enumerate(classes)}
+        # Every class with role "negative" (not just the literal `_negative`)
+        # is a whole-clip background label: no annotated interval is expected,
+        # and the frame-task target is all-zero. See `_has_frame_target` and
+        # the frame-target painting below.
+        self.negative_role_classes = {
+            name for name, role in cfg.class_roles(list(classes)).items()
+            if role == "negative"
+        }
         self.layout = layout
         self.single_label = is_single_label_loss(cfg) if single_label is None else single_label
         self.target_n = window_sample_count(cfg.model.sample_rate, cfg.features.window_seconds)
@@ -328,7 +349,7 @@ class SedDataset(Dataset):
                 if isinstance(row, dict) and bool(row.get("confirmed"))]
 
     def _has_frame_target(self, row: dict[str, str]) -> bool:
-        if row.get("class_name") == "_negative":
+        if row.get("class_name") in self.negative_role_classes:
             return True
         expected = row.get("class_name", "")
         return any(str(interval.get("label") or "") == expected
@@ -502,8 +523,8 @@ class SedDataset(Dataset):
 
         if self.cfg.model.task == "frame":
             target = torch.zeros((len(self.classes), spec_t.shape[-1]), dtype=torch.float32)
-            if row["class_name"] == "_negative" and "_negative" in self.class_index:
-                target[self.class_index["_negative"], :] = 1.0
+            if row["class_name"] in self.negative_role_classes and row["class_name"] in self.class_index:
+                target[self.class_index[row["class_name"]], :] = 1.0
             duration = float(self.cfg.features.window_seconds)
             for interval in self._intervals(row["path"]):
                 label = str(interval.get("label") or "")
@@ -609,6 +630,7 @@ class SedDataModule(lightning.LightningDataModule):
                 _class_balance_weights(
                     self.train_ds.rows,
                     str(self.cfg.training.class_balance),
+                    negative_classes=self.train_ds.negative_role_classes,
                 ),
                 num_samples=len(self.train_ds),
                 replacement=True,

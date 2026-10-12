@@ -56,19 +56,52 @@ def test_short_clip_frame_targets_are_unshifted(tmp_path):
     assert last == round(0.5 * frames) - 1
 
 
+def test_custom_negative_role_class_gets_whole_clip_background_target(tmp_path):
+    """A class with role="negative" that is NOT literally `_negative` (e.g. a
+    project splitting its background pool into a named `hardneg` bucket) must
+    get the same frame-task treatment `_negative` gets: no annotated interval
+    required, and the whole clip painted as background for its own column.
+
+    Before generalizing `_has_frame_target`/the frame-target painting beyond
+    the literal `_negative` string, a row like this would fail
+    `_has_frame_target` (no matching interval) and be silently dropped from
+    frame-task training entirely.
+    """
+    wav = _write_clip(tmp_path, "hardneg_clip", 1.0, [])  # no interval annotation
+    csv_path = tmp_path / "train.csv"
+    csv_path.write_text(f"path,class_name\n{wav},hardneg\n")
+    cfg = Config.model_validate({
+        "dataset": {"target_classes": ["_negative", "hardneg", "cheers"]},
+        "targets": {"hardneg": {"role": "negative"}},
+    })
+    cfg.model.sample_rate = SR
+    cfg.model.task = "frame"
+    cfg.features.window_seconds = 1.0
+    ds = SedDataset(csv_path, ["_negative", "hardneg", "cheers"], cfg)
+
+    assert len(ds) == 1  # row survived the frame-task filter
+    _spec, target = ds[0]
+    hardneg_idx = ds.class_index["hardneg"]
+    assert torch.all(target[hardneg_idx] == 1.0)
+    other_idx = [i for i in range(target.shape[0]) if i != hardneg_idx]
+    assert torch.all(target[other_idx] == 0.0)
+
+
 def test_long_clip_frame_targets_follow_the_onset_placed_crop(tmp_path):
-    # 2 s clip, 1 s window, 0.3 s lead-in → the crop starts 0.3 s before the
-    # annotated onset, i.e. [0.7 s, 1.7 s). An event at [1.0, 1.2] in clip time
-    # therefore lands at [0.3, 0.5] in window time.
+    # 2 s clip, 1 s window. The crop is placed so the annotated onset sits
+    # `window_lead_in_s` into the window — derived from the config rather than
+    # written out here, because it moves with [onset] preroll_ms.
     wav = _write_clip(tmp_path, "long", 2.0, [
         {"label": "cheers", "onset_s": 1.0, "offset_s": 1.2, "confirmed": True},
     ])
     ds = _dataset(tmp_path, wav)
     _spec, target = ds[0]
     frames = target.shape[-1]
+    lead_in = ds.cfg.window_lead_in_s() / ds.cfg.features.window_seconds
+    event_s = 0.2 / ds.cfg.features.window_seconds      # 1.0 s -> 1.2 s
     first, last = _positive_frame_bounds(target, ds.class_index["cheers"])
-    assert first == round(0.3 * frames)
-    assert last == round(0.5 * frames) - 1
+    assert first == round(lead_in * frames)
+    assert last == round((lead_in + event_s) * frames) - 1
 
 
 def test_event_near_the_clip_start_is_kept_not_cropped_away(tmp_path):

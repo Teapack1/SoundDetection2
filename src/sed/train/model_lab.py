@@ -83,7 +83,13 @@ CATALOG_TAG_DEFINITIONS: dict[str, dict[str, str]] = {
     },
 }
 
-from sed.config import CLINK_CNN_V2_FEATURE_CONTRACT, PROJECTS_DIR, REPO_ROOT
+from sed.config import (
+    CLINK_CNN_V2_FEATURE_CONTRACT,
+    EFFICIENTAT_FAST_NORM_MEAN,
+    EFFICIENTAT_FAST_NORM_STD,
+    PROJECTS_DIR,
+    REPO_ROOT,
+)
 from sed.util import sha256_file
 
 
@@ -221,6 +227,16 @@ def _contract(*, n_mels: int = 128, hop_length: int = 320) -> dict[str, Any]:
         "features.fmin": 0,
         "features.fmax": 15000,
         "features.window_seconds": 1.0,
+        # Every EfficientAT checkpoint was trained on natural-log mel put
+        # through its own fixed (x + 4.5) / 5 affine. Naming both stages here
+        # is what lets the fit report say precisely which one a feature departs from.
+        "features.compression": "log",
+        "features.scaling_method": "zscore",
+        "features.scaling_scope": "global",
+        "features.scaling_source": "fixed",
+        "features.scaling_stats": {
+            "mean": [EFFICIENTAT_FAST_NORM_MEAN], "std": [EFFICIENTAT_FAST_NORM_STD],
+        },
     }
 
 
@@ -246,6 +262,9 @@ _CED_CONTRACT: dict[str, Any] = {
     "features.fmin": 0,
     "features.fmax": 8000,
     "features.window_seconds": 0.4,
+    # CED's frontend IS a dB-mel; it applies no affine afterwards.
+    "features.compression": "db",
+    "features.scaling_method": "none",
 }
 
 
@@ -261,6 +280,14 @@ _EFFICIENTSED_CONTRACT: dict[str, Any] = {
     "features.fmin": 0,
     "features.fmax": 8000,
     "features.window_seconds": 0.4,
+    # EfficientSED keeps the EfficientAT frontend: log mel + the fast-norm affine.
+    "features.compression": "log",
+    "features.scaling_method": "zscore",
+    "features.scaling_scope": "global",
+    "features.scaling_source": "fixed",
+    "features.scaling_stats": {
+        "mean": [EFFICIENTAT_FAST_NORM_MEAN], "std": [EFFICIENTAT_FAST_NORM_STD],
+    },
 }
 
 
@@ -541,14 +568,16 @@ def _short_event_feature(source: str = "short-event mel default") -> dict[str, A
         "feature_type": "mel", "frontend": "efficientat", "sample_rate": 44100,
         "n_fft": 1024, "win_length": 882, "hop_length": 220, "n_mels": 128,
         "fmin": 0, "fmax": 22050, "window_seconds": 0.4,
-        "pcen": False, "log_power": True, "stft_engine": "librosa",
+        "compression": "log", "pcen": False, "log_power": True,
+        "stft_engine": "librosa",
         "db_norm": False, "colormap": "none", "image_size": 96,
         # Explicit off: this dict can be merged onto a project's existing
         # [features] (Model tab "Verify"), so an omitted key would silently
         # inherit a stale value (e.g. standardize=True left over from a prior
         # linear preset) instead of the plain log-mel this default means.
         "standardize": False, "standardize_mean": 0.0, "standardize_std": 1.0,
-        "scaling_method": "none", "scaling_scope": "global", "scaling_stats": {},
+        "scaling_method": "none", "scaling_scope": "global",
+        "scaling_source": "dataset", "scaling_stats": {},
         "standardize_stats_resolved": True, "standardize_stats_dataset_sha256": "",
         "standardize_stats_split_seed": 0, "standardize_stats_val_fraction": 0.0,
         "standardize_stats_clips": 0,
@@ -1232,6 +1261,7 @@ def validate_recipe_params(architecture: ArchitectureSpec, params: dict[str, Any
 
 def _contract_as_feature(contract: dict[str, Any]) -> dict[str, Any]:
     """Flatten a per-weight contract into the feature-dict shape the UI uses."""
+    compression = str(contract.get("features.compression", "log") or "log")
     return {
         "feature_type": contract.get("features.feature_type", "mel"),
         "frontend": contract.get("features.frontend", "efficientat"),
@@ -1243,15 +1273,22 @@ def _contract_as_feature(contract: dict[str, Any]) -> dict[str, Any]:
         "fmin": contract.get("features.fmin"),
         "fmax": contract.get("features.fmax"),
         "window_seconds": contract.get("features.window_seconds", 1.0),
-        "pcen": False, "log_power": True, "stft_engine": "librosa",
-        "db_norm": False, "colormap": "none", "image_size": 96,
+        "stft_engine": "librosa", "colormap": "none", "image_size": 96,
+        # The two axes the contract really pins: how the checkpoint's frontend
+        # compressed magnitudes, and the normalization it expects on top.
+        "compression": compression,
+        # The legacy spellings stay in the payload because this dict is MERGED
+        # onto a project's existing [features] (Model tab "Verify") — an omitted
+        # key would let a stale value from a previous feature survive the merge.
+        "pcen": compression == "pcen",
+        "log_power": compression != "none",
+        "db_norm": False,
         "standardize": bool(contract.get("features.standardize", False)),
         "standardize_mean": float(contract.get("features.standardize_mean", 0.0)),
         "standardize_std": float(contract.get("features.standardize_std", 1.0)),
-        # A checkpoint contract may pin its own dataset scaling (an external
-        # encoder's fitted constants); absent keys mean plainly none.
         "scaling_method": str(contract.get("features.scaling_method", "none")),
         "scaling_scope": str(contract.get("features.scaling_scope", "global")),
+        "scaling_source": str(contract.get("features.scaling_source", "fixed")),
         "scaling_stats": dict(contract.get("features.scaling_stats", {}) or {}),
     }
 
@@ -1297,13 +1334,19 @@ def recommended_feature_for(spec: ArchitectureSpec) -> dict[str, Any] | None:
             # [features] (Model tab "Verify"), so leaving these keys out would
             # let a stale standardize=True from a prior linear preset survive
             # the merge alongside db_norm=True — an invalid FeaturesCfg combo.
+            feature["compression"] = "db"
             feature["pcen"] = False
             feature["standardize"] = False
             feature["standardize_mean"] = 0.0
             feature["standardize_std"] = 1.0
-            feature["scaling_method"] = "none"
+            # The legacy [-20, 60] dB image map, spelled canonically.
+            feature["scaling_method"] = "minmax"
             feature["scaling_scope"] = "global"
-            feature["scaling_stats"] = {}
+            feature["scaling_source"] = "fixed"
+            feature["scaling_stats"] = {
+                "lo": [float(feature.get("db_min", -20.0))],
+                "hi": [float(feature.get("db_max", 60.0))],
+            }
             feature["standardize_stats_resolved"] = True
             feature["standardize_stats_dataset_sha256"] = ""
             feature["standardize_stats_split_seed"] = 0

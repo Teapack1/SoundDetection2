@@ -51,8 +51,10 @@ from sed.train.metrics import (  # noqa: F401
     confusion_matrix as _confusion_matrix,
     cross_target_confusion,
     decision_metrics as _decision_metrics,
+    firing_classes as _firing_classes,
     fit_thresholds_for_precision,
     fit_thresholds_from_val,
+    negative_role_classes as _negative_role_classes,
     operating_point_block as _operating_point_block,
     runtime_decisions as _runtime_decisions,
     runtime_pred_indices as _runtime_pred_indices,
@@ -257,15 +259,18 @@ def _configured_thresholds(
 ) -> dict[str, float]:
     """Evaluation thresholds per class.
 
-    Positive classes use [targets].<class>.threshold, falling back to legacy
-    [thresholds].<class> then [inference].default_threshold (Config.class_threshold).
-    `_negative` uses [inference].negative_max because that is the runtime
-    suppression gate. An explicit `override_threshold` wins for positive classes.
+    Target/suppressor classes use [targets].<class>.threshold, falling back to
+    legacy [thresholds].<class> then [inference].default_threshold
+    (Config.class_threshold). Every negative-role class (`_negative` by
+    default) uses [inference].negative_max because that is the runtime
+    suppression gate. An explicit `override_threshold` wins for non-negative
+    classes only — it must never move the veto.
     """
+    roles = cfg.class_roles(classes)
     thresholds: dict[str, float] = {}
     for cls in classes:
-        if cls == "_negative":
-            thresholds[cls] = float(cfg.inference.negative_max)
+        if roles.get(cls) == "negative":
+            thresholds[cls] = float(cfg.class_threshold(cls))
         elif override_threshold is not None:
             thresholds[cls] = float(override_threshold)
         else:
@@ -299,8 +304,8 @@ def fit_run_thresholds(
     model_dir = layout.model_dir(model_id)
     run_cfg = _model_config(model_dir, cfg)
     classes = _load_model_classes(model_dir)
-    if "_negative" not in classes:
-        log.info("threshold fit skipped: closed-set model (no _negative)")
+    if not any(role == "negative" for role in run_cfg.class_roles(classes).values()):
+        log.info("threshold fit skipped: closed-set model (no negative-role class)")
         return None
     val_csv = model_dir / "dataset" / "val.csv"
     if not val_csv.exists() or _csv_row_count(val_csv) == 0:
@@ -898,13 +903,15 @@ def evaluate_run(
         current_name="",
         current_class="",
     )
+    roles = run_cfg.class_roles(classes)
+    negative_classes = _negative_role_classes(run_cfg, classes)
     thresholds = _configured_thresholds(run_cfg, classes, override_threshold=threshold)
     if thresholds_override:
         # Explicit per-class values (a val-fitted rule) win over both the shared
-        # `threshold` and the config; `_negative` stays the runtime gate.
+        # `threshold` and the config; negative-role classes stay the runtime gate.
         thresholds.update({
             cls: float(v) for cls, v in thresholds_override.items()
-            if cls in thresholds and cls != "_negative"
+            if cls in thresholds and cls not in negative_classes
         })
     thresholds_source = _thresholds_source_label(
         runtime_thresholds_source,
@@ -913,9 +920,9 @@ def evaluate_run(
     )
     if thresholds_override:
         thresholds_source = "fitted_thresholds"
-    if decision == "argmax" or "_negative" not in classes:
-        # Forced argmax scores a model with a `_negative` class as a closed set:
-        # no threshold, no gates — pure ranking quality, immune to calibration.
+    if decision == "argmax" or not negative_classes:
+        # Forced argmax scores a model with a negative-role class as a closed
+        # set: no threshold, no gates — pure ranking quality, immune to calibration.
         pred_idx, decisions = _closed_set_decisions(probs, classes)
         prediction_mode = "closed_set_argmax"
         if decision == "argmax":
@@ -927,6 +934,8 @@ def evaluate_run(
             thresholds,
             negative_max=run_cfg.inference.negative_max,
             margin_to_second_best=run_cfg.inference.margin_to_second_best,
+            trigger_classes=_firing_classes(run_cfg, classes),
+            negative_classes=negative_classes,
         )
         prediction_mode = "runtime_thresholds"
     cm = _confusion_matrix(probs, targets, classes, pred_idx=pred_idx)
@@ -944,6 +953,7 @@ def evaluate_run(
             else float(run_cfg.inference.margin_to_second_best)
         ),
         budget_per_1000=float(run_cfg.training.calibrate_per_1000),
+        roles=roles,
     )
     metrics["prediction_mode"] = prediction_mode
     metrics["probability_mode"] = probability_mode(run_cfg)
@@ -1196,7 +1206,9 @@ def evaluate_exported_run(
     )
     override = float(rule.param) if rule.kind == "fixed" else None
     thresholds = _configured_thresholds(run_cfg, classes, override_threshold=override)
-    if rule.kind == "argmax" or "_negative" not in classes:
+    roles = run_cfg.class_roles(classes)
+    negative_classes = _negative_role_classes(run_cfg, classes)
+    if rule.kind == "argmax" or not negative_classes:
         pred_idx, _decisions = _closed_set_decisions(probs, classes)
         prediction_mode = "closed_set_argmax"
     else:
@@ -1206,6 +1218,8 @@ def evaluate_exported_run(
             thresholds,
             negative_max=run_cfg.inference.negative_max,
             margin_to_second_best=run_cfg.inference.margin_to_second_best,
+            trigger_classes=_firing_classes(run_cfg, classes),
+            negative_classes=negative_classes,
         )
         prediction_mode = "runtime_thresholds"
     cm = _confusion_matrix(probs, targets, classes, pred_idx=pred_idx)
@@ -1216,6 +1230,7 @@ def evaluate_exported_run(
             else float(run_cfg.inference.margin_to_second_best)
         ),
         budget_per_1000=float(run_cfg.training.calibrate_per_1000),
+        roles=roles,
     )
     metrics["rule"] = rule.as_dict()
     metrics["prediction_mode"] = prediction_mode
@@ -1614,13 +1629,16 @@ def audit_augmented(
         scored_with = Path(ckpt_path).name
 
     thresholds = _configured_thresholds(run_cfg, classes)
-    if "_negative" in classes:
+    negative_classes = _negative_role_classes(run_cfg, classes)
+    if negative_classes:
         _, decisions = _runtime_decisions(
             probs,
             classes,
             thresholds,
             negative_max=run_cfg.inference.negative_max,
             margin_to_second_best=run_cfg.inference.margin_to_second_best,
+            trigger_classes=_firing_classes(run_cfg, classes),
+            negative_classes=negative_classes,
         )
     else:
         _, decisions = _closed_set_decisions(probs, classes)

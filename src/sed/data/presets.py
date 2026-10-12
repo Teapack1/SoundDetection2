@@ -32,6 +32,7 @@ SCHEMA_VERSION = 1
 _FEATURES_CFG_FIELDS: tuple[str, ...] = (
     "feature_type",
     "frontend",
+    "compression",
     "n_fft",
     "win_length",
     "hop_length",
@@ -57,6 +58,7 @@ _FEATURES_CFG_FIELDS: tuple[str, ...] = (
     "standardize_std",
     "scaling_method",
     "scaling_scope",
+    "scaling_source",
     "scaling_stats",
     "standardize_stats_resolved",
     "standardize_stats_dataset_sha256",
@@ -393,23 +395,29 @@ def _normalize_preset(payload: dict[str, Any]) -> dict[str, Any]:
     out["standardize"] = bool(out.get("standardize", False))
     out["standardize_mean"] = float(out.get("standardize_mean", 0.0))
     out["standardize_std"] = float(out.get("standardize_std", 1.0))
+    out["compression"] = str(out.get("compression") or "").lower()
     out["scaling_method"] = str(out.get("scaling_method") or "none").lower()
     out["scaling_scope"] = str(out.get("scaling_scope") or "global").lower()
+    out["scaling_source"] = str(out.get("scaling_source") or "dataset").lower()
     raw_scaling_stats = out.get("scaling_stats")
     out["scaling_stats"] = {
         str(k): [float(v) for v in (vals or [])]
         for k, vals in raw_scaling_stats.items()
     } if isinstance(raw_scaling_stats, dict) else {}
-    # Legacy presets spell the fitted global z-score as standardize=True; keep
-    # the canonical fields coherent so preset comparisons don't drift from the
-    # validated FeaturesCfg they will produce.
-    if out["standardize"] and out["scaling_method"] == "none":
-        out["scaling_method"] = "zscore"
-        out["scaling_scope"] = "global"
-        if not out["scaling_stats"]:
-            out["scaling_stats"] = {
-                "mean": [out["standardize_mean"]], "std": [out["standardize_std"]],
-            }
+    # Older presets describe the two feature axes with the legacy flags
+    # (log_power / db_norm / pcen / standardize), and none of them named the
+    # EfficientAT fast-norm at all. Settle both axes through the same validator
+    # the config uses, so a preset and the FeaturesCfg it produces compare equal
+    # instead of a saved preset reading as "custom" the moment it is applied.
+    try:
+        canonical = config_mod.FeaturesCfg.model_validate(
+            {field: out[field] for field in _FEATURES_CFG_FIELDS if field in out}
+        )
+    except Exception:  # noqa: BLE001 — an invalid combination keeps its raw form
+        canonical = None
+    if canonical is not None:
+        for field in _FEATURES_CFG_FIELDS:
+            out[field] = getattr(canonical, field)
     out["standardize_stats_resolved"] = bool(
         out.get("standardize_stats_resolved", True)
     )

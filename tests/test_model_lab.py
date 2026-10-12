@@ -54,10 +54,14 @@ def test_curated_catalog_exposes_sources_and_kws_templates():
         "feature_type": "mel", "frontend": "efficientat", "sample_rate": 44100,
         "n_fft": 1024, "win_length": 882, "hop_length": 220, "n_mels": 128,
         "fmin": 80, "fmax": 20000, "window_seconds": 0.4,
+        "compression": "log",
         "pcen": False, "log_power": True, "stft_engine": "librosa",
         "db_norm": False, "colormap": "none", "image_size": 96,
         "standardize": False, "standardize_mean": 0.0, "standardize_std": 1.0,
-        "scaling_method": "none", "scaling_scope": "global", "scaling_stats": {},
+        # The EfficientAT affine named for what it is — a fixed global z-score —
+        # rather than appearing as "no normalization".
+        "scaling_method": "zscore", "scaling_scope": "global",
+        "scaling_source": "fixed", "scaling_stats": {"mean": [-4.5], "std": [5.0]},
         "source": "ClinkCNN-v2 0.4 s feature contract",
     }
     assert "task_specific_candidate" in v2["tags"]

@@ -38,24 +38,35 @@ log = logging.getLogger(__name__)
 def pool_mic_probabilities(
     probs_per_mic: np.ndarray,
     mic_mode: str,
-    neg_idx: int | None,
+    negative_idx: set[int] | None,
+    target_idx: list[int] | None = None,
 ) -> np.ndarray:
     """Collapse per-mic class probabilities ``(n_mics, n_classes)`` to ``(n_classes,)``.
 
     ``best``  — trust the single mic that best heard a target and return its
-                *whole* softmax vector (including its own ``_negative``). The
-                negative gate then stays self-consistent: it reflects the mic
-                that actually heard the event, not the quietest off-axis mic.
+                *whole* softmax vector (including its own negative-role
+                columns). The negative gate then stays self-consistent: it
+                reflects the mic that actually heard the event, not the
+                quietest off-axis mic. ``target_idx`` names the columns that
+                count as "heard a target"; without it every column outside
+                ``negative_idx`` does, which lets a mic that mainly heard
+                cutlery (a suppressor) win the vote.
     ``mean``  — average across mics.
     ``max`` / ``single`` — per-class maximum across mics. Cheap, but with an
-                explicit ``_negative`` class this lets the worst mic's negative
-                veto a fire another mic is confident about, hurting recall.
+                explicit negative-role class this lets the worst mic's
+                negative veto a fire another mic is confident about, hurting
+                recall.
     """
     if probs_per_mic.ndim != 2:
         raise ValueError("probs_per_mic must be 2-D (n_mics, n_classes)")
     if mic_mode == "best":
         n_classes = probs_per_mic.shape[1]
-        target_cols = [c for c in range(n_classes) if neg_idx is None or c != neg_idx]
+        negative_idx = negative_idx or set()
+        target_cols = (
+            [c for c in target_idx if 0 <= int(c) < n_classes]
+            if target_idx is not None
+            else [c for c in range(n_classes) if c not in negative_idx]
+        )
         scores = (
             probs_per_mic[:, target_cols].max(axis=1)
             if target_cols
@@ -70,7 +81,6 @@ def pool_mic_probabilities(
 def build_arbiter(
     cfg: Config,
     classes: list[str],
-    neg_idx: int | None,
     *,
     thresholds: dict[str, float] | None = None,
     trigger_classes: list[str] | None = None,
@@ -83,6 +93,15 @@ def build_arbiter(
     measures a system that is not deployed.
     """
     onset_gating = bool(cfg.inference.onset_gating_enabled)
+    roles = cfg.class_roles(classes)
+    negative_classes = {cls for cls, role in roles.items() if role == "negative"}
+    # Suppressor classes never fire. When the caller has not narrowed the
+    # firing set itself (`--target ...`), derive it from the class roles so a
+    # `hardnegs`-style output competes for the window without triggering.
+    if trigger_classes is None:
+        firing = [cls for cls, role in roles.items() if role == "target"]
+        if len(firing) != len([c for c in classes if c not in negative_classes]):
+            trigger_classes = firing
     return TriggerArbiter(
         classes=classes,
         thresholds=thresholds if thresholds is not None else cfg.effective_thresholds(classes),
@@ -94,11 +113,11 @@ def build_arbiter(
             "consecutive_frames": 1 if onset_gating else cfg.inference.consecutive_frames,
             "smoothing_enabled": False if onset_gating else cfg.inference.smoothing_enabled,
         },
-        negative_index=neg_idx,
-        negative_max=cfg.inference.negative_max,
+        negative_classes=negative_classes,
         margin_to_second_best=cfg.inference.margin_to_second_best,
         global_refractory_ms=cfg.inference.trigger_refractory_ms,
-        trigger_classes=trigger_classes,
+        trigger_classes=set(trigger_classes) if trigger_classes is not None else None,
+        vetoes=cfg.class_vetoes(classes),
     )
 
 
@@ -137,7 +156,15 @@ class WindowScorer:
         self.cfg = cfg
         self.backend = backend
         self.classes = list(classes)
-        self.neg_idx = self.classes.index("_negative") if "_negative" in self.classes else None
+        # "best" picks the mic that best heard a *firing* class. A suppressor is
+        # not evidence that this mic heard the event, so it must not cast the vote.
+        roles = cfg.class_roles(self.classes)
+        self.negative_idx = {
+            i for i, cls in enumerate(self.classes) if roles.get(cls) == "negative"
+        }
+        self.target_idx = [
+            i for i, cls in enumerate(self.classes) if roles.get(cls) == "target"
+        ]
         self.mic_mode = cfg.inference.multi_mic_mode
         self.active_channels = list(
             active_channels if active_channels is not None else cfg.inference.inference_channels
@@ -205,7 +232,9 @@ class WindowScorer:
         batch = self.features_for(channel_waves)
         logits = self.backend.infer(batch)
         probs_per_mic = np.asarray(logits_to_probabilities(logits, self.cfg))
-        pooled = pool_mic_probabilities(probs_per_mic, self.mic_mode, self.neg_idx)
+        pooled = pool_mic_probabilities(
+            probs_per_mic, self.mic_mode, self.negative_idx, self.target_idx,
+        )
 
         stacked = np.stack([np.asarray(w) for w in channel_waves], axis=-1) if channel_waves else None
         peak = float(np.max(np.abs(stacked))) if stacked is not None and stacked.size else 0.0

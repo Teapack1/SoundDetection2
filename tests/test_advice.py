@@ -72,10 +72,56 @@ def test_fmin_at_zero_is_flagged_as_bands_spent_on_noise():
 def test_a_well_chosen_feature_raises_no_warnings():
     findings = feature_advice(
         _features(fmin=250, fmax=20000, n_mels=128, n_fft=2048,
-                  hop_length=220, win_length=512, window_seconds=0.4),
+                  hop_length=220, win_length=512, window_seconds=0.4,
+                  # A geometry this far off the AudioSet contract must also say
+                  # what normalizes it — otherwise the fixed (x + 4.5) / 5 affine
+                  # is silently doing the job on a distribution it never saw.
+                  scaling_method="zscore", scaling_scope="per_band",
+                      scaling_source="dataset",
+                  scaling_stats={"mean": [0.0] * 128, "std": [1.0] * 128}),
         sample_rate=44100,
     )
     assert not [f for f in findings if f["severity"] in ("warn", "error")]
+
+
+def test_an_unfitted_off_contract_feature_names_the_audioset_affine():
+    """Silence here would be the wrong default: "no scaling" is not "no
+    normalization", it is AudioSet's constant applied to someone else's data."""
+    findings = feature_advice(
+        _features(fmin=250, fmax=20000, n_mels=128, n_fft=2048,
+                  hop_length=220, win_length=512, window_seconds=0.4),
+        sample_rate=44100,
+    )
+    finding = next(f for f in findings if f["code"] == "scaling_none_off_contract")
+    assert finding["severity"] == "warn"
+    assert finding["suggest"] == {
+        "scaling_method": "zscore", "scaling_scope": "per_band",
+        # The suggestion has to name where the constants come from: the point of
+        # the warning is that nothing was measured on this dataset.
+        "scaling_source": "dataset",
+    }
+
+
+def test_the_audioset_contract_itself_is_not_flagged_for_scaling():
+    """The one geometry the fixed affine WAS fitted for stays silent."""
+    findings = feature_advice(
+        _features(fmin=0, fmax=15000, n_mels=128, n_fft=1024,
+                  hop_length=320, win_length=800, window_seconds=0.4),
+        sample_rate=32000,
+    )
+    assert not [f for f in findings if f["code"] == "scaling_none_off_contract"]
+
+
+def test_global_scaling_on_a_dense_mel_bank_is_flagged():
+    findings = feature_advice(
+        _features(fmin=250, fmax=20000, n_mels=128, n_fft=2048,
+                  hop_length=220, win_length=512, window_seconds=0.4,
+                  scaling_method="zscore", scaling_scope="global",
+                  scaling_source="dataset",
+                  scaling_stats={"mean": [0.0], "std": [1.0]}),
+        sample_rate=44100,
+    )
+    assert [f for f in findings if f["code"] == "scaling_global_on_dense_bands"]
 
 
 def test_a_dense_bank_from_a_high_fmin_surfaces_the_fft_time_tradeoff():
@@ -273,9 +319,29 @@ def test_training_advice_never_blocks_and_survives_a_default_config():
 
 def test_config_advice_groups_every_area():
     advice = config_advice(Config())
-    assert set(advice) == {"features", "model", "training"}
+    assert set(advice) == {"stage", "features", "model", "training"}
     assert isinstance(advice["features"], list)
     assert isinstance(advice["training"], list)
+    assert advice["stage"]["stage"] in (1, 2)
+
+
+def test_pipeline_stage_follows_the_initialization():
+    """Stage is derived, not configured: a parent-initialized run IS the second
+    stage, and its frontend is the parent's by construction."""
+    from sed.train.advice import pipeline_stage
+
+    scratch = Config()
+    scratch.model.initialization = "random"
+    assert pipeline_stage(scratch)["stage"] == 1
+
+    child = Config()
+    child.model.initialization = "parent"
+    child.model.parent_project = "pretraining"
+    child.model.parent_run = "run-a"
+    stage = pipeline_stage(child)
+    assert stage["stage"] == 2
+    assert stage["parent_run"] == "run-a"
+    assert "parent" in stage["frontend_source"]
 
 
 def test_advice_stays_torch_free():

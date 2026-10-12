@@ -147,7 +147,9 @@ def calibrate(
     n_clips = int(probs.shape[0])
     log.info("scored %d/%d clips (source=%s)", n_clips, len(negative_files), negative_source)
 
-    targets = [c for c in classes if c != "_negative"]
+    roles = cfg.class_roles(classes)
+    negative_classes = {cls for cls, role in roles.items() if role == "negative"}
+    targets = [c for c in classes if c not in negative_classes]
     grid = np.linspace(0.30, 0.95, 14)
 
     def _system_rate(thresholds: dict[str, float]) -> tuple[float, dict[str, int]]:
@@ -164,6 +166,7 @@ def calibrate(
             thresholds={**thresholds, "_negative": cfg.inference.negative_max},
             negative_max=cfg.inference.negative_max,
             margin=cfg.inference.margin_to_second_best,
+            negative_classes=negative_classes,
         )
         total = sum(hits.values())
         return total / n_clips * 1000.0, hits
@@ -255,6 +258,7 @@ def _count_fires(
     thresholds: dict[str, float],
     negative_max: float,
     margin: float,
+    negative_classes: set[str] | None = None,
 ) -> dict[str, int]:
     """Per-class fire counts over a clip batch, using the runtime's gate order.
 
@@ -262,8 +266,9 @@ def _count_fires(
     two clips are two separate moments in the venue, not two windows a
     refractory would collapse.
     """
-    neg_idx = classes.index("_negative") if "_negative" in classes else None
-    target_idx = [i for i in range(len(classes)) if i != neg_idx]
+    negative_classes = {"_negative"} if negative_classes is None else negative_classes
+    negative_idx = {i for i, c in enumerate(classes) if c in negative_classes}
+    target_idx = [i for i in range(len(classes)) if i not in negative_idx]
     hits = {classes[i]: 0 for i in target_idx}
     if not target_idx or probs.size == 0:
         return hits
@@ -278,8 +283,8 @@ def _count_fires(
     )
 
     ok = np.ones(len(probs), dtype=bool)
-    if neg_idx is not None:                       # negative veto
-        ok &= probs[:, neg_idx] <= negative_max
+    if negative_idx:                               # negative veto
+        ok &= (probs[:, sorted(negative_idx)] <= negative_max).all(axis=1)
     ok &= (winner_val - runner_val) >= margin     # margin gate
     thr = np.array([thresholds.get(classes[target_idx[c]], 1.0) for c in winner_col])
     ok &= winner_val >= thr                       # per-class threshold

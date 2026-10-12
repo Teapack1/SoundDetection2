@@ -51,11 +51,83 @@ uv run sed audio meter --project <project_id>    # Live channel level meter
 uv run sed check record --project <project_id>   # Pre-recording check (mics and signals)
 ```
 
+All three are also in the recording console below, which is usually the faster
+way to run them on site.
+
 ---
 
 ## 3. Record Sounds
 
 Record one class at a time. Clips are saved to `data_library/sounds/<label>/` and reused across projects.
+
+### Recording console (recommended on site)
+
+```bash
+uv run sed record --serve                      # no project: fills the shared library
+uv run sed record --serve --project <id>       # record for a venue
+```
+
+Opens a single-page UI on http://127.0.0.1:8790 — boots in about a second, no
+library scan. Every flag below also works with `--serve` and prefills the form.
+
+**A project is optional, and picked in the console.** Most recording just
+expands `data_library/`, so *no project* is the default: those clips carry
+`_library`, which every project's default source rule accepts alongside its own
+id, so they are usable everywhere. Choosing a project in the top bar loads that
+venue's device, channel and onset settings and stamps its id on subsequent
+clips, so the project's own source rules pick them up — another project can
+still use them by naming that project in a source rule. Switching mid-session
+starts a new recording group rather than relabelling anything already recorded.
+Saving settings to `config.toml` needs a project; without one, changes last for
+the session.
+
+* **Setup**: pick the interface, sample rate and block size; tick channels with
+  their live level next to them; run the `check record` checklist inline.
+* **Session**: label (with the library's existing labels and their clip counts),
+  density, location and tags (both suggested from what has already been
+  recorded, tags with their usage counts), mic position, microphone names,
+  description, frozen-test and
+  split-channels toggles, target count and time cap — all editable *while*
+  recording. Changing the label starts a new recording group.
+* **Health**: an unsupported sample rate or channel count fails at Start with the
+  reason, instead of a session that reports "recording" with silent meters. A
+  device dropout, a failing disk and dropped clips are reported in a banner.
+* **Live**: per-microphone meters with peak/RMS, a 60 s level history, and the
+  `flux vs gate` readout that decides whether a transient fires. Onset floor,
+  sensitivity, cooldown, clip length, preroll and trigger mode are sliders that
+  apply without dropping the audio stream; each group has its own
+  **Save to config.toml**, which preserves the file's comments.
+* **Clip geometry**: the clip-length slider shows the exact duration and frame
+  count, and a diagram of where the transient sits inside the clip — guaranteed
+  preroll, the window a randomized onset lands in, and the postroll. With
+  *Randomize per clip* on, both ends of that window are their own sliders; all
+  of them are bounded by the current clip length rather than a fixed ceiling.
+* **Modes**: `Onset` (a clip per transient), `Continuous` (back-to-back clips,
+  gate off — the fast way to collect room tone and negatives) and `Manual`.
+* **Auto-calibrate** works before you start recording — press *Start meter*, then
+  calibrate. It listens to the room and places the onset floor above what the
+  room does on its own, at one of three strictnesses (`relaxed` / `normal` /
+  `strict`). Move around while it listens: whatever it hears becomes what it
+  ignores, so walking and glass handling stop triggering takes. The result
+  reports the room's median, 95th and loudest flux so you can see the headroom.
+* **Inspect a take**: click any spectrogram in *Recent takes* to enlarge it.
+  These are linear and full-range (DC to Nyquist), not the mel previews the
+  dataset UI shows — mains hum reads as a hard horizontal line, cable hash as a
+  bright top octave, and neither is visible in mel. Alongside it the take is
+  measured: peak, RMS, crest factor, DC offset, clipped samples and mains hum
+  per channel, with plain warnings ("50 Hz hum, 24 dB above the surrounding
+  spectrum — reseat the cable"). Multichannel takes get a per-channel switch.
+* **Recent takes** shows the last clips with spectrogram, playback and a delete
+  button, so a bad take is rejected on the spot.
+* **This server run** lists every pass made since the console started — time,
+  label, mode, density, duration and clip count. **Discard run** stops the
+  current pass and deletes everything it recorded; the ✕ on a finished pass does
+  the same for it. Both remove the WAVs, their sidecars and their library rows,
+  so a pass that turned out wrong never reaches the dataset. The list itself is
+  in memory only: closing the console forgets the list, not the clips.
+* Shortcuts: `Space` capture now, `R` start/stop, `U` undo last, `1`–`5` density.
+
+### Terminal recorder
 
 ```bash
 uv run sed record \
@@ -80,6 +152,8 @@ uv run sed record \
 * `-ot, --onset-threshold <db>`: Override onset trigger floor in dB.
 * `--split`: Auto-split multichannel recordings into per-channel mono clips on save.
 * `-t, --test`: Mark clips as frozen test material (requires `--project`).
+* `--serve`: Open the recording console instead of recording in the terminal.
+  `--port` changes the port (default 8790).
 
 With `multi_mic_trigger = "any"`, each selected mic triggers independently; near-simultaneous onsets save as one multichannel WAV, and the cooldown blocks every mic from re-triggering until it expires.
 
@@ -163,11 +237,13 @@ After changing the frozen test set, re-`compose` then `evaluate --all` so every 
 
 ## 8. Calibrate Thresholds
 
-Sweep per-class thresholds against background clips to find the lowest that stays under your false-positive budget.
+Sweep per-class thresholds against recorded background clips to find the lowest that stays under your false-positive budget.
 
 ```bash
-uv run sed calibrate --project <project_id> --target-fp-per-hour 1.0 --negative-source venue
+uv run sed calibrate --project <project_id> --target-per-1000 1.0 --negative-source venue
 ```
+The budget is **per 1000 negative clips**, not per hour: negatives are captured as onset-triggered clips, so clips are the denominator the recorded material actually supports. No continuous recording is needed.
+
 `--negative-source venue|library` or `--negative-dir <path>` selects the background source.
 
 ---
@@ -236,7 +312,8 @@ sudo -u sed /home/sed/SoundDetection2/.venv/bin/sed inference --project <project
 ## Troubleshooting
 
 - **No input signal:** Run `sed audio devices` and `sed audio meter`, and verify `[deploy] record_device`.
-- **Trigger too sensitive / not firing:** Adjust `-ot` (onset threshold) when recording, or `[onset] mad_k` / `min_flux_db` in config.
+- **No input signal / wrong channels:** `sed record --serve` shows a live level per channel next to its checkbox, so you can see which inputs are actually connected. Channel indexes are 0-based: interface input N is index N-1.
+- **Trigger too sensitive / not firing:** Drag the onset floor in the recording console (or press Auto-calibrate) and watch the `flux vs gate` readout; adjust `-ot` when recording from the terminal, or `[onset] mad_k` / `min_flux_db` in config.
 - **Empty Augmented list in Inspect:** Assign your generated clips to a class (bucket `derived`) in the Inspect UI.
-- **Too many false positives:** Re-calibrate with a lower rate: `sed calibrate --project <id> --target-fp-per-hour 0.5`.
+- **Too many false positives:** Re-calibrate with a lower budget: `sed calibrate --project <id> --target-per-1000 0.5`. If the model is firing on cutlery or glass handling specifically, that is a class-space problem rather than a threshold one — see `docs/pretraining_guide.md` on suppressor classes.
 - **Edge fails to load or runs the wrong model:** Run `sed check deploy` on the edge; set the model with `sed models select --project <id> <model_id>` (copy IDs from `sed models compare`).

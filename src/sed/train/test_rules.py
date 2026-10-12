@@ -181,33 +181,55 @@ def parse_rule_id(rule_id: str) -> TestRule:
 
 
 
-def false_fire_rate(per_class: dict | None) -> float | None:
-    """Fraction of `_negative` clips predicted as a target class.
+def _is_non_target_row(name: str, row: dict) -> bool:
+    """Whether one `per_class` row is background/suppressor, not a real target.
 
-    `_negative`'s false negatives ARE the false fires: a clip that trips no
-    threshold is predicted `_negative`, so anything else it was predicted as is
-    a target that fired on background. `None` when the set has no `_negative`
-    row (closed-set / target-only models).
+    Reads the `role` key `decision_metrics` annotates each row with; falls
+    back to the literal `_negative` name for manifests stored before that key
+    existed, so old runs keep scoring exactly as they did.
     """
+    role = row.get("role")
+    if role is not None:
+        return role != "target"
+    return name == "_negative"
+
+
+def _non_target_rows(per_class: dict | None) -> list[dict]:
     if not isinstance(per_class, dict):
+        return []
+    return [
+        row for name, row in per_class.items()
+        if isinstance(row, dict) and _is_non_target_row(name, row)
+    ]
+
+
+def false_fire_rate(per_class: dict | None) -> float | None:
+    """Fraction of non-target (background/suppressor) clips predicted as a target.
+
+    A non-target class's false negatives ARE the false fires: a clip that
+    trips no target threshold is predicted as its own (non-firing) class, so
+    anything else it was predicted as is a target that fired on background.
+    Sums over every non-target class — `_negative` by default, plus any class
+    a project split its background pool into (see `_is_non_target_row`).
+    `None` when the set has no non-target row at all (closed-set / target-only
+    models).
+    """
+    rows = _non_target_rows(per_class)
+    if not rows:
         return None
-    neg = per_class.get("_negative")
-    if not isinstance(neg, dict):
+    support = sum(int(row.get("support") or 0) for row in rows)
+    if not support:
         return None
-    support, fires = neg.get("support"), neg.get("fn")
-    if not support or fires is None:
-        return None
+    fires = sum(int(row["fn"]) for row in rows if row.get("fn") is not None)
     return float(fires) / float(support)
 
 
 def _negative_support(per_class: dict | None) -> int | None:
     """Background-clip count — the denominator of every false-alarm rate."""
-    if not isinstance(per_class, dict):
+    rows = [row for row in _non_target_rows(per_class) if row.get("support") is not None]
+    if not rows:
         return None
-    neg = per_class.get("_negative")
-    if not isinstance(neg, dict) or neg.get("support") is None:
-        return None
-    return int(neg["support"])
+    return int(sum(row["support"] for row in rows))
 
 
 def _negative_prior(per_class: dict | None, n_samples: object) -> float | None:
@@ -251,7 +273,9 @@ def macro_targets_from_per_class(per_class: dict | None, key: str) -> float | No
     values = [
         float(row[key])
         for name, row in per_class.items()
-        if name != "_negative" and isinstance(row, dict) and row.get(key) is not None
+        if isinstance(row, dict)
+        and not _is_non_target_row(name, row)
+        and row.get(key) is not None
     ]
     return (sum(values) / len(values)) if values else None
 

@@ -668,6 +668,8 @@ def _score_review_set(
     from sed.train.eval import (
         _closed_set_decisions,
         _configured_thresholds,
+        _firing_classes,
+        _negative_role_classes,
         _prediction_records,
         _runtime_decisions,
         _write_prediction_table,
@@ -689,13 +691,16 @@ def _score_review_set(
         probs = np.zeros((0, len(classes)), dtype=np.float32)
         targets = np.zeros((0, len(classes)), dtype=np.float32)
     thresholds = _configured_thresholds(cfg, classes)
-    if "_negative" in classes:
+    negative_classes = _negative_role_classes(cfg, classes)
+    if negative_classes:
         _idx, decisions = _runtime_decisions(
             probs,
             classes,
             thresholds,
             negative_max=cfg.inference.negative_max,
             margin_to_second_best=cfg.inference.margin_to_second_best,
+            trigger_classes=_firing_classes(cfg, classes),
+            negative_classes=negative_classes,
         )
     else:
         _idx, decisions = _closed_set_decisions(probs, classes)

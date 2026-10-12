@@ -26,24 +26,49 @@ This document captures key architectural and UX improvements noted during datase
 
 ---
 
-## 3. CLI Streamlining & Lightweight Web UI for Hardware & Recording
+## 3. Lightweight Web UI for Hardware & Recording — **done**
 
-* **Current State:** Multiple individual CLI subcommands (`sed audio devices`, `sed audio meter`, `sed check record`, `sed record`, `sed project`, etc.).
-* **Problem:** Navigating many CLI subcommands can feel overwhelming during live physical recording sessions.
-* **Proposed Change:**
-  * Streamline CLI commands down to core essential entrypoints.
-  * Build a fast, lightweight web UI module (extending the inspect server or running a micro-web app) to handle:
-    * Interactive audio device enumeration & channel selection.
-    * Real-time VU level meters and pre-flight health checks.
-    * Quick one-click onset-triggered recording sessions with instant visual feedback.
+* **Was:** Multiple individual CLI subcommands (`sed audio devices`, `sed audio meter`, `sed check record`, `sed record`) to navigate during a live physical recording session.
+* **Shipped:** `uv run sed record --serve` opens a single-page recording console
+  on port 8790 (`src/sed/data/record_server.py` + `record_ui.py`), a sibling of
+  the inspect server rather than a tab in it — it boots in about a second with
+  no library scan, and the two cannot share one PortAudio input anyway.
+  * Device enumeration and ordered channel selection, with a live level beside
+    each channel so a mis-indexed or unplugged input is visible before the pass.
+  * Per-microphone VU meters (peak, RMS, 60 s history) and the `flux vs gate`
+    readout, plus `doctor_record` run inline as a pre-flight panel.
+  * One-click onset-triggered sessions, with `Continuous` and `Manual` modes
+    for material the onset detector should not gate.
+  * Onset floor, sensitivity, cooldown, clip length, preroll (including both
+    ends of the randomized jitter window) and trigger mode are live sliders —
+    no restart — with an explicit *Save to config.toml* per group, and an
+    auto-calibrate that proposes a floor from the room.
+  * A run list for the console's lifetime, with one-action discard of a whole
+    pass — the clips, their sidecars and their library rows — so an unusable
+    pass never has to be hunted down in Inspect by its session id.
+* **Not done:** the CLI itself was not streamlined; the subcommands all remain.
+  The console covers the same ground, so the case for removing them is weaker
+  than it was.
+
+Both front-ends run the same loop (`src/sed/data/record_engine.py`), so the
+terminal recorder and the console cannot produce different kinds of clip.
 
 ---
 
-## 4. Recording Duration, Frame Precision & Temporal Transparency
+## 4. Recording Duration & Temporal Transparency — **mostly done**
 
-* **Current State:** Clip length (e.g. `0.4s`) is configured via `[onset] record_seconds` in `config.toml`, but isn't explicitly displayed in live recording logs or directly overridable on the CLI.
-* **Problem:** Operators lack instant visibility into exact clip durations during recording, and small floating-point time conversions can introduce minor sample length variations.
-* **Proposed Change:**
-  * Display explicit clip duration (e.g. `0.40s / 19,200 frames`) in `sed record` startup headers and live log lines.
-  * Add a `--record-seconds` / `--duration-ms` flag to `sed record` for session-level overrides.
-  * Research sample-exact frame sizing (e.g., locking clips to exact frame counts like 19,200 samples @ 48 kHz or 17,640 @ 44.1 kHz) to guarantee all dataset clips share identical matrix shapes.
+* **Was:** Clip length was configured via `[onset] record_seconds` and never shown.
+* **Shipped:**
+  * `sed record` prints `clip duration: 1.00s (48,000 frames @ 48000 Hz)` in its
+    startup header.
+  * `--record-seconds` / `-rs` overrides it per session.
+  * The recording console shows the same figure live under the clip-length
+    slider, next to a small diagram of where the onset sits inside the clip
+    (preroll │ onset │ postroll) — the geometry that decides what the model
+    window crops out later.
+* **Still open:** sample-exact frame sizing. Clip length is still
+  `int(record_seconds * sample_rate)`, so a project mixing capture rates can
+  hold clips whose frame counts differ by one. Nothing downstream depends on
+  identical frame counts today (features are computed per clip and the model
+  window is cropped around the onset), so this is a tidiness question rather
+  than a correctness one.

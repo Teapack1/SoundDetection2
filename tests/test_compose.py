@@ -1599,9 +1599,9 @@ def test_dataset_preset_state_flags_a_class_space_change_as_modified(tmp_path, m
     assert state["modified"] is True
 
 
-def test_dataset_preset_v1_without_classes_leaves_project_classes_alone(tmp_path, monkeypatch):
-    """Presets saved before v2 carry no class list. Applying one must restore
-    rules only — never clear the project's classes — and say so in the state."""
+def test_a_preset_that_assigns_nothing_leaves_project_classes_alone(tmp_path, monkeypatch):
+    """A definition with no rules names no classes, so there is nothing to
+    restore — it must not clear the project's classes."""
     _patch_library_paths(tmp_path, monkeypatch)
 
     from sed.config import ProjectLayout, load_config
@@ -1620,7 +1620,6 @@ def test_dataset_preset_v1_without_classes_leaves_project_classes_alone(tmp_path
     )
     write_dataset_selection(layout, {"ui_managed": True, "assignments": {}})
 
-    # No cfg → v1-shaped record, exactly what is already on disk for old presets.
     record = save_dataset_preset(layout, "legacy", load_dataset_selection(layout))
     assert record["schema_version"] == 1
     assert "classes" not in record
@@ -1633,6 +1632,126 @@ def test_dataset_preset_v1_without_classes_leaves_project_classes_alone(tmp_path
     entry = next(p for p in state["presets"] if p["slug"] == "legacy")
     assert entry["has_classes"] is False
     assert entry["classes_match_current"] is None
+
+
+def test_a_rules_only_preset_still_restores_the_classes_its_rules_name(
+    tmp_path, monkeypatch,
+):
+    """Presets saved before class capture carry no class list, but their class
+    space is knowable: it is what their own rules assign to. Loading one has to
+    install that, or the project keeps the previous definition's classes and
+    silently drops every restored rule at compose time."""
+    _patch_library_paths(tmp_path, monkeypatch)
+
+    from sed.config import ProjectLayout, load_config
+    from sed.data.compose import (
+        apply_dataset_preset,
+        dataset_preset_state,
+        load_dataset_presets,
+        load_dataset_selection,
+        save_dataset_preset,
+        write_dataset_presets,
+        write_dataset_selection,
+    )
+
+    layout = ProjectLayout("p")
+    layout.create()
+    layout.config_toml.write_text(
+        '[dataset]\ntarget_classes = ["_negative", "klatsch"]\n', encoding="utf-8"
+    )
+    write_dataset_selection(layout, {
+        "ui_managed": True,
+        "assignments": {"cheers_loud": [{"id": "r1", "labels": ["cheers"]}]},
+    })
+    save_dataset_preset(layout, "venue", load_dataset_selection(layout))
+    # Strip the captured classes to reproduce a genuinely pre-v2 record.
+    payload = load_dataset_presets(layout)
+    for record in payload["presets"]:
+        record.pop("classes", None)
+        record.pop("classes_fingerprint", None)
+        record["schema_version"] = 1
+    write_dataset_presets(layout, payload)
+
+    # Reported before loading, so the class switch is visible in the dropdown.
+    state = dataset_preset_state(layout, load_dataset_selection(layout), load_config("p"))
+    entry = next(p for p in state["presets"] if p["slug"] == "venue")
+    assert entry["classes"] == ["cheers_loud"]
+
+    write_dataset_selection(layout, {"ui_managed": True, "assignments": {}})
+    _selection, applied = apply_dataset_preset(layout, "venue")
+    assert applied["classes"] == ["cheers_loud"]
+    assert list(load_config("p").dataset.target_classes) == ["cheers_loud"]
+
+
+def test_the_dataset_definition_owns_the_class_space(tmp_path, monkeypatch):
+    """A class exists because the definition assigns something to it. Compose
+    adopts anything config has not caught up with, so a source rule can never
+    point at a class whose clips would be silently dropped."""
+    _patch_library_paths(tmp_path, monkeypatch)
+
+    from sed.config import ProjectLayout, load_config
+    from sed.data.compose import (
+        classes_in_selection,
+        dataset_definition_classes,
+        ensure_dataset_definition_classes,
+        write_dataset_selection,
+    )
+
+    layout = ProjectLayout("p")
+    layout.create()
+    layout.config_toml.write_text(
+        '[dataset]\ntarget_classes = ["_negative"]\n', encoding="utf-8"
+    )
+    selection = {
+        "ui_managed": True,
+        "assignments": {"cheers": [{"id": "r1"}], "empty": []},
+        "clip_assignments": {"klatsch": [{"uuid": "u1"}]},
+    }
+    write_dataset_selection(layout, selection)
+
+    # A class with no rules is not part of the definition.
+    assert classes_in_selection(selection) == ["cheers", "klatsch"]
+
+    cfg = load_config("p")
+    # Configured order leads — it fixes the head's class index assignment.
+    assert dataset_definition_classes(cfg, selection) == ["_negative", "cheers", "klatsch"]
+
+    written = ensure_dataset_definition_classes(layout, cfg, selection)
+    assert written == ["_negative", "cheers", "klatsch"]
+    assert list(load_config("p").dataset.target_classes) == written
+    # Idempotent: nothing to adopt the second time.
+    assert ensure_dataset_definition_classes(layout, load_config("p"), selection) is None
+
+
+def test_split_frozen_test_state_reports_what_is_actually_built(tmp_path, monkeypatch):
+    """The Test set panel is a three-state control (not built / built at some
+    percentage / built but switched off), and every state comes from here."""
+    _patch_library_paths(tmp_path, monkeypatch)
+
+    from sed.config import ProjectLayout
+    from sed.data.compose import (
+        _write_split_frozen_manifest,
+        split_frozen_test_state,
+    )
+
+    layout = ProjectLayout("p")
+    layout.create()
+    assert split_frozen_test_state(layout) == {
+        "built": False, "clips": 0, "fraction": 0.0, "by_class": {},
+        "classes": 0, "built_at": "", "path": "",
+    }
+
+    _write_split_frozen_manifest(layout, {
+        "fraction": 0.2, "changed_at": "2026-08-10T00:00:00Z",
+        "keys": ["/a.wav", "/b.wav", "/c.wav"],
+        "by_class": {"cheers": ["/a.wav", "/b.wav"], "_negative": ["/c.wav"], "unused": []},
+    })
+    state = split_frozen_test_state(layout)
+    assert state["built"] is True
+    assert state["clips"] == 3
+    assert state["fraction"] == 0.2
+    assert state["classes"] == 2
+    assert state["by_class"] == {"_negative": 1, "cheers": 2}
 
 
 def test_dataset_preset_provenance_travels_with_a_run(tmp_path, monkeypatch):

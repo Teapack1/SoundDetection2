@@ -201,20 +201,36 @@ def test_standardize_config_validation_and_routing():
     cfg = Config.model_validate(cfg.model_dump(mode="json"))
     assert cfg.features.matches_pretrained_normalization() is False
     ext = build_feature_extractor(cfg)
-    assert isinstance(ext, MelExtractor) and ext.standardize is True
+    # The fitted z-score reaches the extractor as its one normalization stage.
+    assert isinstance(ext, MelExtractor)
+    assert ext.compression == "log"
+    assert (ext.scaling.method, ext.scaling.scope, ext.scaling.source) == (
+        "zscore", "global", "dataset",
+    )
+    assert ext.scaling.a.tolist() == [pytest.approx(-4.27)]
+    assert ext.scaling.b.tolist() == [pytest.approx(9.14)]
 
     with _pytest.raises(ValueError, match="standardize_std"):
         Config.model_validate({"features": {"standardize": True, "standardize_std": 0.0}})
-    with _pytest.raises(ValueError, match="standardize"):
-        Config.model_validate({"features": {"standardize": True, "pcen": True}})
-    with _pytest.raises(ValueError, match="natural-log linear power"):
-        Config.model_validate({"features": {
-            "feature_type": "linear", "standardize": True, "log_power": False,
-        }})
-    with _pytest.raises(ValueError, match="legacy dB mapping"):
+    # db_norm IS a normalization (a fixed min-max over [db_min, db_max]), so
+    # asking for a fitted z-score at the same time is two normalizations.
+    with _pytest.raises(ValueError, match="two different"):
         Config.model_validate({"features": {
             "feature_type": "linear", "standardize": True, "db_norm": True,
         }})
+
+    # Compression and normalization are independent axes, so combinations that
+    # the old per-feature-type flags forbade are now ordinary configurations.
+    with_pcen = Config.model_validate({"features": {"standardize": True, "pcen": True}})
+    assert with_pcen.features.compression == "pcen"
+    assert (with_pcen.features.scaling_method, with_pcen.features.scaling_source) == (
+        "zscore", "dataset",
+    )
+    raw_power = Config.model_validate({"features": {
+        "feature_type": "linear", "standardize": True, "log_power": False,
+    }})
+    assert raw_power.features.compression == "none"
+    assert raw_power.features.scaling_method == "zscore"
 
     linear = Config.model_validate({
         "features": {
@@ -224,7 +240,10 @@ def test_standardize_config_validation_and_routing():
     })
     linear_ext = build_feature_extractor(linear)
     assert isinstance(linear_ext, LinearExtractor)
-    assert linear_ext.standardize is True
+    assert linear_ext.compression == "log"
+    assert linear_ext.scaling.method == "zscore"
+    assert linear_ext.scaling.a.tolist() == [pytest.approx(-7.0)]
+    assert linear_ext.scaling.b.tolist() == [pytest.approx(3.0)]
 
 
 @pytest.mark.parametrize(

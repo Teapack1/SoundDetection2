@@ -73,6 +73,7 @@ def sweep(
     negative_max: float,
     margin: float,
     grid: list[float] | None = None,
+    roles: dict[str, str] | None = None,
 ) -> dict:
     """Recall and false-alarm rate across a shared threshold sweep.
 
@@ -83,6 +84,15 @@ def sweep(
     ``negative_max`` and ``margin`` are the other two runtime gates, applied
     exactly as the live decision applies them so that a point on this curve and
     the point metrics at the same threshold agree.
+
+    ``roles`` (``Config.class_roles`` output; defaults to "``_negative`` is the
+    only negative-role class, everything else is a target") decides two
+    separate sets: every ``"negative"``-role class is excluded from window
+    competition and must clear ``negative_max`` (mirroring the runtime veto
+    gate), while a clip whose *true* label is any non-``"target"`` class
+    (negative or suppressor) counts as a false-alarm opportunity — a
+    suppressor-labelled clip is never a real detection, so it must not inflate
+    "correct", matching the deployment `false_fire_rate` definition.
     """
     import numpy as np
 
@@ -91,13 +101,18 @@ def sweep(
     if probs.size == 0:
         return {"points": [], "n_negatives": 0, "n_targets": 0, "classes": []}
 
-    neg_idx = classes.index("_negative") if "_negative" in classes else None
-    target_idx = [i for i in range(len(classes)) if i != neg_idx]
+    if roles is None:
+        roles = {c: ("negative" if c == "_negative" else "target") for c in classes}
+    negative_idx = [i for i, c in enumerate(classes) if roles.get(c) == "negative"]
+    non_target_idx = {i for i, c in enumerate(classes) if roles.get(c) != "target"}
+    target_idx = [i for i in range(len(classes)) if i not in negative_idx]
     if not target_idx:
         return {"points": [], "n_negatives": 0, "n_targets": 0, "classes": []}
 
     true_idx = np.argmax(targets, axis=1)
-    is_negative = (true_idx == neg_idx) if neg_idx is not None else np.zeros(len(probs), bool)
+    is_negative = (
+        np.isin(true_idx, list(non_target_idx)) if non_target_idx else np.zeros(len(probs), bool)
+    )
     n_neg = int(is_negative.sum())
     n_pos = int((~is_negative).sum())
 
@@ -107,8 +122,8 @@ def sweep(
     win_val = np.take_along_axis(tgt, win_col[:, None], axis=1)[:, 0]
     # Gates that do not depend on the swept threshold, applied once.
     base_ok = np.ones(len(probs), bool)
-    if neg_idx is not None:
-        base_ok &= probs[:, neg_idx] <= negative_max
+    if negative_idx:
+        base_ok &= (probs[:, negative_idx] <= negative_max).all(axis=1)
     # With a single target class there is no runner-up, and the live decision
     # skips the margin gate entirely — comparing the winner against a phantom
     # 0.0 would silently re-impose it as a second confidence threshold.

@@ -245,9 +245,7 @@ def test_catalog_default_extracts_exact_17640_to_128_by_81_contract():
 @pytest.mark.parametrize(
     ("section", "field", "value"),
     [
-        ("model", "sample_rate", 48_000),
         ("model", "channels", 2),
-        ("features", "window_seconds", 0.5),
         ("features", "log_power", False),
         ("features", "stft_engine", "scipy"),
         ("features", "db_norm", True),
@@ -285,6 +283,55 @@ def test_supported_frontend_family_rejects_incompatible_semantics(section, field
     assert any(f"{section}.{field}=" in mismatch for mismatch in mismatches)
     with pytest.raises(ValueError, match="ClinkCNN-v2 frontend rejected"):
         validate_clink_cnn_v2_feature_contract(bad, phase="test")
+
+
+@pytest.mark.parametrize(
+    ("section", "field", "value"),
+    [
+        ("model", "sample_rate", 48_000),
+        ("features", "window_seconds", 0.5),
+    ],
+)
+def test_non_native_geometry_is_advisory_not_a_rejection(section, field, value):
+    """Sample rate and window length are preferences, not structural limits.
+
+    The trunk is fully convolutional with an adaptive frequency pool, so a
+    48 kHz or 0.5 s configuration builds and trains. Refusing it would make the
+    research tool unable to measure the very question it exists to answer.
+    """
+    import torch
+
+    from sed.audio.features import build_feature_extractor, window_sample_count
+    from sed.config import (
+        Config,
+        FeaturesCfg,
+        clink_cnn_v2_feature_mismatches,
+        clink_cnn_v2_native_deviations,
+        validate_clink_cnn_v2_feature_contract,
+    )
+    from sed.train.model_lab import architecture_by_id, recommended_feature_for
+
+    feature = recommended_feature_for(architecture_by_id("clink-cnn-v2"))
+    cfg = Config.model_validate({
+        "model": {
+            "backbone": "clink-cnn-v2", "pretrained": False,
+            "initialization": "random", "sample_rate": feature["sample_rate"],
+        },
+        "features": {
+            key: item for key, item in feature.items() if key in FeaturesCfg.model_fields
+        },
+    })
+    changed = cfg.model_copy(deep=True)
+    setattr(getattr(changed, section), field, value)
+
+    assert clink_cnn_v2_feature_mismatches(changed) == []
+    validate_clink_cnn_v2_feature_contract(changed, phase="test")
+    assert any(f"{section}.{field}=" in note for note in clink_cnn_v2_native_deviations(changed))
+
+    # And it really does build at that geometry.
+    samples = window_sample_count(changed.model.sample_rate, changed.features.window_seconds)
+    features = build_feature_extractor(changed)(torch.zeros(samples))
+    assert features.shape[0] == 1 and features.shape[1] > 0 and features.shape[2] > 0
 
 
 @pytest.mark.parametrize(

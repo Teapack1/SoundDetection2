@@ -167,8 +167,8 @@ def test_onset_gated_and_sliding_simulations_differ():
                 "consecutive_frames": 1 if onset_gated else 3,
                 "smoothing_enabled": not onset_gated,
             },
-            negative_index=0,
-            negative_max=0.5,
+            negative_classes={"_negative"},
+            vetoes={"_negative": 0.5},
             margin_to_second_best=0.08,
             global_refractory_ms=0,
         )

@@ -57,16 +57,50 @@ def test_pooling_best_keeps_one_mics_whole_vector():
     """Mixing one mic's target score with another's negative would let through a
     trigger neither mic supports."""
     probs = np.array([[0.9, 0.1], [0.2, 0.8]])
-    assert pool_mic_probabilities(probs, "best", 0).tolist() == [0.2, 0.8]
-    assert pool_mic_probabilities(probs, "mean", 0).tolist() == pytest.approx([0.55, 0.45])
-    assert pool_mic_probabilities(probs, "max", 0).tolist() == [0.9, 0.8]
+    assert pool_mic_probabilities(probs, "best", {0}).tolist() == [0.2, 0.8]
+    assert pool_mic_probabilities(probs, "mean", {0}).tolist() == pytest.approx([0.55, 0.45])
+    assert pool_mic_probabilities(probs, "max", {0}).tolist() == [0.9, 0.8]
+
+
+def test_pooling_best_ignores_suppressor_scores_when_choosing_the_mic():
+    """"Best" means the mic that best heard something we would fire on.
+
+    A mic that mainly heard cutlery is not evidence the event happened there, so
+    it must not win the vote and impose its whole probability vector.
+    """
+    classes = ["_negative", "riedel_wine", "hardnegs"]
+    # mic 0 heard the glass; mic 1 mostly heard the hard negative.
+    probs = np.array([[0.10, 0.80, 0.05], [0.10, 0.30, 0.95]])
+    target_idx = [classes.index("riedel_wine")]
+    assert pool_mic_probabilities(probs, "best", {0}, target_idx).tolist() == [0.10, 0.80, 0.05]
+    # Without the target restriction the suppressor picks the wrong mic.
+    assert pool_mic_probabilities(probs, "best", {0}).tolist() == [0.10, 0.30, 0.95]
+
+
+def test_build_arbiter_derives_suppressor_roles_from_targets_block():
+    from sed.config import Config
+
+    classes = ["_negative", "riedel_wine", "hardnegs"]
+    cfg = Config.model_validate({
+        "model": {"classes": classes}, "dataset": {"target_classes": classes},
+    })
+    arbiter = build_arbiter(cfg, classes)
+    assert arbiter.trigger_classes == {"riedel_wine"}
+
+    # An explicit [targets] entry overrides the name-based default in both
+    # directions — nothing here is enforced by class name alone.
+    cfg_enabled = Config.model_validate({
+        "model": {"classes": classes}, "dataset": {"target_classes": classes},
+        "targets": {"hardnegs": {"enabled": True}},
+    })
+    assert build_arbiter(cfg_enabled, classes).trigger_classes is None
 
 
 def test_pooling_rejects_non_2d_input():
     """Preserved from the pre-refactor implementation — silently accepting a 1-D
     vector would hide a caller passing one mic where a matrix was expected."""
     with pytest.raises(ValueError):
-        pool_mic_probabilities(np.array([0.5, 0.5]), "best", 0)
+        pool_mic_probabilities(np.array([0.5, 0.5]), "best", {0})
 
 
 def test_build_arbiter_disables_temporal_consensus_only_when_onset_gated():
@@ -74,11 +108,11 @@ def test_build_arbiter_disables_temporal_consensus_only_when_onset_gated():
     N-of-N do not apply — reproducing it without this measures a different system."""
     classes = ["_negative", "cheers"]
 
-    gated = build_arbiter(_cfg(onset_gating=True), classes, 0)
+    gated = build_arbiter(_cfg(onset_gating=True), classes)
     assert gated.smoothers["cheers"].smoothing_enabled is False
     assert gated.smoothers["cheers"].consec == 1
 
-    sliding = build_arbiter(_cfg(onset_gating=False), classes, 0)
+    sliding = build_arbiter(_cfg(onset_gating=False), classes)
     assert sliding.smoothers["cheers"].smoothing_enabled is True
     assert sliding.smoothers["cheers"].consec == 3
 

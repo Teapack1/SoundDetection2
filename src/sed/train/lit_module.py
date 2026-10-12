@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Sequence
 from pathlib import Path
 
 import lightning as L
@@ -59,16 +60,20 @@ def fixed_threshold_trigger_counts(
     probabilities: torch.Tensor,
     targets: torch.Tensor,
     *,
-    negative_index: int | None,
+    negative_indices: Sequence[int] = (),
     threshold: float = FIXED_SELECTION_THRESHOLD,
     negative_max: float = 0.5,
     margin_to_second_best: float = 0.0,
+    firing_mask: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Return sufficient statistics for fixed-threshold trigger selection.
 
     This replays the single-window runtime decision contract: the strongest
-    positive class is considered, then the negative veto, positive-class margin,
-    and shared confidence threshold can abstain.  The returned tuple is
+    non-negative class is considered, then the negative veto, class margin, and
+    shared confidence threshold can abstain.  ``firing_mask`` (per class) marks
+    which of those may actually fire — a suppressor class competes for the
+    window but blocks the trigger when it wins, matching
+    ``sed.runtime.smooth.TriggerArbiter``.  The returned tuple is
     ``(target_tp, target_support, negative_triggers, negative_clips)``.  Keeping
     counts instead of averaging batches makes the epoch metric independent of
     batch size and straightforward to reduce across distributed workers.
@@ -87,9 +92,10 @@ def fixed_threshold_trigger_counts(
             "fixed-threshold validation targets must be class indices or match probabilities"
         )
 
+    negative_index_set = set(negative_indices)
     positive_indices = [
         idx for idx in range(num_classes)
-        if negative_index is None or idx != negative_index
+        if idx not in negative_index_set
     ]
     target_tp = torch.zeros(num_classes, dtype=torch.long, device=probabilities.device)
     target_support = target_bin.sum(dim=0, dtype=torch.long)
@@ -107,11 +113,20 @@ def fixed_threshold_trigger_counts(
     winner_score = positive_probabilities[row_index, winner_column]
     triggered = winner_score >= float(threshold)
 
-    if negative_index is not None:
-        triggered &= probabilities[:, negative_index] <= float(negative_max)
+    if negative_indices:
+        neg_index_tensor = torch.tensor(
+            list(negative_indices), dtype=torch.long, device=probabilities.device
+        )
+        triggered &= (
+            probabilities.index_select(1, neg_index_tensor) <= float(negative_max)
+        ).all(dim=1)
     if len(positive_indices) > 1 and margin_to_second_best > 0:
         runner_up = positive_probabilities.topk(k=2, dim=1).values[:, 1]
         triggered &= (winner_score - runner_up) >= float(margin_to_second_best)
+    if firing_mask is not None:
+        # A suppressor won: nothing fires. It still won the argmax above, so a
+        # clip the model assigns to cutlery cannot be scored as a glass hit.
+        triggered &= firing_mask.to(probabilities.device)[winner_index]
 
     predicted = F.one_hot(winner_index, num_classes=num_classes).bool()
     target_tp = (predicted & target_bin & triggered.unsqueeze(1)).sum(
@@ -119,13 +134,15 @@ def fixed_threshold_trigger_counts(
     )
 
     any_true_target = target_bin.index_select(1, positive_index).any(dim=1)
-    if negative_index is None:
+    if not negative_indices:
         truly_negative = ~any_true_target
     else:
-        # A malformed multi-label row that marks both a target and `_negative`
-        # is not a truly negative clip and must not inflate the false-trigger
-        # denominator.
-        truly_negative = target_bin[:, negative_index] & ~any_true_target
+        # A malformed multi-label row that marks both a target and a
+        # negative-role class is not a truly negative clip and must not
+        # inflate the false-trigger denominator.
+        truly_negative = (
+            target_bin.index_select(1, neg_index_tensor).any(dim=1) & ~any_true_target
+        )
     negative_clips = truly_negative.sum(dtype=torch.long)
     negative_triggers = (triggered & truly_negative).sum(dtype=torch.long)
     return target_tp, target_support, negative_triggers, negative_clips
@@ -137,7 +154,8 @@ def summarize_fixed_threshold_counts(
     negative_triggers: torch.Tensor,
     negative_clips: torch.Tensor,
     *,
-    negative_index: int | None,
+    negative_indices: Sequence[int] = (),
+    firing_mask: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Compute target macro recall and negative triggers/1000 from counts.
 
@@ -146,10 +164,17 @@ def summarize_fixed_threshold_counts(
     negative clips reports a finite 0.0 rate; the separately logged negative
     count makes that absence explicit in reports instead of leaking a NaN into
     checkpoint selection.
+
+    ``firing_mask`` excludes suppressor classes from the recall average: they
+    are outputs the system deliberately never fires, so counting their
+    (necessarily zero) recall would penalize every checkpoint equally and
+    compress the metric that ranks them.
     """
+    negative_index_set = set(negative_indices)
     target_indices = [
         idx for idx in range(int(target_support.numel()))
-        if negative_index is None or idx != negative_index
+        if idx not in negative_index_set
+        and (firing_mask is None or bool(firing_mask[idx]))
     ]
     # Float64 keeps exact count ratios such as 19/20 aligned with the persisted
     # 0.95 eligibility gate instead of rounding just below it in float32.
@@ -215,8 +240,19 @@ class SedLitModule(L.LightningModule):
         self.cfg = cfg
         self.classes = classes
         self.num_classes = len(classes)
-        self.neg_idx: int | None = (
-            classes.index("_negative") if "_negative" in classes else None
+        # Which outputs may fire, so checkpoint selection scores the decision
+        # layer that will actually be deployed. None (every non-negative class
+        # fires) leaves the metric bit-identical to before.
+        roles = cfg.class_roles(list(classes))
+        self.negative_indices: list[int] = [
+            i for i, name in enumerate(classes) if roles.get(name) == "negative"
+        ]
+        self._firing_mask: torch.Tensor | None = (
+            None
+            if all(role != "suppressor" for role in roles.values())
+            else torch.tensor(
+                [roles.get(name) == "target" for name in classes], dtype=torch.bool,
+            )
         )
         self.single_label = is_single_label_loss(cfg)
         self.frame_task = cfg.model.task == "frame"
@@ -276,7 +312,7 @@ class SedLitModule(L.LightningModule):
         elif self.loss_name == "asymmetric_focal":
             self.loss_fn = AsymmetricFocalLoss(
                 num_classes=self.num_classes,
-                negative_index=self.neg_idx,
+                negative_indices=self.negative_indices,
                 gamma_pos=cfg.training.focal_gamma_pos,
                 gamma_neg=cfg.training.focal_gamma_neg,
             )
@@ -377,10 +413,11 @@ class SedLitModule(L.LightningModule):
         fixed_counts = fixed_threshold_trigger_counts(
             prob.detach(),
             y_idx if self.single_label else y,
-            negative_index=self.neg_idx,
+            negative_indices=self.negative_indices,
             threshold=FIXED_SELECTION_THRESHOLD,
             negative_max=float(self.cfg.inference.negative_max),
             margin_to_second_best=float(self.cfg.inference.margin_to_second_best),
+            firing_mask=self._firing_mask,
         )
         self._val_fixed_target_tp.add_(fixed_counts[0])
         self._val_fixed_target_support.add_(fixed_counts[1])
@@ -406,10 +443,16 @@ class SedLitModule(L.LightningModule):
             self.log(f"val/f1/{name}", f1[i])
             self.log(f"val/p/{name}", precision[i])
             self.log(f"val/r/{name}", recall[i])
-        # Macro mean across all classes EXCEPT _negative — what we actually care
-        # about (target-class detection quality)
+        # Macro mean across the classes the system actually fires on — not
+        # `_negative`, and not suppressor outputs, whose job is to win windows
+        # rather than to trigger.
+        negative_index_set = set(self.negative_indices)
         target_mask = torch.tensor(
-            [self.neg_idx is None or i != self.neg_idx for i in range(self.num_classes)],
+            [
+                i not in negative_index_set
+                and (self._firing_mask is None or bool(self._firing_mask[i]))
+                for i in range(self.num_classes)
+            ],
             device=ap.device,
         )
         self.log("val/ap_macro_targets", ap[target_mask].mean() if target_mask.any() else ap.mean(), prog_bar=True)
@@ -423,7 +466,8 @@ class SedLitModule(L.LightningModule):
             fixed_target_support,
             fixed_negative_triggers,
             fixed_negative_clips,
-            negative_index=self.neg_idx,
+            negative_indices=self.negative_indices,
+            firing_mask=self._firing_mask,
         )
         self.log(VAL_FIXED_RECALL_KEY, fixed_recall, prog_bar=True)
         self.log(VAL_FIXED_FP_KEY, fixed_fp_per_1000, prog_bar=True)

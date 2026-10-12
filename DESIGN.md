@@ -11,6 +11,8 @@ inference on an edge PC that can trigger ArtNet/DMX.
 | [SETUP.md](SETUP.md) | Machine setup, audio devices, edge PC, and ArtNet networking. |
 | [WORKFLOW.md](WORKFLOW.md) | Operational reference for project creation through deployment. |
 | [DESIGN.md](DESIGN.md) | Design rationale plus recording and training guidance. |
+| [docs/pretraining_guide.md](docs/pretraining_guide.md) | Stage one: class space, frontend, normalization and architecture for the shared-corpus encoder. |
+| [docs/finetuning_guide.md](docs/finetuning_guide.md) | Stage two: adapting that encoder to one venue's glassware. |
 
 ## System Design
 
@@ -33,7 +35,7 @@ inference on an edge PC that can trigger ArtNet/DMX.
 
 | Priority | Project choice |
 | --- | --- |
-| Low false positives | Conservative classes, explicit `_negative`, runtime gates, calibration by FP/hour. |
+| Low false positives | Conservative classes, explicit `_negative`, suppressor classes for near-misses, runtime gates, calibration by false fires per 1000 negative clips. |
 | Venue fit | One project under `projects/<id>` per room/use case. |
 | Reusable data | Shared clip library; project-specific dataset selections. |
 | Edge reliability | OpenVINO CPU runtime; no PyTorch required in production. |
@@ -84,15 +86,41 @@ Changing sample rate, mel count, frequency range, or window geometry changes
 the input distribution the pretrained backbone expects. When those values must
 change, the safer design is to train without the pretrained contract.
 
+#### Compression and normalization are separate
+
+Beyond the geometry above, a feature has two independent value stages, one
+control each in the Audio Features tab:
+
+| Stage | Decides | Options |
+| --- | --- | --- |
+| `features.compression` | what the numbers **mean** | `log` (ln of power) · `db` (10·log10) · `none` (raw power) · `pcen` (per-band adaptive gain) |
+| `features.scaling_method` | what **range** they arrive in | `none` · `zscore` · `minmax`, at `scaling_scope` `global`/`per_band` |
+
+Compression is feature generation; normalization only shifts and scales. They
+are orthogonal, and both apply identically to mel and linear bases — the earlier
+design exposed them as one per-feature-type list of modes, which made
+"log-mel" and "legacy dB" look like alternatives to "z-score" when they are
+answers to different questions.
+
+`features.scaling_source` records where the normalization constants came from:
+`dataset` (fitted on the composed training split, validation excluded, frozen
+into the bundle) or `fixed` (pinned by a checkpoint contract). Two frontends
+that historically looked like "no normalization" are fixed specs and are stored
+as such — EfficientAT's `(x + 4.5) / 5` is a fixed global z-score with mean
+−4.5 / std 5, and the legacy soundDetection dB image is a fixed global min–max
+over [−20, 60] dB. The older `log_power` / `db_norm` / `pcen` / `standardize`
+fields remain accepted and are kept mirrored by config validation, so existing
+projects, presets and frozen bundles produce byte-identical values.
+
 ### Recording
 
 | Mechanism | Typical value | Purpose |
 | --- | --- | --- |
-| Clip length | 1.0 s | Saved clip, deliberately longer than the 0.4 s model window so one library serves projects at any window. |
-| Preroll | 300 ms or random 100-700 ms | Captures lead-in and adds timing variety. |
+| Clip length | 0.4 s | Matches the model window. Raise `record_seconds` when a library must also serve projects with a longer window — the window is cropped around the onset, so headroom is only useful if some project wants more of it. |
+| Preroll | 120 ms or random 60-240 ms | Captures lead-in and adds timing variety. |
 | Onset detector | Superflux / spectral flux | Finds transient events better than loudness alone. |
-| Onset floor | `min_flux_db`, often -80 to -60 dB | Rejects tiny background motion. |
-| Cooldown | ~1500 ms | Avoids near-duplicate clips from one event. |
+| Onset floor | `min_flux_db`, measured per room | The shipped -80 dB is a placeholder: a quiet office already sits near it, so it triggers on almost anything. Set it with the console's Auto-calibrate, which listens to the room and places the floor above what it does on its own — walk around while it listens and it learns to ignore you. |
+| Cooldown | 600 ms | Avoids near-duplicate clips from one event. |
 | Multi-mic merge | ~30-500 ms | Collapses the same physical event across mics. |
 | Trigger mode | `any` for multi-mic venues | Lets each mic detect independently. |
 
@@ -104,6 +132,24 @@ recordings once the window is shorter than the clip. The onset sits
 `min(preroll_ms, 30% of the window)` into the window, and the live onset-gated
 runtime scores exactly that geometry, so training and production frame the same
 event the same way.
+
+The recording console (`sed record --serve`) is the operator surface for all of
+this: it shows every microphone's level and the live `flux vs gate` comparison,
+and lets the floor, cooldown, clip length and preroll be changed while the
+stream runs. It drives the same loop as the terminal recorder, so the two
+produce identical clips.
+
+The onset detector runs at the model rate, so capture at any other rate is
+converted on the way in. That conversion is **streamed**, not done per audio
+block: resampling each block on its own zero-pads both of its edges, and a
+spectral-flux detector reads the resulting step as a transient at every block
+boundary. Measured on 30 s of a held 440 Hz tone with no transients in it, the
+default gate fired 124 times at 48 kHz and none at 32 kHz, where no conversion
+happens at all — the gate's sensitivity depended on the sound card and on the
+buffer size. `sed.audio.resample.StreamingResampler` carries the filter state
+across blocks so the result is the same however the audio is chunked, and the
+recorder, the live runtime and `sed evaluate onset-gate` all now measure the
+same gate.
 
 Onset triggering records only acoustically interesting moments. Superflux uses
 spectral change, so a quiet glass transient can trigger even when its absolute
@@ -131,8 +177,15 @@ inference can combine channels with `max`, `best`, `mean`, or `single` behavior.
 
 Before a trigger is emitted, probabilities pass through median smoothing, EMA,
 hysteresis, consecutive-frame checks, per-class thresholds, `_negative` gating,
-margin-to-second-best gating, and a global refractory period. These gates are
-intentional: they trade some recall for lower false-positive risk.
+margin-to-second-best gating, suppressor gating, and a global refractory period.
+These gates are intentional: they trade some recall for lower false-positive
+risk.
+
+The argmax that picks the winner spans **every** non-`_negative` class, including
+the ones that cannot fire. A suppressor has to be allowed to win, or the decision
+falls to the strongest target while the model was saying "cutlery". This is also
+what makes the live decision identical to the one checkpoint selection and
+evaluation measure, which have always compared every non-`_negative` class.
 
 | Runtime gate | Default | Why |
 | --- | ---: | --- |
@@ -161,7 +214,9 @@ artifacts, checkpoints, exports, reports, and runtime settings.
 
 Calibration sweeps class thresholds against venue or library negative material
 and writes the selected thresholds into runtime settings. The goal is practical:
-meet a target false-positive rate per hour before lighting output is enabled.
+meet a target false-fire rate per 1000 negative clips before lighting output is
+enabled. Clips are the denominator because negatives are recorded as
+onset-triggered clips, not as continuous audio.
 
 ### Avoided Choices
 
@@ -178,14 +233,47 @@ meet a target false-positive rate per hour before lighting output is enabled.
 
 ### Class Semantics
 
-Keep classes small and tied to lighting behavior.
+Every model output has one of three **roles** at decision time. The role comes
+from `[targets]`, not from the name, and `sed check deploy` prints the resolved
+role of every class before a bundle ships.
+
+| Role | Declared by | What it does |
+| --- | --- | --- |
+| Target | `[targets] <class> = { enabled = true }` (the default for an unrecognized name) | Competes for the window and may fire a cue. |
+| Suppressor | `enabled = false`, or a name like `hardnegs` with no entry | Competes for the window but never fires. When it wins, the system abstains. Optional `veto_max` also discards the window outright above that score. |
+| Negative | `_negative` by name, or any class given `[targets] <class> = { role = "negative" }` explicitly | Never competes for the window; only vetoes it, at `inference.negative_max` unless it sets its own `veto_max`. |
+
+`_negative` stays the reserved name that gets the negative role automatically,
+so an existing project needs no config changes. Any *other* class can be
+promoted to the same role with an explicit `role = "negative"` — that is what
+lets a project split one large `_negative` pool into named, individually
+trainable buckets (`music`, `crowd`, a second hard-negative bucket) that all
+still pool into the shared veto gate, the loss's negative focusing, and the
+deployment false-alarm rate, while getting their own precision/recall for
+diagnosis. Only do this when a bucket is large enough to matter (see Negative
+Examples below) and you have a concrete reason to track it separately —
+splitting for its own sake just dilutes each bucket.
+
+Keep the class list small and tied to lighting behavior. In practice that means
+one distinction inside the negatives and no more:
 
 | Class type | Good shape | Avoid |
 | --- | --- | --- |
-| Negative | `_negative` = anything that must not fire | Treating background as an afterthought. |
-| Intensity | `cheers_quiet`, `cheers_medium`, `cheers_loud` | Too many subtle levels nobody can label reliably. |
-| Object/event | `glass_clink`, `table_hit`, `applause` | Splitting labels that trigger the same cue. |
+| Negative | `_negative` = room tone, music, speech, crowd, mixed clips — uncategorised | Treating background as an afterthought; over-sorting it into many classes. |
+| Suppressor | one `hardnegs` class for near-misses: cutlery, metal, glass handling | Folding near-misses into `_negative`, where one broad row must model them alongside room tone. |
+| Object/event | `glass_clink`, `table_hit`, `applause`; per-vessel classes in a venue run | Splitting labels that trigger the same cue. |
+| Intensity | recording-density metadata, not a class | Loudness levels as output rows — intensity is a nuisance variable to be invariant to. |
 | Venue rule | One meaning an operator can explain | Labels based only on ML convenience. |
+
+The suppressor role exists because a single `_negative` row has to model room
+tone, music, speech *and* cutlery at once. It handles the first three easily and
+the last one badly — and cutlery, sharing the target's attack and bright
+partials, is what actually causes false fires. Because a suppressor competes in
+the same argmax and margin comparison that checkpoint selection and evaluation
+use, it shapes both what gets selected and what deploys.
+
+See [docs/pretraining_guide.md](docs/pretraining_guide.md) for how the two
+stages' class spaces relate.
 
 ### Microphone Geometry
 
@@ -231,7 +319,7 @@ the event from always landing at the same frame.
 | Background clips | 300-600 | 800-2000 | Main defense against false positives. |
 | Hard negatives | >= positives | 1-3x positives | Similar to target but should not fire. |
 | Frozen test negatives | 80-150 | 200-500 | Honest FP check. |
-| Calibration audio | 20-60 min | 1-3 h | Needed for believable FP/hour estimates. |
+| Calibration clips | 300-600 | 1000-3000 | Recorded background clips; the FP budget is per 1000 of them. |
 
 Good negatives match production density and mic placement: room tone, music,
 speech, crowd beds, bar work, cutlery, glass handling, setup noise, and peak
@@ -273,7 +361,7 @@ selects only the clips that represent its venue.
 | Best model | Low false positives on hard negatives before high aggregate accuracy. |
 | Positive recall | Good on clear events; acceptable misses on weak/ambiguous events. |
 | Thresholds | Per-class calibration from venue-like negatives. |
-| FP target | 0.1-0.5/h for disruptive cues; 0.5-1/h normal; 1-3/h subtle ambient cues. |
+| FP target | 0.1-0.5 per 1000 negative clips for disruptive cues; 0.5-1 normal; 1-3 for subtle ambient cues. |
 | Recalibrate when | Mic placement, acoustics, classes, dataset, or model bundle changes. |
 
 ### Production Feedback

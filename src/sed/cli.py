@@ -909,17 +909,36 @@ def _apply_onset_threshold_override(cfg, onset_threshold_db: float | None = None
 
 
 def _finalize_onset_config(cfg) -> None:
-    """Validate derived onset timing loaded from config.toml."""
-    clip_ms = int(cfg.onset.record_seconds * 1000)
-    if cfg.onset.preroll_ms >= clip_ms:
-        raise typer.BadParameter(
-            f"[onset] preroll_ms ({cfg.onset.preroll_ms} ms) must be below "
-            f"the configured recording length ({cfg.onset.record_seconds:g}s)"
-        )
-    cfg.onset.postroll_ms = clip_ms - cfg.onset.preroll_ms
+    """Validate derived onset timing, including the randomized preroll range.
+
+    Re-runs the whole ``[onset]`` section through its own validators rather than
+    checking ``preroll_ms`` alone. That matters for ``--record-seconds``: a
+    shorter clip than the project's ``preroll_ms_range`` used to be accepted
+    silently, and then each clip drew a preroll longer than the clip itself, so
+    the transient landed outside the audio that was saved.
+    """
+    from sed.data.record_engine import finalize_onset
+
+    try:
+        cfg.onset = finalize_onset(cfg.onset)
+    except Exception as exc:  # pydantic ValidationError, reworded for the CLI
+        message = str(exc).split("Value error, ", 1)[-1].split(" [type=", 1)[0]
+        raise typer.BadParameter(f"[onset] {message.strip()}") from exc
 
 
 _DENSITIES = ("empty", "quiet", "normal", "busy", "peak")
+
+
+def record_server_default_port() -> int:
+    """Default port for `sed record --serve`.
+
+    Read from the server module rather than repeated here, and deliberately
+    clear of the inspect server: that one defaults to 8765 and scans 20 ports
+    upward when busy, so the two never collide.
+    """
+    from sed.data.record_server import DEFAULT_PORT
+
+    return DEFAULT_PORT
 
 
 @app.command("record", cls=ConfigHelpCommand)
@@ -965,6 +984,18 @@ def record_cmd(
             "membership is a composition decision."
         ),
     ),
+    serve: bool = typer.Option(
+        False, "--serve",
+        help=(
+            "Open the recording console in a browser instead of recording in "
+            "the terminal: live per-mic meters, onset tuning while the stream "
+            "runs, and manual/continuous capture. Every other flag prefills "
+            "the form, and --label becomes optional."
+        ),
+    ),
+    port: int = typer.Option(
+        record_server_default_port(), help="Port for --serve mode.",
+    ),
 ) -> None:
     """Record onset-triggered clips into the unified shared data library."""
     _setup_logging()
@@ -973,7 +1004,7 @@ def record_cmd(
     from sed.data.recorder import record_auto
 
     target_label = label or class_name
-    if not target_label:
+    if not target_label and not serve:
         raise typer.BadParameter("Must specify --label (-l) or --class (-c).")
 
     if test and not project:
@@ -994,7 +1025,9 @@ def record_cmd(
             raise typer.BadParameter(
                 f"Project '{project}' does not exist. Run 'sed project new {project}' first."
             )
-    project_id = project or "_library"
+    from sed.config import LIBRARY_PROJECT_ID
+
+    project_id = project or LIBRARY_PROJECT_ID
     cfg = _load_capture_config(project)
     if record_seconds is not None:
         if record_seconds <= 0:
@@ -1005,6 +1038,28 @@ def record_cmd(
     _apply_audio_overrides(cfg, device=device, channels=channels_list)
     _apply_onset_threshold_override(cfg, onset_threshold)
     _finalize_onset_config(cfg)
+
+    if serve:
+        from sed.data.record_server import serve as run_record_server
+
+        run_record_server(
+            cfg,
+            project or "",
+            port=port,
+            prefill={
+                "label": target_label,
+                "density": density,
+                "tags": parsed_tags,
+                "location": location,
+                "mic_position": mic_position,
+                "description": description,
+                "holdout": test,
+                "split_channels": split,
+                "num": num,
+                "duration": duration,
+            },
+        )
+        return
 
     lib = Library()
     out = lib.raw_dir(target_label)

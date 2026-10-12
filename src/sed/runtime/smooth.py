@@ -10,9 +10,18 @@ Why all of this:
   - N-of-N consensus requires multiple consecutive over-threshold frames so
     transients caused by music/cutlery don't get through
 
-Then a global trigger gate: argmax over triggerable classes, must beat the
-runner-up by `margin`, and, when configured, the `_negative` class must be
-below `negative_max`.
+Then a global trigger gate: argmax over every class that isn't role="negative"
+(see `Config.class_roles` — `_negative` by default, but any class can be given
+that role), the winner must beat the runner-up by `margin`, and every
+negative/suppressor class in `vetoes` must be below its own ceiling.
+
+The argmax deliberately spans classes that cannot fire (role="suppressor"). A
+class trained to absorb false positives (cutlery, metal-on-metal, glass
+handling) only reduces them if it is allowed to *win* the window — excluding
+it would just hand the decision to the strongest glass class while the model
+was saying "cutlery". A non-firing winner therefore abstains. This is also
+what makes the live decision identical to the one checkpoint selection and
+evaluation measure, which have always compared every non-negative class.
 """
 
 from __future__ import annotations
@@ -115,9 +124,12 @@ class TriggerArbiter:
     """Decide at each step which (if any) class fires.
 
     Per the project requirement (minimise FPs even at the cost of recall):
-      - Only trigger classes can fire (the optional `_negative` class is a gatekeeper).
+      - Every class outside `negative_classes` competes for the window; only a
+        *trigger* class can actually fire, so a suppressor winning means
+        nothing fires.
       - winner.score must be > threshold AND > runner_up.score + margin
-      - _negative score must be < negative_max
+      - Every class in `vetoes` (every negative-role class plus any suppressor
+        with its own `veto_max`) must be below its own ceiling.
       - Refractory period after any fire on any class.
     """
 
@@ -126,18 +138,23 @@ class TriggerArbiter:
         classes: list[str],
         thresholds: dict[str, float],
         smoothers_cfg: dict,
-        negative_index: int | None,
-        negative_max: float,
-        margin_to_second_best: float,
-        global_refractory_ms: int,
+        negative_classes: set[str] | None = None,
+        margin_to_second_best: float = 0.0,
+        global_refractory_ms: int = 0,
         trigger_classes: set[str] | None = None,
+        vetoes: dict[str, float] | None = None,
     ):
         self.classes = classes
-        self.neg_idx = negative_index
-        self.negative_max = negative_max
+        # Never compete for the window — every role="negative" class (not just
+        # `_negative`), see the module docstring and `Config.class_roles`.
+        self.negative_classes = set(negative_classes or ())
         self.margin = margin_to_second_best
         self.global_refractory_s = global_refractory_ms / 1000.0
         self.trigger_classes = trigger_classes
+        # Every negative/suppressor ceiling, keyed by class name — negative and
+        # suppressor classes are vetoed identically here; what tells them apart
+        # is `negative_classes` excluding the former from window competition.
+        self.vetoes = dict(vetoes or {})
         self._last_fire_ts = 0.0
         self.last_smoothed: dict[str, float] = {}
         smoothing_enabled = bool(smoothers_cfg.get("smoothing_enabled", True))
@@ -166,26 +183,32 @@ class TriggerArbiter:
         if now - self._last_fire_ts < self.global_refractory_s:
             return None
 
-        # Negative gate: smoothed _negative score must not dominate, when the
-        # model has an explicit negative output.
-        neg_name = self.classes[self.neg_idx] if self.neg_idx is not None else None
-        if neg_name is not None and smoothed.get(neg_name, 0.0) > self.negative_max:
-            return None
+        # Negative/suppressor gate: any class in `vetoes` (every role="negative"
+        # class — `_negative` by default, plus any suppressor that set its own
+        # `veto_max`) hard-vetoes the window when its smoothed score dominates.
+        for cls, ceiling in self.vetoes.items():
+            if smoothed.get(cls, 0.0) > ceiling:
+                return None
 
+        # Every class competes except role="negative" ones — including
+        # suppressors, which cannot fire but can still win and block, see the
+        # module docstring. Excluding a suppressor would just hand the window
+        # to the strongest firing class while the model was saying "cutlery".
         positive_smoothed = {
-            c: smoothed[c]
-            for c in self.classes
-            if c != neg_name and (self.trigger_classes is None or c in self.trigger_classes)
+            c: smoothed[c] for c in self.classes if c not in self.negative_classes
         }
         if not positive_smoothed:
             return None
-        # Pick winner among positives
         winner = max(positive_smoothed, key=positive_smoothed.get)
         winner_score = positive_smoothed[winner]
 
         # Margin requirement vs runner-up
         runner_up = sorted(positive_smoothed.values(), reverse=True)
         if len(runner_up) > 1 and winner_score - runner_up[1] < self.margin:
+            return None
+
+        # A suppressor won the window: abstain rather than firing the runner-up.
+        if self.trigger_classes is not None and winner not in self.trigger_classes:
             return None
 
         # Per-class smoother must report ready

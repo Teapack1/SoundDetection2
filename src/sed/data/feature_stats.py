@@ -200,15 +200,26 @@ class _BandSample:
 
 
 def _bare_extractor(features: Any, sample_rate: int):
-    """Extractor for the compression-only domain (log / PCEN, no scaling)."""
+    """Extractor for the compression-only domain — no normalization applied.
+
+    Statistics have to be fitted on the values the normalization stage will
+    consume, so every extractor here is built with an explicitly empty
+    :class:`~sed.audio.features.ScalingSpec`. Any compression works (log, dB,
+    PCEN, or none): what the constants mean is simply the domain they were
+    measured in, and the same pair is replayed at train, eval and deploy time.
+    """
     from sed.audio.features import (
+        CedFeatureExtractor,
         FeatureExtractor,
         LinearExtractor,
         MelExtractor,
+        ScalingSpec,
+        feature_compression,
         pcen_params_from_features,
     )
 
     feature_type = str(getattr(features, "feature_type", "mel") or "mel").lower()
+    compression = feature_compression(features)
     common = {
         "sample_rate": int(sample_rate),
         "n_fft": int(features.n_fft),
@@ -217,38 +228,38 @@ def _bare_extractor(features: Any, sample_rate: int):
         "fmin": int(features.fmin),
         "fmax": int(features.fmax),
     }
+    identity = ScalingSpec()
+    if str(getattr(features, "frontend", "efficientat") or "efficientat").lower() == "ced":
+        # CED's power→dB mapping IS its compression stage.
+        return CedFeatureExtractor(
+            **common, n_mels=int(features.n_mels), scaling=identity,
+        )
+    if str(getattr(features, "colormap", "none") or "none").lower() != "none":
+        raise ValueError(
+            "a colormap image render is already a [0, 1] picture — there is no "
+            "value domain left to fit scaling constants on"
+        )
     if feature_type == "linear":
         if str(getattr(features, "stft_engine", "librosa") or "librosa").lower() != "librosa":
             raise ValueError(
                 "fitted scaling on a linear feature requires the librosa/Torch STFT contract"
             )
-        if bool(getattr(features, "db_norm", False)):
-            raise ValueError("fitted scaling is incompatible with the legacy dB mapping")
-    if bool(getattr(features, "pcen", False)):
-        # PCEN output IS the compressed domain — the general extractor applies
-        # no affine after it, so the fit sees exactly the pre-scaling values.
+        if compression == "pcen":
+            return FeatureExtractor(
+                **common, n_mels=int(features.n_mels), feature_type="linear",
+                compression="pcen", pcen_params=pcen_params_from_features(features),
+                frontend="efficientat", scaling=identity,
+            )
+        return LinearExtractor(**common, compression=compression, scaling=identity)
+    if compression == "pcen":
         return FeatureExtractor(
-            **common,
-            n_mels=int(features.n_mels),
-            feature_type=feature_type,
-            pcen=True,
-            pcen_params=pcen_params_from_features(features),
-            frontend="efficientat",
+            **common, n_mels=int(features.n_mels), feature_type="mel",
+            compression="pcen", pcen_params=pcen_params_from_features(features),
+            frontend="efficientat", scaling=identity,
         )
-    if feature_type == "linear":
-        if not bool(getattr(features, "log_power", True)):
-            raise ValueError("fitted scaling on a linear feature requires log power or PCEN")
-        return LinearExtractor(**common)
-    if str(getattr(features, "frontend", "efficientat") or "efficientat").lower() != "efficientat":
-        raise ValueError("fitted scaling requires the efficientat frontend")
-    # The identity z-score suppresses the fast-norm affine, exposing raw ln-mel.
     return MelExtractor(
-        **common,
-        n_mels=int(features.n_mels),
-        frontend="efficientat",
-        standardize=True,
-        standardize_mean=0.0,
-        standardize_std=1.0,
+        **common, n_mels=int(features.n_mels), frontend="efficientat",
+        compression=compression, scaling=identity,
     )
 
 
@@ -262,7 +273,7 @@ def _finalize_stats(
     band_std: np.ndarray,
     band_values: np.ndarray,
 ) -> tuple[dict[str, list[float]], dict[str, Any]]:
-    """Fitted stats for the requested method×scope, plus the health report.
+    """Fitted stats for the requested method x scope, plus the health report.
 
     Degenerate bands (empty mel filters sit at a constant floor, so their std
     or percentile span is ~0) are clamped rather than allowed to explode the
@@ -381,10 +392,11 @@ def fit_feature_scaling(
 
     dataset_sha256 = sha256_file(train_csv)
     feature_fields = (
-        "feature_type", "frontend", "n_fft", "win_length", "hop_length", "n_mels",
-        "fmin", "fmax", "window_seconds", "log_power", "stft_engine", "db_norm",
-        "db_min", "db_max", "pcen", "pcen_time_constant", "pcen_gain", "pcen_bias",
-        "pcen_power", "pcen_eps", "scaling_method", "scaling_scope",
+        "feature_type", "frontend", "compression", "n_fft", "win_length",
+        "hop_length", "n_mels", "fmin", "fmax", "window_seconds", "log_power",
+        "stft_engine", "db_norm", "db_min", "db_max", "pcen",
+        "pcen_time_constant", "pcen_gain", "pcen_bias", "pcen_power", "pcen_eps",
+        "scaling_method", "scaling_scope", "scaling_source",
     )
     feature_signature = {
         key: getattr(features, key, None) for key in feature_fields
@@ -534,3 +546,224 @@ def fit_feature_scaling(
     tmp.write_text(json.dumps(payload, sort_keys=True, separators=(",", ":")), encoding="utf-8")
     tmp.replace(cache_path)
     return result
+
+
+# How far a per-band mean may sit from the fitted one, measured in fitted
+# standard deviations, before the encoder is being fed a distribution it was not
+# fitted on. A z-scored input is supposed to land at ~0 ± 1, so a whole sigma of
+# offset is already a large systematic shift.
+DRIFT_WARN_SIGMA = 0.5
+DRIFT_ERROR_SIGMA = 1.0
+# Same idea for min-max: values outside [lo, hi] are clipped, so a large clipped
+# fraction means real dynamic range is being flattened away.
+DRIFT_WARN_CLIPPED = 0.05
+DRIFT_ERROR_CLIPPED = 0.15
+# Bounded sample — this runs on a page-load path, not as part of a fit.
+DRIFT_SAMPLE_CLIPS = 256
+
+
+_DRIFT_CACHE_FILENAME = "feature_scaling_drift.json"
+
+
+def _drift_cache_key(cfg: Any, layout: Any) -> str:
+    """Identity of a drift measurement: this feature scale on this train pool."""
+    from sed.util import sha256_file
+
+    features = cfg.features
+    train_csv = layout.dataset_dir / "train.csv"
+    payload = {
+        "dataset_sha256": sha256_file(train_csv) if train_csv.exists() else "",
+        "sample_rate": int(cfg.model.sample_rate),
+        "seed": int(cfg.training.seed),
+        "scaling_method": str(getattr(features, "scaling_method", "none")),
+        "scaling_scope": str(getattr(features, "scaling_scope", "global")),
+        "scaling_stats": {
+            str(k): [round(float(v), 6) for v in (vals or [])]
+            for k, vals in (getattr(features, "scaling_stats", {}) or {}).items()
+        },
+        "geometry": [
+            str(getattr(features, "feature_type", "mel")),
+            str(getattr(features, "frontend", "efficientat")),
+            int(features.n_fft), int(features.win_length), int(features.hop_length),
+            int(features.n_mels), int(features.fmin), int(features.fmax),
+            float(features.window_seconds), bool(getattr(features, "pcen", False)),
+        ],
+    }
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    ).hexdigest()
+
+
+def load_cached_scaling_drift(cfg: Any, layout: Any) -> dict[str, Any] | None:
+    """A previously measured drift result, if it still describes this config.
+
+    Reading audio is too slow for a page-load endpoint, so the advice payload
+    reports whatever the last explicit measurement found and nothing when the
+    dataset or the scale has changed since.
+    """
+    try:
+        payload = json.loads(
+            (layout.dataset_dir / _DRIFT_CACHE_FILENAME).read_text(encoding="utf-8")
+        )
+    except (OSError, ValueError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    try:
+        key = _drift_cache_key(cfg, layout)
+    except Exception:
+        return None
+    entry = payload.get("entry")
+    return entry if isinstance(entry, dict) and payload.get("key") == key else None
+
+
+def measure_scaling_drift(
+    cfg: Any,
+    layout: Any,
+    *,
+    limit: int = DRIFT_SAMPLE_CLIPS,
+) -> dict[str, Any]:
+    """How well this project's clips fit the scaling constants currently active.
+
+    A fine-tune inherits its parent's fitted constants on purpose — they are part
+    of the encoder's numeric contract, and refitting them on venue data would
+    silently move the input distribution the transferred weights expect. That
+    makes the opposite question the important one: are the venue clips still
+    *inside* the scale the parent fitted? A microphone change, a quieter room or
+    a different gain staging shows up here as a systematic offset long before it
+    shows up as a confusing validation curve.
+
+    Measured in the same compression-only domain the fit uses
+    (:func:`_bare_extractor`), on a bounded class/group-balanced sample of the
+    composed training pool. Returns ``{"status": "ok"|"warn"|"error"|"skipped"}``
+    plus the numbers behind it.
+    """
+    from sed.audio.features import feature_band_count, resolve_feature_scaling
+    from sed.data.splits import split_group_key
+
+    features = cfg.features
+    sample_rate = int(cfg.model.sample_rate)
+    spec = resolve_feature_scaling(features, n_bands=feature_band_count(features, sample_rate))
+    if not spec.active:
+        return {"status": "skipped", "reason": "no scaling is active"}
+    if spec.source != "dataset":
+        # Fixed contract constants (the AudioSet fast-norm, the legacy dB window)
+        # are not fitted on anything, so "did this dataset drift out of the fit"
+        # is not a question they can answer. The Model tab's contract report is
+        # what says whether a feature suits those constants.
+        return {
+            "status": "skipped",
+            "reason": "the active scaling uses fixed contract constants, not values fitted on a dataset",
+        }
+
+    train_csv = layout.dataset_dir / "train.csv"
+    if not train_csv.exists():
+        return {"status": "skipped", "reason": "no composed train.csv"}
+    with open(train_csv, encoding="utf-8") as f:
+        rows = [row for row in csv.DictReader(f) if row.get("path")]
+    if not rows:
+        return {"status": "skipped", "reason": "no composed train.csv"}
+
+    sample = balanced_stats_rows(rows, limit=max(1, int(limit)), seed=int(cfg.training.seed))
+    if not sample:
+        return {"status": "skipped", "reason": "no clips to measure"}
+
+    extractor = _bare_extractor(features, sample_rate)
+    window_seconds = float(getattr(features, "window_seconds", 1.0))
+    band_count = 0
+    band_mean: np.ndarray | None = None
+    band_m2: np.ndarray | None = None
+    clipped_total = 0
+    value_total = 0
+    batch: list[np.ndarray] = []
+    used = 0
+
+    def consume() -> None:
+        nonlocal band_count, band_mean, band_m2, batch, used, clipped_total, value_total
+        if not batch:
+            return
+        values = extractor(np.stack(batch, axis=0))
+        if hasattr(values, "detach"):
+            values = values.detach().cpu().numpy()
+        values = np.asarray(values, dtype=np.float32)
+        band_count, band_mean, band_m2 = _merge_band_moments(
+            band_count, band_mean, band_m2, values,
+        )
+        if spec.method == "minmax":
+            lo = spec.a.reshape((-1, 1)) if spec.a.size > 1 else float(spec.a[0])
+            hi = spec.b.reshape((-1, 1)) if spec.b.size > 1 else float(spec.b[0])
+            outside = (values < lo) | (values > hi)
+            clipped_total += int(outside.sum())
+            value_total += int(outside.size)
+        used += len(batch)
+        batch = []
+
+    for row in sample:
+        try:
+            batch.append(load_training_window(str(row["path"]), sample_rate, window_seconds))
+        except Exception as exc:  # one unreadable clip is not a verdict
+            log.warning("scaling drift: skipping unreadable clip %s: %s", row["path"], exc)
+            continue
+        if len(batch) >= 32:
+            consume()
+    consume()
+    if band_mean is None or band_m2 is None or not used:
+        return {"status": "skipped", "reason": "no readable clips"}
+
+    observed_mean = band_mean
+    observed_std = np.sqrt(np.maximum(band_m2 / max(band_count, 1), 0.0))
+    out: dict[str, Any] = {
+        "method": spec.method,
+        "scope": "per_band" if spec.a.size > 1 else "global",
+        "clips": used,
+        "groups": len({split_group_key(row) for row in sample}),
+        "bands": int(observed_mean.shape[0]),
+    }
+
+    if spec.method == "zscore":
+        fitted_mean = spec.a.astype(np.float64)
+        fitted_std = spec.b.astype(np.float64)
+        if fitted_mean.size == 1:
+            fitted_mean = np.full(observed_mean.shape, float(fitted_mean[0]))
+            fitted_std = np.full(observed_std.shape, float(fitted_std[0]))
+        sigma = np.abs(observed_mean - fitted_mean) / np.maximum(fitted_std, 1e-6)
+        ratio = observed_std / np.maximum(fitted_std, 1e-6)
+        worst = int(np.argmax(sigma))
+        out.update({
+            "max_mean_shift_sigma": round(float(sigma.max()), 3),
+            "median_mean_shift_sigma": round(float(np.median(sigma)), 3),
+            "worst_band": worst,
+            "worst_band_std_ratio": round(float(ratio[worst]), 3),
+            "min_std_ratio": round(float(ratio.min()), 3),
+            "max_std_ratio": round(float(ratio.max()), 3),
+        })
+        peak = float(sigma.max())
+        out["status"] = (
+            "error" if peak >= DRIFT_ERROR_SIGMA
+            else "warn" if peak >= DRIFT_WARN_SIGMA
+            else "ok"
+        )
+    else:
+        fraction = (clipped_total / value_total) if value_total else 0.0
+        out["clipped_fraction"] = round(float(fraction), 4)
+        out["status"] = (
+            "error" if fraction >= DRIFT_ERROR_CLIPPED
+            else "warn" if fraction >= DRIFT_WARN_CLIPPED
+            else "ok"
+        )
+
+    # Cached so the Recommendations panel can report the last measurement
+    # without re-reading audio on every page load.
+    try:
+        cache_path = layout.dataset_dir / _DRIFT_CACHE_FILENAME
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = cache_path.with_suffix(".json.tmp")
+        tmp.write_text(
+            json.dumps({"key": _drift_cache_key(cfg, layout), "entry": out},
+                       sort_keys=True, separators=(",", ":")),
+            encoding="utf-8",
+        )
+        tmp.replace(cache_path)
+    except OSError as exc:
+        log.warning("could not cache the scaling drift measurement: %s", exc)
+    return out

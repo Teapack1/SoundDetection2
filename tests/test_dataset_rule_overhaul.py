@@ -89,7 +89,10 @@ def test_stale_compose_button_uses_ink_that_reads_on_solid_amber():
     assert ".compose-run.stale, .compose-run.stale:hover { background: var(--amber-solid);" in source
     assert "color: var(--amber-ink)" in source
     # Defined in BOTH palettes, dark in both, because --amber-solid is bright in both.
-    assert source.count("--amber-ink:") == 2
+    # The palettes moved to the shared UI shell when the recording console
+    # started rendering them too; the rule that consumes the token stayed here.
+    tokens = Path("src/sed/data/ui_theme.py").read_text(encoding="utf-8")
+    assert tokens.count("--amber-ink:") == 2
 
 
 def _paths(tmp_path, monkeypatch):
@@ -161,8 +164,11 @@ def test_blank_dataset_and_preset_rename_are_composition_state(tmp_path, monkeyp
         write_dataset_selection,
     )
 
+    from sed.config import load_config, write_project_config_template
+
     layout = ProjectLayout("p")
     layout.create()
+    write_project_config_template(layout)
     selection = {
         "ui_managed": True,
         "assignments": {"glass": [{"labels": ["glass"], "split": "test"}]},
@@ -173,10 +179,79 @@ def test_blank_dataset_and_preset_rename_are_composition_state(tmp_path, monkeyp
     assert renamed["slug"] == "frozen-glass"
     loaded, _ = apply_dataset_preset(layout, renamed["slug"])
     assert loaded["assignments"]["glass"][0]["split"] == "test"
+    assert load_config("p").dataset.target_classes == ["glass"]
+
     blank = new_dataset_selection(layout)
     assert blank["assignments"] == {}
     assert blank["ui_managed"] is True
     assert load_dataset_selection(layout)["assignments"] == {}
+    # "blank" must also reset the class list — otherwise the class chips and
+    # assign dropdown keep showing a dataset definition whose rules were just
+    # cleared, i.e. classes with nothing left to fill them.
+    assert load_config("p").dataset.target_classes == ["_negative"]
+
+
+def test_class_visuals_are_persistent_display_metadata(tmp_path, monkeypatch):
+    """Palette tokens survive a preset switch but never change composition.
+
+    A legacy selection deliberately has no ``class_visuals`` key.  Resolving
+    it must allocate unique managed tokens, keep ``_negative`` neutral, and
+    leave the composition fingerprint untouched.
+    """
+    _paths(tmp_path, monkeypatch)
+    from sed.config import ProjectLayout, load_config, write_project_config_template
+    from sed.data.compose import (
+        apply_dataset_preset,
+        ensure_class_visuals,
+        load_dataset_selection,
+        new_dataset_selection,
+        save_dataset_preset,
+        selection_rules_fingerprint,
+        write_dataset_selection,
+    )
+
+    layout = ProjectLayout("p")
+    layout.create()
+    write_project_config_template(layout)
+    write_dataset_selection(layout, {
+        "ui_managed": True,
+        "assignments": {
+            "attention": [{"labels": ["attention"], "split": "train"}],
+            "cheers": [{"labels": ["cheers"], "split": "test"}],
+        },
+    })
+    legacy = load_dataset_selection(layout)
+    assert legacy["class_visuals"] == {}
+    fingerprint = selection_rules_fingerprint(legacy)
+
+    visuals, changed = ensure_class_visuals(
+        legacy, ["_negative", "attention", "cheers"]
+    )
+    assert changed is True
+    assert visuals["_negative"] == "slate"
+    assert visuals["attention"] != visuals["cheers"]
+    assert selection_rules_fingerprint(legacy) == fingerprint
+    write_dataset_selection(layout, legacy)
+
+    record = save_dataset_preset(
+        layout, "visual identity", legacy, load_config("p")
+    )
+    assert record["class_visuals"] == visuals
+
+    # A different live map is replaced by the preset's durable class identity.
+    changed_live = load_dataset_selection(layout)
+    changed_live["class_visuals"] = {
+        "_negative": "slate",
+        "attention": "coral",
+        "cheers": "green",
+    }
+    write_dataset_selection(layout, changed_live)
+    restored, _ = apply_dataset_preset(layout, "visual-identity")
+    assert restored["class_visuals"] == visuals
+
+    # A blank definition intentionally starts its visual system over.
+    blank = new_dataset_selection(layout)
+    assert blank["class_visuals"] == {"_negative": "slate"}
 
 
 def test_augmentation_run_start_is_stable_for_non_timestamp_prefix():

@@ -16,6 +16,7 @@ EfficientAT is loaded from `vendor/EfficientAT/`, a git submodule of
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 
 import torch
 import torch.nn as nn
@@ -124,7 +125,7 @@ class SedModel(nn.Module):
 
 
 class AsymmetricFocalLoss(nn.Module):
-    """Per-class focal loss with separate γ for the negative class.
+    """Per-class focal loss with separate γ for negative-role classes.
 
     γ controls hard-example focusing, not class-frequency balance. Frequency
     imbalance is handled once by the shared training sampler. Defaults mirror
@@ -134,13 +135,13 @@ class AsymmetricFocalLoss(nn.Module):
     def __init__(
         self,
         num_classes: int,
-        negative_index: int | None,
+        negative_indices: Sequence[int] = (),
         gamma_pos: float = 1.0,
         gamma_neg: float = 2.0,
     ):
         super().__init__()
         self.num_classes = num_classes
-        self.neg_idx = negative_index
+        self.neg_idx = list(negative_indices)
         self.gamma_pos = gamma_pos
         self.gamma_neg = gamma_neg
         # Retain an all-one buffer for compatibility with historical focal-loss
@@ -156,7 +157,7 @@ class AsymmetricFocalLoss(nn.Module):
         # focal modulation per class
         gammas = torch.full((self.num_classes,), self.gamma_pos,
                             device=logits.device, dtype=logits.dtype)
-        if self.neg_idx is not None:
+        if self.neg_idx:
             gammas[self.neg_idx] = self.gamma_neg
         # for positives in target: focusing factor (1-p)^γ
         # for negatives in target: focusing factor p^γ

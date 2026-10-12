@@ -36,6 +36,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeRe
 from sed.audio.features import (
     EFFICIENTAT_DISPLAY_RANGE,
     display_range_for_spec,
+    feature_compression,
     pcen_params_from_features,
     preview_display_range,
     robust_display_range,
@@ -98,6 +99,7 @@ def set_preview_features(cfg: Config | None, layout: "ProjectLayout | None" = No
         "n_mels": int(f.n_mels),
         "fmin": int(f.fmin),
         "fmax": int(f.fmax),
+        "compression": feature_compression(f),
         "log_power": bool(f.log_power),
         "stft_engine": str(getattr(f, "stft_engine", "librosa")),
         "db_norm": bool(getattr(f, "db_norm", False)),
@@ -140,14 +142,14 @@ def _preview_cache_features() -> dict:
         key: _PREVIEW_FEATURES[key]
         for key in (
             "sample_rate", "frontend", "feature_type", "n_fft", "win_length",
-            "hop_length", "n_mels", "fmin", "fmax", "log_power",
+            "hop_length", "n_mels", "fmin", "fmax", "compression", "log_power",
             "stft_engine", "db_norm", "db_min", "db_max", "pcen", "pcen_params",
         )
     } | {"layout": CACHE_LAYOUT_VERSION, "palette_colors": 128}
 
 
 def _feature_kwargs(p: dict) -> dict:
-    """STFT/mel kwargs for waveform_to_feature, by feature type (PCEN-aware)."""
+    """STFT/mel kwargs for waveform_to_feature, by feature type."""
     feature_type = str(p.get("feature_type") or "mel")
     pcen = bool(p.get("pcen", False))
     common = {
@@ -156,6 +158,7 @@ def _feature_kwargs(p: dict) -> dict:
         "hop_length": int(p["hop_length"]),
         "fmin": int(p["fmin"]),
         "fmax": int(p["fmax"]),
+        "compression": p.get("compression"),
         "pcen": pcen,
         "pcen_params": p.get("pcen_params"),
     }
@@ -278,10 +281,13 @@ def render_feature_preview_png(
     image_size: int = 96,
     pcen: bool = False,
     pcen_params: dict | None = None,
+    compression: str | None = None,
     standardize: bool = False,
     standardize_mean: float = 0.0,
     standardize_std: float = 1.0,
     scaling_method: str = "none",
+    scaling_scope: str = "global",
+    scaling_source: str = "dataset",
     scaling_stats: dict | None = None,
 ) -> bytes:
     """Render a large live spectrogram preview (PNG bytes) for the lab.
@@ -303,25 +309,29 @@ def render_feature_preview_png(
     # canvas, so target ≠ overlay and short clips look the wrong duration.
     if n > 0:
         data = data[:n] if len(data) >= n else np.pad(data, (0, n - len(data)))
+    shared = dict(
+        compression=compression,
+        standardize=bool(standardize), standardize_mean=float(standardize_mean),
+        standardize_std=float(standardize_std),
+        scaling_method=str(scaling_method or "none"),
+        scaling_scope=str(scaling_scope or "global"),
+        scaling_source=str(scaling_source or "dataset"),
+        scaling_stats=scaling_stats,
+        pcen=bool(pcen), pcen_params=pcen_params,
+    )
     if str(feature_type) == "linear":
         kwargs = dict(
             n_fft=n_fft, win_length=win_length, hop_length=hop_length,
             fmin=fmin, fmax=fmax, log_power=log_power,
             stft_engine=str(stft_engine), db_norm=bool(db_norm),
             db_min=float(db_min), db_max=float(db_max),
-            pcen=bool(pcen), pcen_params=pcen_params,
-            standardize=bool(standardize), standardize_mean=float(standardize_mean),
-            standardize_std=float(standardize_std),
-            scaling_method=str(scaling_method or "none"), scaling_stats=scaling_stats,
+            **shared,
         )
     else:
         kwargs = dict(
             frontend=frontend, n_fft=n_fft, win_length=win_length,
             hop_length=hop_length, n_mels=n_mels, fmin=fmin, fmax=fmax,
-            pcen=bool(pcen), pcen_params=pcen_params,
-            standardize=bool(standardize), standardize_mean=float(standardize_mean),
-            standardize_std=float(standardize_std),
-            scaling_method=str(scaling_method or "none"), scaling_stats=scaling_stats,
+            **shared,
         )
     spec = waveform_to_feature(data, int(sample_rate), feature_type=feature_type, **kwargs)
     buf = io.BytesIO()
@@ -334,8 +344,10 @@ def render_feature_preview_png(
         plt.imsave(buf, np.transpose(img, (1, 2, 0)), format="png")
         return buf.getvalue()
     effective_scaling = str(scaling_method or "none").lower()
+    effective_stats = scaling_stats
     if effective_scaling == "none" and standardize:
         effective_scaling = "zscore"  # legacy scalar spelling of the fitted z-score
+        effective_stats = {"mean": [float(standardize_mean)], "std": [float(standardize_std)]}
     if str(frontend or "efficientat") == "ced":
         # dB values live on their own scale — autoscale like PCEN rather than
         # the fixed fast-norm display range.
@@ -344,6 +356,8 @@ def render_feature_preview_png(
         vmin, vmax = display_range_for_spec(
             spec, feature_type, bool(log_power), bool(pcen), db_norm=bool(db_norm),
             scaling_method=effective_scaling,
+            scaling_source=str(scaling_source or "dataset"),
+            scaling_stats=effective_stats,
         )
     plt.imsave(
         buf,
@@ -1773,6 +1787,14 @@ def _gather_review_clips(
                 ).strip()
                 if origin_class:
                     meta.setdefault("origin_class", origin_class)
+                # Same reason as origin_class: a corpus clip has no sidecar, so
+                # the provenance the sub-group axes group by only exists on the
+                # library clip. Without this every imported clip looks like it
+                # has no recording session at all.
+                for field in ("session_id", "source_split_group", "recorded_at"):
+                    value = str(getattr(clip, field, "") or "").strip()
+                    if value:
+                        meta.setdefault(field, value)
                 meta["assigned_target_class"] = target_class
                 meta["library_label"] = meta.get("label") or origin_class or wav.parent.name
                 if clip.category == DERIVED_CATEGORY:
@@ -1800,6 +1822,37 @@ def _origin_class_for_review_item(wav: Path, meta: dict) -> str:
         or meta.get("label")
         or wav.parent.name
     ).strip()
+
+
+def filter_review_items(
+    items: list[tuple[Path, str, dict]],
+    origins: set[str] | None = None,
+    group_axis: str = "",
+    group_key: str = "",
+) -> list[tuple[Path, str, dict]]:
+    """Narrow gathered review items to the subbucket + sub-group selection.
+
+    Applied to the gathered source items rather than to built cards, so a
+    selection reaches every matching clip instead of only the ones inside the
+    display cap — that is the whole point of filtering server-side.
+
+    ``origins`` of ``None`` means "every subbucket"; an empty set means the user
+    unchecked them all, which correctly yields nothing.
+    """
+    if origins is None and not (group_axis and group_key):
+        return items
+    from sed.data.subgroups import library_root, subgroup_key
+
+    root = library_root() if group_axis and group_key else ""
+    out: list[tuple[Path, str, dict]] = []
+    for wav, panel_key, meta in items:
+        if origins is not None and _origin_class_for_review_item(wav, meta) not in origins:
+            continue
+        if group_axis and group_key:
+            if subgroup_key(wav, meta, group_axis, root=root) != group_key:
+                continue
+        out.append((wav, panel_key, meta))
+    return out
 
 
 def dataset_origin_counts(
@@ -1875,6 +1928,36 @@ def review_panel_origin_counts(
             for target, counts in sorted(mined.items())
         }
     return result
+
+
+def review_panel_subgroups(
+    raw_items: list[tuple[Path, str, dict]],
+    derived_items: list[tuple[Path, str, dict]],
+    frozen_items: list[tuple[Path, str, dict]] | None = None,
+) -> dict[str, dict[str, dict[str, dict[str, int]]]]:
+    """Browsable sub-groups inside every subbucket, per review clip tab.
+
+    The companion of :func:`review_panel_origin_counts`, keyed the same way and
+    built from the same gathered items so the summary panel and the per-class
+    sub-group dropdown can never disagree about what a subbucket contains.
+
+    Deliberately computed here rather than behind its own endpoint: these item
+    lists are already in hand, and the axis keys are string work only (~0.4 s
+    over a 75 k-clip corpus), so no caller pays a second scan for it.
+    """
+    from sed.data.subgroups import build_subgroup_tree, library_root
+
+    root = library_root()
+
+    def from_items(items: list[tuple[Path, str, dict]]) -> dict:
+        return build_subgroup_tree(
+            items, origin_of=_origin_class_for_review_item, root=root)
+
+    return {
+        "dataset": from_items(raw_items),
+        "augmented": from_items(derived_items),
+        "frozen": from_items(frozen_items or []),
+    }
 
 
 def _library_browser_items(layout: ProjectLayout) -> list[dict]:
@@ -2731,6 +2814,12 @@ def _read_frozen_test_csv(test_csv: Path) -> list[tuple[Path, str, dict]]:
                 "test_origin": row.get("origin", ""),
                 "test_frozen_source": row.get("frozen_source", ""),
             })
+            # Provenance the sub-group axes group by. Composed rows carry it
+            # even for corpus clips, which have no sidecar to read it from.
+            for field in ("session_id", "split_group", "source_split_group"):
+                value = str(row.get(field) or "").strip()
+                if value:
+                    meta.setdefault(field, value)
             items.append((path, row.get("class_name", ""), meta))
     return items
 
@@ -3144,6 +3233,9 @@ def inspect_project(
         panel_origin_counts=review_panel_origin_counts(
             items, derived_items, frozen_items=frozen_count_items, mined_panels=mined_panels
         ),
+        panel_subgroups=review_panel_subgroups(
+            items, derived_items, frozen_items=frozen_count_items
+        ),
     )
     out = layout.dataset_inspect_dir / "inspection.html"
     out.write_text(html, encoding="utf-8")
@@ -3235,6 +3327,9 @@ def _quick_rerender(
             panel_origin_counts=review_panel_origin_counts(
                 items, derived_items, frozen_items=frozen_count_items, mined_panels=mined_panels
             ),
+            panel_subgroups=review_panel_subgroups(
+                items, derived_items, frozen_items=frozen_count_items
+            ),
         )
 
     paths = [w for w, _l, _m in items]
@@ -3314,6 +3409,9 @@ def _quick_rerender(
         dataset_origin_counts=dataset_origin_counts(items),
         panel_origin_counts=review_panel_origin_counts(
             items, derived_items, frozen_items=frozen_count_items, mined_panels=mined_panels
+        ),
+        panel_subgroups=review_panel_subgroups(
+            items, derived_items, frozen_items=frozen_count_items
         ),
     )
 
@@ -3735,6 +3833,20 @@ def review_data_payload(
             items, derived_items, frozen_items=frozen_items
         )
 
+    # Sub-group inventory for the per-class dropdowns, from the same gathered
+    # lists. Emitted per tab (and merged per tab in the browser) so a scoped
+    # rescan of one tab cannot blank another tab's dropdowns.
+    subgroup_scopes = {"dataset", "augmented", "frozen"} & requested
+    if subgroup_scopes:
+        subgroups = review_panel_subgroups(
+            items if "dataset" in requested else [],
+            derived_items if "augmented" in requested else [],
+            frozen_items=frozen_items if "frozen" in requested else [],
+        )
+        payload["panel_subgroups"] = {
+            tab: tree for tab, tree in subgroups.items() if tab in subgroup_scopes
+        }
+
     payload["summary_counts"] = summary_counts
     return payload
 
@@ -3836,13 +3948,23 @@ def clips_page(
     origin_class: str = "",
     query: str = "",
     return_total: bool = False,
+    origins: set[str] | None = None,
+    group_axis: str = "",
+    group_key: str = "",
 ) -> list[dict] | tuple[list[dict], int]:
     """One page of clip cards for a single class/tab beyond the display cap.
 
     Lets the UI keep an initial bounded payload (``max_thumbs_per_class`` cards
     per class) and fetch the rest on demand when the user clicks "Load more".
+
+    ``origins`` (the checked source subbuckets) and ``group_axis``/``group_key``
+    (one sub-group inside them) narrow the *source* items before cards are
+    built, so ``total`` is the true size of the selection rather than of the
+    page.  ``origin_class`` is the single-bucket spelling of ``origins``.
     """
     set_preview_features(cfg, layout)
+    if origin_class and origins is None:
+        origins = {origin_class}
     offset = max(0, int(offset))
     limit = max(1, int(limit))
     end = offset + limit
@@ -3855,16 +3977,13 @@ def clips_page(
         if tab in ("dataset", "augmented"):
             items, derived_items = _gather_review_clips(layout, cfg)
             if tab == "dataset":
-                selected = [
-                    (w, l, m) for (w, l, m) in items
-                    if l == class_name and _clip_query_matches(w, l, m, query)
-                ]
-                if origin_class:
-                    selected = [
-                        (w, l, m)
-                        for w, l, m in selected
-                        if _origin_class_for_review_item(w, m) == origin_class
-                    ]
+                selected = filter_review_items(
+                    [
+                        (w, l, m) for (w, l, m) in items
+                        if l == class_name and _clip_query_matches(w, l, m, query)
+                    ],
+                    origins, group_axis, group_key,
+                )
                 total = len(selected)
                 durations: list[float] = []
                 for wav, _l, _m in selected:
@@ -3884,11 +4003,19 @@ def clips_page(
                     integrity_cache=integrity_cache,
                 )
             else:
-                selected = [
-                    (w, class_name, m) for (w, _group, m) in derived_items
-                    if str(m.get("assigned_target_class") or "") == class_name
-                    and _clip_query_matches(w, class_name, m, query, _group)
-                ]
+                # ``class_name`` is the panel key the Augmented tab renders its
+                # blocks under, which is the augmentation group (``base ×
+                # overlay``) — not the assigned target class.  Matching the
+                # target class here left every paged request empty, so "Load
+                # More ... more on disk" could never return a card.
+                selected = filter_review_items(
+                    [
+                        (w, group, m) for (w, group, m) in derived_items
+                        if str(group or "") == class_name
+                        and _clip_query_matches(w, class_name, m, query, group)
+                    ],
+                    origins, group_axis, group_key,
+                )
                 total = len(selected)
                 panels = _build_panels_from_augmented(
                     layout,
@@ -3902,10 +4029,13 @@ def clips_page(
         elif tab == "frozen":
             if not _frozen_test_stale_context(layout, cfg):
                 frozen_items, frozen_context = _gather_frozen_test(layout, run_id=run_id, cfg=cfg)
-                selected = [
-                    (w, cls, meta) for (w, cls, meta) in frozen_items
-                    if cls == class_name and _clip_query_matches(w, cls, meta, query)
-                ]
+                selected = filter_review_items(
+                    [
+                        (w, cls, meta) for (w, cls, meta) in frozen_items
+                        if cls == class_name and _clip_query_matches(w, cls, meta, query)
+                    ],
+                    origins, group_axis, group_key,
+                )
                 panels, _run, _has, _ctx = _build_panels_from_frozen_test(
                     layout, max_per_class=end, run_id=run_id, cfg=cfg,
                     interactive=True, metadata_cache=metadata_cache,
@@ -4774,6 +4904,7 @@ def _render_html(
     class_images: dict[str, str] | None = None,
     dataset_origin_counts: dict[str, dict[str, int]] | None = None,
     panel_origin_counts: dict[str, dict[str, dict[str, int]]] | None = None,
+    panel_subgroups: dict[str, dict[str, dict[str, dict[str, int]]]] | None = None,
     training_selection_summary: dict[str, dict[str, int]] | None = None,
     is_pretraining: bool | None = None,
 ) -> str:
@@ -4793,6 +4924,7 @@ def _render_html(
         "frozen": {},
         "mined": {},
     }
+    panel_subgroups = panel_subgroups or {}
     training_selection_summary = training_selection_summary or {
         str(name): {"dataset": int(stat.get("count", 0)), "augmented": 0, "count": int(stat.get("count", 0))}
         for name, stat in class_summary.items()
@@ -4805,6 +4937,7 @@ def _render_html(
         panels_json = json.dumps(panels)
         dataset_origin_counts_json = json.dumps(dataset_origin_counts)
         panel_origin_counts_json = json.dumps(panel_origin_counts)
+        panel_subgroups_json = json.dumps(panel_subgroups)
         aug_panels_json = json.dumps(aug_panels)
         frozen_panels_json = json.dumps(frozen_panels)
         frozen_context_json = json.dumps(frozen_context)
@@ -4814,6 +4947,7 @@ def _render_html(
         panels_json = "{}"
         dataset_origin_counts_json = "{}"
         panel_origin_counts_json = "{}"
+        panel_subgroups_json = "{}"
         aug_panels_json = "{}"
         frozen_panels_json = "{}"
         frozen_context_json = "{}"
@@ -4833,6 +4967,7 @@ def _render_html(
 
     tpl = Template(_HTML_TEMPLATE)
     return tpl.render(
+        **ui_theme_context(),
         project_id=project_id,
         pretraining_counts_json=pretraining_counts_json,
         class_summary=class_summary,
@@ -4843,6 +4978,8 @@ def _render_html(
         dataset_origin_counts_json=dataset_origin_counts_json,
         panel_origin_counts_json=panel_origin_counts_json,
         panel_origin_counts=panel_origin_counts,
+        panel_subgroups_json=panel_subgroups_json,
+        panel_subgroups=panel_subgroups,
         aug_panels=aug_panels,
         aug_panels_json=aug_panels_json,
         aug_total=aug_total,
@@ -4867,323 +5004,45 @@ def _render_html(
 
 
 
+def ui_theme_context() -> dict[str, str]:
+    """The shared shell blocks, keyed by the placeholder each one fills.
+
+    The page's own CSS is interleaved between these blocks, so they are injected
+    individually rather than as one lump — that keeps the stylesheet in its
+    original cascade order.
+    """
+    from sed.data import ui_theme
+
+    return {
+        "theme_prepaint_js": ui_theme.THEME_PREPAINT_JS,
+        "font_link": ui_theme.FONT_LINK,
+        "theme_tokens_css": ui_theme.THEME_TOKENS_CSS,
+        "base_typography_css": ui_theme.BASE_TYPOGRAPHY_CSS,
+        "tooltip_css": ui_theme.TOOLTIP_CSS,
+        "control_css": ui_theme.CONTROL_CSS,
+        "toolbar_css": ui_theme.TOOLBAR_CSS,
+        "toolbar_button_css": ui_theme.TOOLBAR_BUTTON_CSS,
+        "popover_css": ui_theme.POPOVER_CSS,
+        "toast_css": ui_theme.TOAST_CSS,
+        "kbd_css": ui_theme.KBD_CSS,
+        "pill_css": ui_theme.PILL_CSS,
+        "button_system_css": ui_theme.BUTTON_SYSTEM_CSS,
+        "tooltip_js": ui_theme.TOOLTIP_JS,
+        "toast_js": ui_theme.TOAST_JS,
+    }
+
+
 _HTML_TEMPLATE = r"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <title>SED Inspection — {{ project_id }}</title>
-<script>
-/* Resolve the theme before the first paint, so a dark session never flashes
-   white. Stored choice wins; with none, follow the OS setting. */
-(function () {
-    try {
-        var saved = localStorage.getItem("sed-theme");
-        var dark = saved
-            ? saved === "dark"
-            : window.matchMedia("(prefers-color-scheme: dark)").matches;
-        if (dark) document.documentElement.setAttribute("data-theme", "dark");
-    } catch (e) { /* private mode / no storage: stay light */ }
-})();
-</script>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap">
+{{ theme_prepaint_js|safe }}
+{{ font_link|safe }}
 <style>
-/* ========================================================================
-   Theme tokens. Light values are the literals this sheet always used, so the
-   light UI is unchanged; [data-theme="dark"] on <html> swaps in the dark set.
-   Components that are dark in BOTH themes (top bar, tooltips, spectrogram
-   backdrops, the training log) keep their literals and are not tokenised.
-   ===================================================================== */
-:root {
-  color-scheme: light;
-  /* page & surfaces */
-  --bg-page:    #fafafa;
-  --surface:    #ffffff;
-  --surface-b1: #fbfcfe;
-  --surface-b2: #fbfdff;
-  --surface-b3: #f8fbff;
-  --surface-2:  #f8fafc;
-  --surface-b4: #f5f8ff;
-  --surface-3:  #f1f5f9;
-  --surface-3b: #eef2f7;
-  --surface-3c: #eceff4;
-  --surface-4:  #e2e8f0;
-  --surface-v1: #faf8ff;
-  --fill-muted: #94a3b8;
-  /* borders */
-  --bd-soft:     #f1f5f9;
-  --bd-soft-2:   #eef2f7;
-  --bd:          #e2e8f0;
-  --bd-b1:       #dbe4ef;
-  --bd-b2:       #dbe3ee;
-  --bd-2:        #cbd5e1;
-  --bd-strong:   #94a3b8;
-  --bd-strong-2: #64748b;
-  /* text */
-  --tx-strong:   #0f172a;
-  --tx-strong-2: #1e293b;
-  --tx:          #334155;
-  --tx-2:        #475569;
-  --tx-muted:    #64748b;
-  --tx-faint:    #94a3b8;
-  --tx-vfaint:   #cbd5e1;
-  /* inverted chips / primary fills (dark chip on a light page, and vice versa) */
-  --inv-bg-strong: #0f172a;
-  --inv-bg:        #1e293b;
-  --inv-bd-strong: #0f172a;
-  --inv-bd:        #1e293b;
-  --inv-fg:        #ffffff;
-  /* red family */
-  --red-tint:    #fef2f2;
-  --red-tint-2:  #fee2e2;
-  --red-tint-3:  #fff5f5;
-  --red-tint-4:  #fff1f2;
-  --red-tint-5:  #ffe4e6;
-  --red-tint-6:  #fff7f7;
-  --red-soft:    #fca5a5;
-  --red-soft-2:  #fecaca;
-  --red-mid:     #ef4444;
-  --red-mid-2:   #f87171;
-  --red-solid:   #991b1b;
-  --red-solid-2: #b91c1c;
-  --red-solid-3: #dc2626;
-  --red-deep:    #9f1239;
-  /* amber family */
-  --amber-tint:    #fffbeb;
-  --amber-tint-2:  #fffdf6;
-  --amber-soft:    #fef3c7;
-  --amber-soft-2:  #f0d9a8;
-  --amber-mid:     #fde68a;
-  --amber-mid-2:   #fcd34d;
-  --amber-solid:   #f59e0b;
-  --amber-solid-2: #b45309;
-  --amber-solid-3: #d97706;
-  --amber-solid-4: #facc15;
-  --amber-deep:    #78350f;
-  --amber-deep-2:  #422006;
-  --amber-deep-3:  #92400e;
-  /* Ink for text placed ON a solid amber fill. The amber-deep-* tokens are
-     "amber text on a tinted background" and therefore flip light in the dark
-     theme — using one of those on --amber-solid gives light-on-light. This
-     token stays dark in both themes because --amber-solid is bright in both. */
-  --amber-ink:     #3a1d05;
-  /* green family */
-  --green-tint:    #ecfdf5;
-  --green-tint-2:  #f0fdf4;
-  --green-soft:    #bbf7d0;
-  --green-soft-2:  #d1fae5;
-  --green-soft-3:  #dcfce7;
-  --green-soft-4:  #a7f3d0;
-  --green-mid:     #86efac;
-  --green-mid-2:   #6ee7b7;
-  --green-solid:   #10b981;
-  --green-solid-2: #22c55e;
-  --green-solid-3: #34d399;
-  --green-solid-4: #16a34a;
-  --green-deep:    #065f46;
-  --green-deep-2:  #166534;
-  --green-deep-3:  #14532d;
-  --green-deep-4:  #047857;
-  /* teal family */
-  --teal-tint:   #ecfeff;
-  --teal-soft:   #a5f3fc;
-  --teal-soft-2: #ccfbf1;
-  --teal-mid:    #38bdf8;
-  --teal-mid-2:  #5eead4;
-  --teal-solid:  #22d3ee;
-  --teal-deep:   #0e7490;
-  --teal-deep-2: #164e63;
-  --teal-deep-3: #0f766e;
-  --teal-deep-4: #134e4a;
-  /* blue family */
-  --blue-tint:    #eef2ff;
-  --blue-tint-2:  #eff6ff;
-  --blue-tint-3:  #e0e7ff;
-  --blue-soft:    #c7d2fe;
-  --blue-soft-2:  #a5b4fc;
-  --blue-soft-3:  #bfdbfe;
-  --blue-soft-4:  #dbeafe;
-  --blue-mid:     #6366f1;
-  --blue-mid-2:   #818cf8;
-  --blue-mid-3:   #4f46e5;
-  --blue-solid:   #3730a3;
-  --blue-solid-2: #2563eb;
-  --blue-solid-3: #1d4ed8;
-  --blue-solid-4: #1e40af;
-  --blue-deep:    #1e3a8a;
-  --blue-deep-2:  #312e81;
-  /* violet family */
-  --violet-tint:    #faf5ff;
-  --violet-tint-2:  #f5f3ff;
-  --violet-tint-3:  #ede9fe;
-  --violet-soft:    #ddd6fe;
-  --violet-soft-2:  #c4b5fd;
-  --violet-mid:     #a78bfa;
-  --violet-mid-2:   #7c3aed;
-  --violet-mid-3:   #8b5cf6;
-  --violet-solid:   #6d28d9;
-  --violet-solid-2: #5b21b6;
-  /* pink family */
-  --pink-solid: #c026d3;
-}
+{{ theme_tokens_css|safe }}
 
-:root[data-theme="dark"] {
-  color-scheme: dark;
-  /* page & surfaces */
-  --bg-page:    #0d1420;
-  --surface:    #161f2f;
-  --surface-b1: #182131;
-  --surface-b2: #182233;
-  --surface-b3: #1a2435;
-  --surface-2:  #1c2536;
-  --surface-b4: #1d2739;
-  --surface-3:  #222c3e;
-  --surface-3b: #263144;
-  --surface-3c: #273248;
-  --surface-4:  #2d3a4e;
-  --surface-v1: #1e1b33;
-  --fill-muted: #5d6b80;
-  /* borders */
-  --bd-soft:     #232d3e;
-  --bd-soft-2:   #263143;
-  --bd:          #2c384b;
-  --bd-b1:       #303d52;
-  --bd-b2:       #313e53;
-  --bd-2:        #3a4860;
-  --bd-strong:   #4d5c74;
-  --bd-strong-2: #5d6c84;
-  /* text */
-  --tx-strong:   #e8eef7;
-  --tx-strong-2: #dbe4f0;
-  --tx:          #c6d1e0;
-  --tx-2:        #aab8ca;
-  --tx-muted:    #8f9cb0;
-  --tx-faint:    #79869a;
-  --tx-vfaint:   #6b7a91;
-  /* inverted chips / primary fills (dark chip on a light page, and vice versa) */
-  --inv-bg-strong: #f1f5f9;
-  --inv-bg:        #e2e8f0;
-  --inv-bd-strong: #f1f5f9;
-  --inv-bd:        #e2e8f0;
-  --inv-fg:        #0f172a;
-  /* red family */
-  --red-tint:    #311414;
-  --red-tint-2:  #311414;
-  --red-tint-3:  #311414;
-  --red-tint-4:  #311416;
-  --red-tint-5:  #311416;
-  --red-tint-6:  #311414;
-  --red-soft:    #632c2c;
-  --red-soft-2:  #632c2c;
-  --red-mid:     #d86464;
-  --red-mid-2:   #d86464;
-  --red-solid:   #e25a5a;
-  --red-solid-2: #e45858;
-  --red-solid-3: #e45858;
-  --red-deep:    #ea86a1;
-  /* amber family */
-  --amber-tint:    #312b14;
-  --amber-tint-2:  #312a14;
-  --amber-soft:    #63582c;
-  --amber-soft-2:  #63512c;
-  --amber-mid:     #d8c164;
-  --amber-mid-2:   #d8bd64;
-  --amber-solid:   #e0a43e;
-  --amber-solid-2: #e0843e;
-  --amber-solid-3: #e0953e;
-  --amber-solid-4: #e0bf3e;
-  --amber-deep:    #eaaa86;
-  --amber-deep-2:  #eab186;
-  --amber-deep-3:  #eaab86;
-  --amber-ink:     #2b1a05;
-  /* green family */
-  --green-tint:    #143123;
-  --green-tint-2:  #14311d;
-  --green-soft:    #2c633f;
-  --green-soft-2:  #2c6347;
-  --green-soft-3:  #2c633f;
-  --green-soft-4:  #2c634a;
-  --green-mid:     #64d88e;
-  --green-mid-2:   #64d8aa;
-  --green-solid:   #3ee0aa;
-  --green-solid-2: #40de7a;
-  --green-solid-3: #47d7a2;
-  --green-solid-4: #3ee07a;
-  --green-deep:    #86eace;
-  --green-deep-2:  #8ae5ad;
-  --green-deep-3:  #8ce3af;
-  --green-deep-4:  #86eacd;
-  /* teal family */
-  --teal-tint:   #142f31;
-  --teal-soft:   #2c5d63;
-  --teal-soft-2: #2c6357;
-  --teal-mid:    #64b5d8;
-  --teal-mid-2:  #64d8c6;
-  --teal-solid:  #3ecae0;
-  --teal-deep:   #86d4ea;
-  --teal-deep-2: #8acce5;
-  --teal-deep-3: #86eae2;
-  --teal-deep-4: #8ce3dd;
-  /* blue family */
-  --blue-tint:    #141b31;
-  --blue-tint-2:  #142131;
-  --blue-tint-3:  #141a31;
-  --blue-soft:    #2c3763;
-  --blue-soft-2:  #2c3663;
-  --blue-soft-3:  #2c4463;
-  --blue-soft-4:  #2c4463;
-  --blue-mid:     #7c7ede;
-  --blue-mid-2:   #646fd8;
-  --blue-mid-3:   #827cde;
-  --blue-solid:   #8681da;
-  --blue-solid-2: #5884e4;
-  --blue-solid-3: #6184e6;
-  --blue-solid-4: #6281e4;
-  --blue-deep:    #8aa2e5;
-  --blue-deep-2:  #9896d9;
-  /* violet family */
-  --violet-tint:    #221431;
-  --violet-tint-2:  #191431;
-  --violet-tint-3:  #191431;
-  --violet-soft:    #362c63;
-  --violet-soft-2:  #382c63;
-  --violet-mid:     #8164d8;
-  --violet-mid-2:   #9b74dc;
-  --violet-mid-3:   #9474dc;
-  --violet-solid:   #a174e6;
-  --violet-solid-2: #a175e6;
-  /* pink family */
-  --pink-solid: #d152e0;
-}
-
-/* The bar is dark in both themes, so on a dark page it needs an edge to read
-   as a separate surface rather than blending into the content behind it. */
-:root[data-theme="dark"] .toolbar {
-  box-shadow: 0 1px 0 rgba(148,163,184,0.16), 0 4px 12px rgba(0,0,0,0.5);
-}
-
-/* Spectrograms and plots are rendered as images on a dark backdrop already;
-   soften them slightly so they do not glare against the dark page. */
-:root[data-theme="dark"] .clip img.spec { filter: brightness(0.92); }
-
-/* ---- top-bar theme switch ----
-   The icon shows what the click will do, matching the tooltip: a moon while
-   the page is light, a sun while it is dark. */
-.theme-toggle .theme-icon-sun { display: none; }
-:root[data-theme="dark"] .theme-toggle .theme-icon-moon { display: none; }
-:root[data-theme="dark"] .theme-toggle .theme-icon-sun { display: block; }
-
-body { font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-       background: var(--bg-page); color: var(--tx-strong-2); max-width: 1300px; margin: 0 auto;
-       padding: 0 1.5rem 2rem 1.5rem; -webkit-font-smoothing: antialiased; }
-h1 { font-size: 2.25rem; font-weight: 700; border-bottom: 2px solid var(--bd); padding-bottom: 0.5rem; margin-top: 2rem; color: var(--tx-strong); }
-h2 { margin-top: 1.8rem; font-size: 1.5rem; font-weight: 600; color: var(--tx-strong-2); }
-h3.section { background: var(--inv-bg); color: var(--inv-fg); padding: 0.6rem 1rem; border-radius: 8px; font-weight: 500; font-size: 1.1rem; }
-.summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-           gap: 0.75rem; margin-bottom: 1.5rem; }
-.card { background: var(--surface); padding: 1rem 1.25rem; border-radius: 12px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.05), 0 1px 2px rgba(0,0,0,0.02);
-        border: 1px solid var(--bd-soft); }
-.summary-breakdown { margin-top: 0.25rem; color: var(--tx-muted); font-size: 0.76rem; font-weight: 600; }
+{{ base_typography_css|safe }}
 .clips { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
           gap: 0.75rem; }
 .clip { background: var(--surface); padding: 0.75rem; border-radius: 10px;
@@ -5207,27 +5066,7 @@ h3.section { background: var(--inv-bg); color: var(--inv-fg); padding: 0.6rem 1r
 .clip .meta { font-size: 0.78rem; color: var(--tx-muted); margin-bottom: 0.5rem; }
 .clip .meta-line { margin-bottom: 3px; line-height: 1.45; overflow-wrap: anywhere; }
 .clip .meta-label { color: var(--tx-faint); font-weight: 600; margin-right: 3px; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.02em; }
-.tip {
-  border-bottom: 1px dotted var(--bd-strong);
-  text-decoration: none;
-  text-underline-offset: 2px;
-}
-.hover-tip {
-  position: fixed; z-index: 2000; max-width: min(480px, calc(100vw - 24px));
-  background: rgba(15,23,42,0.98); color: #fff; padding: 10px 12px;
-  border-radius: 8px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.3);
-  font-size: 0.75rem; line-height: 1.5; white-space: pre-line; pointer-events: none;
-  opacity: 0; transform: translateY(3px); transition: opacity 120ms ease, transform 120ms ease;
-  border: 1px solid #334155;
-}
-.hover-tip.show { opacity: 1; transform: translateY(0); }
-/* Metric tooltips lead with the values they depend on, then the formula. Bold
-   carries the "this number is threshold-dependent, and here is the threshold"
-   line; italic carries the formula, set apart so it reads as an equation. */
-.hover-tip b { color: #fbbf24; font-weight: 700; }
-.hover-tip i { display: inline-block; margin: 2px 0; padding: 1px 5px; border-radius: 4px;
-  background: rgba(148,163,184,0.18); color: #e2e8f0; font-style: normal;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.72rem; }
+{{ tooltip_css|safe }}
 .clip img { display: block; width: 100%; border-radius: 6px; }
 .clip img.spec {
   transition: box-shadow 0.15s ease-in-out;
@@ -5251,24 +5090,7 @@ h3.section { background: var(--inv-bg); color: var(--inv-fg); padding: 0.6rem 1r
 }
 .clip .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .clip .pair-label { font-size: 0.7rem; text-align: center; color: var(--tx-faint); margin-top: 2px; }
-audio { width: 100%; height: 36px; margin-top: 0.5rem; border-radius: 8px; }
-.search-filter { display: inline-flex; align-items: center; gap: 0.5rem; margin: 0 0.5rem 0.5rem 0; }
-.search-filter input {
-  width: 18rem; max-width: 72vw; padding: 0.45rem 0.75rem; border: 1px solid var(--bd-2);
-  border-radius: 8px; font: inherit; font-size: 0.875rem; background: var(--surface); outline: none; transition: border-color 0.2s;
-}
-.search-filter input:focus { border-color: var(--blue-mid); box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.1); }
-.search-filter button {
-  background: var(--surface-3); border: 1px solid var(--bd-2); border-radius: 8px;
-  padding: 0.45rem 0.9rem; cursor: pointer; font-size: 0.875rem; font-weight: 500; transition: background 0.2s;
-}
-.search-filter button:hover { background: var(--surface-4); }
-.notice { background: var(--amber-soft); padding: 0.75rem 1.25rem; border-left: 4px solid var(--amber-solid);
-          margin: 1.5rem 0; border-radius: 0 8px 8px 0; font-size: 0.9rem; color: var(--amber-deep); }
-.notice.danger { background: var(--red-tint-2); border-left-color: var(--red-mid); color: var(--red-solid); }
-.mask-good { color: var(--green-solid); font-weight: 600; }
-.mask-warn { color: var(--amber-solid); font-weight: 600; }
-.mask-bad  { color: var(--red-mid); font-weight: 600; }
+{{ control_css|safe }}
 
 /* Interactive mode: checkbox, sticky toolbar */
 .select-box { position: absolute; top: 8px; right: 10px;
@@ -5280,20 +5102,7 @@ audio { width: 100%; height: 36px; margin-top: 0.5rem; border-radius: 8px; }
   margin-right: 0.75rem; accent-color: var(--red-mid); border-radius: 4px; transition: transform 0.1s;
 }
 .class-select-all:hover { transform: scale(1.15); }
-/* ============ Activity / resource top bar ============ */
-.toolbar {
-    position: sticky; top: 0; z-index: 100;
-    background: #0f172a; color: #fff;
-    padding: 0.55rem 1.25rem; margin: 0 -1.5rem 1.5rem -1.5rem;
-    display: flex; gap: 1rem; align-items: center; justify-content: space-between;
-    box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06);
-    /* local bar tokens (scoped so they never leak into the light UI below) */
-    --muted: #94a3b8;
-    --chip-bg: rgba(148,163,184,0.12);
-    --chip-bd: rgba(148,163,184,0.22);
-    --chip-bg-hover: rgba(148,163,184,0.22);
-    --lvl-free: #22c55e; --lvl-busy: #f59e0b; --lvl-heavy: #ef4444;
-}
+{{ toolbar_css|safe }}
 
 /* ---- left: live activity zone ---- */
 .activity-zone { display: flex; align-items: center; gap: 0.5rem; min-width: 0; flex: 1 1 auto; overflow: hidden; }
@@ -5370,6 +5179,12 @@ audio { width: 100%; height: 36px; margin-top: 0.5rem; border-radius: 8px; }
 .compose-hint { font-size: 0.76rem; color: var(--amber-deep-3); background: var(--amber-tint); border: 1px solid var(--amber-mid); border-radius: 7px; padding: 0.35rem 0.55rem; margin-bottom: 0.55rem; }
 .compose-hint[hidden] { display: none; }
 
+/* Test set panel: checkbox + percentage, then the one button that changes it.
+   The button's own label states what pressing it will do. */
+.testset-panel .train-split-config { align-items: center; gap: 0.6rem; }
+.testset-panel #library-splittest-fraction-field input { width: 4rem; }
+.testset-panel #library-splittest-fraction-field.disabled { opacity: 0.45; }
+
 /* load meter */
 .load-meter {
     display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.32rem 0.6rem;
@@ -5409,35 +5224,9 @@ body[data-active-tab="frozen"]    .toolbar .selection-only,
 body[data-active-tab="mined"]     .toolbar .selection-only { display: flex; }
 body:not([data-active-tab="mined"]) .mined-only-action { display: none !important; }
 
-/* shared bar buttons */
-.toolbar button.done, .toolbar button.del, .toolbar button.primary-action {
-    border: none; padding: 0.5rem 1.15rem; border-radius: 8px; cursor: pointer;
-    font-weight: 600; font-size: 0.9rem; color: #fff; transition: background 0.2s;
-}
-.toolbar button.done { background: #10b981; }
-.toolbar button.done:hover { background: #059669; }
-.toolbar button.done:disabled { background: #475569; cursor: default; }
-.toolbar button.del { background: #ef4444; }
-.toolbar button.del:hover { background: #dc2626; }
-.toolbar button.del:disabled { background: #475569; cursor: default; }
-.toolbar button.primary-action { background: #7c3aed; }
-.toolbar button.primary-action:hover { background: #6d28d9; }
-.toolbar button.primary-action:disabled { background: #475569; cursor: wait; }
-body.ui-busy, body.ui-busy * { cursor: wait !important; }
+{{ toolbar_button_css|safe }}
 
-/* ---- click-anchored detail popovers ---- */
-.bar-popover {
-    position: absolute; top: calc(100% + 6px); right: 1.25rem; z-index: 200;
-    min-width: 240px; max-width: 360px; padding: 0.85rem 1rem;
-    background: #1e293b; color: #e2e8f0; border: 1px solid rgba(148,163,184,0.25);
-    border-radius: 10px; box-shadow: 0 12px 28px rgba(0,0,0,0.4); font-size: 0.8rem;
-}
-.bar-popover[hidden] { display: none; }
-.bar-popover h4 { margin: 0 0 0.5rem; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); font-weight: 700; }
-.popover-row { display: flex; justify-content: space-between; gap: 1rem; padding: 0.2rem 0; }
-.popover-row .k { color: var(--muted); }
-.popover-row .v { font-weight: 700; font-variant-numeric: tabular-nums; }
-.popover-legend { margin-top: 0.6rem; padding-top: 0.55rem; border-top: 1px solid rgba(148,163,184,0.18); color: var(--muted); font-size: 0.72rem; line-height: 1.5; }
+{{ popover_css|safe }}
 
 /* ML vocabulary reference */
 .ml-reference { min-width: 320px; max-width: 560px; max-height: 70vh; overflow-y: auto; }
@@ -5469,26 +5258,7 @@ body.ui-busy, body.ui-busy * { cursor: wait !important; }
 .log-item .li-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .log-item .li-time { color: var(--muted); font-size: 0.7rem; }
 
-/* ---- transient toasts ---- */
-.toast-stack { position: fixed; top: 64px; right: 18px; z-index: 1200; display: flex; flex-direction: column; gap: 0.5rem; pointer-events: none; }
-.toast {
-    pointer-events: auto; min-width: 220px; max-width: 340px; display: flex; align-items: center; gap: 0.6rem;
-    padding: 0.6rem 0.85rem; background: #1e293b; color: #e2e8f0; border: 1px solid rgba(148,163,184,0.25);
-    border-left: 4px solid #38bdf8; border-radius: 10px; box-shadow: 0 10px 24px rgba(0,0,0,0.4);
-    font-size: 0.82rem; font-weight: 600; cursor: pointer; animation: toast-in 0.22s ease;
-}
-.toast.ok { border-left-color: #22c55e; }
-.toast.err { border-left-color: #ef4444; }
-.toast.warn { border-left-color: #f59e0b; }
-.toast.hide { animation: toast-out 0.25s ease forwards; }
-@keyframes toast-in { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: none; } }
-@keyframes toast-out { to { opacity: 0; transform: translateX(12px); } }
-
-@media (prefers-reduced-motion: reduce) {
-    .activity-chip.indeterminate .chip-ring { animation: none; }
-    .load-fill, .chip-ring .ring-val { transition: none; }
-    .toast { animation: none; }
-}
+{{ toast_css|safe }}
 .clip.deleted { display: none; }
 .clip.corrupt-audio { border-color: var(--red-soft); box-shadow: inset 4px 0 0 var(--red-mid); }
 .integrity-pill { display: inline-flex; align-items: center; margin-left: 0.5rem; padding: 0.12rem 0.45rem; border-radius: 999px; background: var(--red-tint); color: var(--red-solid-2); border: 1px solid var(--red-soft-2); font-size: 0.64rem; font-weight: 800; letter-spacing: 0.03em; text-transform: uppercase; }
@@ -5496,8 +5266,17 @@ body.ui-busy, body.ui-busy * { cursor: wait !important; }
 .integrity-filter { display: inline-flex; align-items: center; gap: 0.35rem; color: var(--tx-2); font-size: 0.82rem; font-weight: 700; }
 .integrity-filter select { padding: 0.38rem 0.48rem; border: 1px solid var(--bd-2); border-radius: 6px; background: var(--surface); color: var(--tx-strong-2); font-size: 0.85rem; }
 .integrity-status { color: var(--tx-muted); font-size: 0.78rem; }
-.kbd { background: #334155; padding: 2px 6px; border-radius: 4px; font-family: monospace;
-       font-size: 0.8rem; color: #f1f5f9; border: 1px solid #475569; }
+/* Per-class sub-group picker, inside the class block's <summary>. Capped in
+   width because option labels carry a group name plus its clip count, and a
+   long recording path must not push the class name off the header. */
+.subgroup-filter-label { display: inline-flex; align-items: center; gap: 0.35rem; margin-left: 0.6rem; color: var(--tx-2); font-size: 0.78rem; font-weight: 700; cursor: default; }
+.subgroup-filter { max-width: 22rem; padding: 0.28rem 0.4rem; border: 1px solid var(--bd-2); border-radius: 6px; background: var(--surface); color: var(--tx-strong-2); font-size: 0.8rem; font-weight: 500; cursor: pointer; }
+.subgroup-filter:disabled { opacity: 0.45; cursor: not-allowed; }
+.subgroup-filter-label[data-state="busy"]::after { content: "loading…"; color: var(--tx-muted); font-weight: 500; }
+.subgroup-filter-label[data-state="empty"]::after { content: "nothing to subdivide"; color: var(--tx-muted); font-weight: 500; }
+.subgroup-filter optgroup { font-style: normal; font-weight: 800; color: var(--tx-muted); }
+.subgroup-filter option { font-weight: 500; color: var(--tx-strong-2); }
+{{ kbd_css|safe }}
 .done-overlay {
     position: fixed; inset: 0; background: rgba(15,23,42,0.96); color: #fff;
     display: none; align-items: center; justify-content: center; flex-direction: column;
@@ -5531,7 +5310,7 @@ body.ui-busy, body.ui-busy * { cursor: wait !important; }
 .tc-panel:empty::after { content: "No target classes yet — add one below."; color: var(--tx-faint); font-size: 0.8rem; }
 .tc-chip { display: inline-flex; align-items: center; gap: 0.3rem; border: 1px solid var(--class-border, var(--bd-2)); border-radius: 999px; padding: 0.15rem 0.25rem 0.15rem 0.6rem; font-size: 0.82rem; background: var(--class-bg, var(--surface)); font-weight: 600; color: var(--tx-strong); }
 .tc-chip .tc-chip-count { color: var(--tx-muted); font-weight: 600; font-variant-numeric: tabular-nums; font-size: 0.74rem; }
-.tc-chip.negative { background: var(--surface-2); color: var(--tx-2); }
+.tc-chip.negative { color: var(--tx-2); }
 .tc-chip button { border: none; background: transparent; cursor: pointer; color: var(--tx-faint); font-weight: 700; padding: 0 0.15rem; line-height: 1; }
 .tc-chip button:hover { color: var(--red-solid); }
 .tc-add-row { display: flex; gap: 0.4rem; align-items: center; margin-bottom: 0.6rem; }
@@ -5553,15 +5332,31 @@ body.ui-busy, body.ui-busy * { cursor: wait !important; }
 .dataset-def-body { padding: 0.55rem 0.7rem 0.7rem; }
 .dataset-def-body[hidden] { display: none; }
 .dd-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; }
-.dd-legend { display: inline-flex; flex-wrap: wrap; gap: 0.7rem; margin-right: auto; }
+.dd-legend { display: inline-flex; flex-wrap: wrap; gap: 0.35rem; margin-right: auto; }
 .dd-key { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.72rem; color: var(--tx-muted); font-weight: 600; }
+/* Legend keys in the Dataset Definition toolbar are the table's row filter. */
+button.dd-key {
+    background: var(--surface-2); border: 1px solid var(--surface-4); border-radius: 999px;
+    padding: 0.2rem 0.55rem; cursor: pointer; line-height: 1.3;
+}
+button.dd-key:hover:not(:disabled) { border-color: var(--blue-mid); color: var(--tx-strong); }
+button.dd-key.active { background: var(--blue-tint); border-color: var(--blue-mid); color: var(--blue-solid); }
+button.dd-key:disabled { opacity: 0.4; cursor: default; }
+.dd-key-count { font-variant-numeric: tabular-nums; opacity: 0.75; }
+.dd-key-count:empty { display: none; }
 .dd-swatch { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
 .dd-swatch.train { background: var(--green-solid-2); }
 .dd-swatch.test { background: var(--red-mid); }
 .dd-swatch.derived { background: var(--violet-mid); }
 .dd-swatch.leak { background: repeating-linear-gradient(45deg, var(--red-mid) 0 3px, var(--amber-solid) 3px 6px); }
 .dd-toolbar .rule-search { margin-left: 0; }
-.dd-table-wrap { max-height: 46vh; overflow: auto; border: 1px solid var(--bd); border-radius: 8px; }
+.dd-table-wrap { max-height: 46vh; overflow: auto; border: 1px solid var(--bd); border-radius: 8px;
+  scrollbar-gutter: stable both-edges; scrollbar-width: auto; scrollbar-color: var(--bd-strong) var(--surface-2); }
+.dd-table-wrap::-webkit-scrollbar { width: 15px; height: 15px; }
+.dd-table-wrap::-webkit-scrollbar-track { background: var(--surface-2); border-left: 1px solid var(--bd); }
+.dd-table-wrap::-webkit-scrollbar-thumb { background: var(--bd-strong); border: 4px solid var(--surface-2); border-radius: 999px; min-height: 44px; }
+.dd-table-wrap::-webkit-scrollbar-thumb:hover { background: var(--blue-mid); }
+.dd-table-wrap::-webkit-scrollbar-corner { background: var(--surface-2); }
 .dd-rule-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
 .dd-rule-table th { position: sticky; top: 0; z-index: 1; background: var(--surface-2); color: var(--tx-2); text-align: left; font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.02em; font-weight: 700; padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--bd); white-space: nowrap; }
 .dd-rule-table td { padding: 0.2rem 0.5rem; border-bottom: 1px solid var(--bd-soft); white-space: nowrap; }
@@ -5569,37 +5364,79 @@ body.ui-busy, body.ui-busy * { cursor: wait !important; }
    classTintVars); the colour is built here so each theme can pick its own
    lightness. Light keeps the original pastel; dark rebuilds the same hue as a
    deep tint, because a pastel row on a dark page swamps its own text. */
-.tc-chip, .dd-class-pill, .dd-rule-table tbody tr {
+.tc-chip, .dd-class-pill, .dd-rule-table tbody tr, .class-identity-badge,
+.class-block[data-class-token], .pretrain-subbuckets-table [data-class-identity],
+.train-val-class-summary [data-class-identity], .prob-row[data-class-token] {
     --class-bg: hsla(var(--class-hue), var(--class-sat), var(--class-lum), var(--class-a));
     --class-border: hsla(var(--class-hue), var(--class-sat), var(--class-bd-lum), var(--class-bd-a));
 }
 :root[data-theme="dark"] .tc-chip,
 :root[data-theme="dark"] .dd-class-pill,
-:root[data-theme="dark"] .dd-rule-table tbody tr {
-    --class-bg: hsl(var(--class-hue), 26%, 18%);
-    --class-border: hsl(var(--class-hue), 30%, 42%);
+:root[data-theme="dark"] .dd-rule-table tbody tr,
+:root[data-theme="dark"] .class-identity-badge,
+:root[data-theme="dark"] .class-block[data-class-token],
+:root[data-theme="dark"] .pretrain-subbuckets-table [data-class-identity],
+:root[data-theme="dark"] .train-val-class-summary [data-class-identity],
+:root[data-theme="dark"] .prob-row[data-class-token] {
+    /* Saturation/lightness tuned with the dataviz skill's validate_palette.js
+       against CLASS_TINT_PALETTE's 8 hues: worst adjacent-pair normal-vision
+       ΔE 16.7 (≥15 target), CVD ΔE 9.9 (≥8 target). The previous 26%/18% read
+       as near-gray at this lightness — chroma that low is below the floor
+       where hue registers at all, which is why classes looked interchangeable. */
+    --class-bg: hsl(var(--class-hue), 65%, 27%);
+    --class-border: hsl(var(--class-hue), 45%, 48%);
+}
+/* Background audio intentionally remains neutral.  The categorical dark-mode
+   treatment above is deliberately saturated for event classes, but applying
+   it to slate made `_negative` read as another blue target class. */
+:root[data-theme="dark"] [data-class-token="slate"] {
+    --class-bg: hsl(216, 14%, 23%);
+    --class-border: hsl(216, 18%, 52%);
 }
 /* Rows sit deeper than the chips, and separate on a lighter rule rather than a
    darker one — the same treatment the library bucket rows use. */
-:root[data-theme="dark"] .dd-rule-table tbody tr { --class-bg: hsl(var(--class-hue), 24%, 15%); }
+:root[data-theme="dark"] .dd-rule-table tbody tr { --class-bg: hsl(var(--class-hue), 65%, 23%); }
+:root[data-theme="dark"] .dd-rule-table tr[data-class-token="slate"] {
+    --class-bg: hsl(216, 14%, 23%);
+    --class-border: hsl(216, 18%, 52%);
+}
 :root[data-theme="dark"] .dd-rule-table td { border-bottom-color: var(--bd-2); }
 
 .dd-rule-table tbody tr { background: var(--class-bg, var(--surface)); }
 .dd-rule-table tbody tr:hover { filter: brightness(0.97); }
 :root[data-theme="dark"] .dd-rule-table tbody tr:hover { filter: brightness(1.4); }
-.dd-rule-table tr.dd-train { box-shadow: inset 3px 0 0 var(--green-solid-2); }
-.dd-rule-table tr.dd-test { box-shadow: inset 3px 0 0 var(--red-mid); }
-.dd-rule-table tr.dd-leak { box-shadow: inset 3px 0 0 var(--amber-solid); }
+.dd-rule-table tr.dd-train td:first-child { border-left: 4px solid var(--green-solid-2); }
+.dd-rule-table tr.dd-test td:first-child { border-left: 4px solid var(--violet-mid-2); }
+.dd-rule-table tr.dd-leak td:first-child { border-left-color: var(--amber-solid); background-image: repeating-linear-gradient(135deg, transparent 0 5px, rgba(245,158,11,0.14) 5px 8px); }
 .dd-rule-table tr.dd-derived td.dd-label-cell { border-left: 2px dotted var(--violet-mid); }
+.dd-pool-heading th { position: static; padding: 0.48rem 0.62rem; text-align: left; text-transform: none; letter-spacing: 0; font-size: 0.76rem; }
+.dd-pool-heading.dd-pool-train th { background: var(--green-tint-2); color: var(--green-deep-2); border-top: 1px solid var(--green-soft); border-bottom-color: var(--green-soft); }
+.dd-pool-heading.dd-pool-test th { background: var(--violet-tint-2); color: var(--violet-solid); border-top: 1px solid var(--violet-soft); border-bottom-color: var(--violet-soft); }
+.dd-pool-badge { display: inline-flex; align-items: center; gap: 0.32rem; font-weight: 800; }
+.dd-pool-badge .dd-pool-icon { display: inline-grid; place-items: center; width: 1.2rem; height: 1.2rem; border-radius: 999px; background: currentColor; color: var(--surface); font-size: 0.72rem; line-height: 1; }
+.dd-pool-meta { margin-left: 0.45rem; color: var(--tx-2); font-weight: 600; font-variant-numeric: tabular-nums; }
+.dd-class-heading th { position: static; padding: 0.34rem 0.62rem; text-align: left; text-transform: none; letter-spacing: 0; background: color-mix(in srgb, var(--class-bg) 62%, var(--surface)); color: var(--tx-strong); border-top: 1px solid var(--class-border); border-bottom: 1px solid var(--class-border); }
+.dd-class-heading .dd-class-band { display: inline-block; width: 0.55rem; height: 0.55rem; margin-right: 0.42rem; border-radius: 2px; background: hsl(var(--class-hue), var(--class-sat), var(--class-bd-lum)); vertical-align: 0.03rem; }
+.dd-class-heading .dd-class-meta { margin-left: 0.38rem; color: var(--tx-muted); font-size: 0.7rem; font-weight: 600; font-variant-numeric: tabular-nums; }
 .dd-rule-table td.num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; color: var(--tx-strong); }
 .dd-rule-table select { padding: 0.12rem 0.25rem; border: 1px solid var(--bd-2); border-radius: 5px; background: var(--surface); font-size: 0.74rem; color: var(--tx-strong-2); max-width: 12rem; }
-.dd-rule-table select.dd-dest-test { border-color: var(--red-soft); background: var(--red-tint-3); color: var(--red-solid); }
+.dd-rule-table select.dd-target-select { border-color: var(--class-border); background: var(--class-bg); color: var(--tx-strong); font-weight: 700; }
+.dd-destination { display: inline-flex; align-items: center; gap: 0.3rem; }
+.dd-destination .dd-pool-badge { padding: 0.08rem 0.32rem; border-radius: 999px; font-size: 0.63rem; letter-spacing: 0.02em; }
+.dd-destination.train .dd-pool-badge { color: var(--green-deep-2); background: var(--green-tint-2); border: 1px solid var(--green-soft); }
+.dd-destination.test .dd-pool-badge { color: var(--violet-solid); background: var(--violet-tint-2); border: 1px solid var(--violet-soft); }
+.dd-rule-table select.dd-dest-test { border-color: var(--violet-soft); background: var(--violet-tint-2); color: var(--violet-solid); }
 .dd-rule-table .dd-muted { color: var(--tx-muted); }
 .dd-rule-table .dd-tags { max-width: 16rem; overflow: hidden; text-overflow: ellipsis; display: inline-block; vertical-align: bottom; }
-.dd-class-pill { display: inline-flex; align-items: baseline; gap: 0.3rem; font-size: 0.76rem; background: var(--class-bg, var(--surface)); border: 1px solid var(--class-border, var(--bd-2)); padding: 0.1rem 0.45rem; border-radius: 999px; color: var(--tx-strong); }
+.dd-class-pill { display: inline-flex; align-items: baseline; gap: 0.3rem; font-family: inherit; font-size: 0.76rem; background: var(--class-bg, var(--surface)); border: 1px solid var(--class-border, var(--bd-2)); padding: 0.1rem 0.45rem; border-radius: 999px; color: var(--tx-strong); }
+button.dd-class-pill { cursor: pointer; }
+button.dd-class-pill:hover { filter: brightness(0.96); }
+button.dd-class-pill.active { outline: 2px solid hsl(var(--class-hue), var(--class-sat), var(--class-bd-lum)); outline-offset: 1px; }
 .dd-class-pill b { font-weight: 800; }
 .dd-class-pill .dd-split { color: var(--tx-muted); font-variant-numeric: tabular-nums; }
 .dd-class-pill.empty { opacity: 0.6; border-style: dashed; }
+.dd-class-filter-clear { border: 1px solid var(--bd-2); border-radius: 999px; background: var(--surface-2); color: var(--tx-2); padding: 0.12rem 0.48rem; font: 700 0.7rem inherit; cursor: pointer; }
+.dd-class-filter-clear[hidden] { display: none; }
 .dd-warn { color: var(--amber-deep-3); background: var(--amber-soft); border: 1px solid var(--amber-mid); border-radius: 6px; padding: 0.1rem 0.45rem; font-size: 0.74rem; font-weight: 700; }
 .model-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 0.75rem; }
 .model-card { border: 1px solid var(--bd-2); border-radius: 8px; padding: 0.7rem 0.8rem; background: var(--surface); font-size: 0.85rem; }
@@ -5622,6 +5459,18 @@ body.ui-busy, body.ui-busy * { cursor: wait !important; }
 .model-tag.tone-research { border-color: var(--violet-soft); background: var(--violet-tint-2); color: var(--violet-solid); }
 .model-tag.tone-warning { border-color: var(--amber-mid); background: var(--amber-tint); color: var(--amber-deep-3); }
 .model-constructor-section { margin-top: 0.65rem; }
+.head-map-block { margin-top: 0.7rem; }
+.head-map-block h4 { margin: 0 0 0.2rem; }
+.head-map-table { margin: 0.35rem 0 0.4rem; border: 1px solid var(--bd); border-radius: 6px; overflow: hidden; }
+.head-map-row { display: grid; grid-template-columns: minmax(7rem, max-content) 1rem minmax(9rem, max-content) 1fr; align-items: center; gap: 0.35rem 0.6rem; padding: 0.32rem 0.55rem; border-top: 1px solid var(--bd-soft-2); font-size: 0.74rem; color: var(--tx-2); }
+.head-map-row:first-child { border-top: none; }
+.head-map-row.head-map-random { background: var(--amber-tint); }
+.head-map-class { font-family: ui-monospace, monospace; font-weight: 700; color: var(--tx-strong-2); word-break: break-word; }
+.head-map-arrow { color: var(--tx-2); text-align: center; }
+.head-map-source select { width: 11rem; max-width: 100%; padding: 0.2rem 0.32rem; font-family: ui-monospace, monospace; font-size: 0.72rem; }
+.head-map-fixed { font-family: ui-monospace, monospace; color: var(--tx); }
+.head-map-state { font-size: 0.7rem; }
+.head-map-row.head-map-random .head-map-state { color: var(--amber-solid-2); font-weight: 700; }
 .model-param-chips { display: flex; flex-wrap: wrap; gap: 0.3rem; margin: 0.35rem 0 0.55rem; }
 .model-param-chip { border: 1px solid var(--blue-soft); background: var(--blue-tint); color: var(--blue-solid); border-radius: 999px; padding: 0.12rem 0.48rem; font: 700 0.68rem ui-monospace, monospace; cursor: pointer; }
 .model-param-chip.optional::after { content: " +"; color: var(--blue-mid); }
@@ -5665,6 +5514,7 @@ body.ui-busy, body.ui-busy * { cursor: wait !important; }
   background: var(--surface); border-radius: 10px; margin: 0.5rem 0;
   box-shadow: 0 1px 3px rgba(0,0,0,0.02); border: 1px solid var(--bd);
 }
+.class-block[data-class-token] { border-color: var(--class-border); box-shadow: inset 4px 0 0 hsl(var(--class-hue), var(--class-sat), var(--class-bd-lum)), 0 1px 3px rgba(0,0,0,0.02); }
 .class-block > summary {
   cursor: pointer; padding: 0.8rem 1.2rem; font-weight: 600; font-size: 1.1rem;
   user-select: none; list-style: none; display: flex; align-items: center; transition: background 0.15s;
@@ -5678,6 +5528,8 @@ body.ui-busy, body.ui-busy * { cursor: wait !important; }
 .class-block[open] > summary { border-radius: 10px 10px 0 0; border-bottom: 1px solid var(--bd-soft); }
 .class-block[open] > summary::before { transform: rotate(90deg); }
 .class-block > summary:hover { background: var(--surface-2); }
+.class-block[data-class-token] > summary:hover { background: var(--class-bg); }
+.class-block .class-block-name { color: var(--tx-strong); }
 .class-block > summary .count { opacity: 0.6; font-weight: 400; margin-left: 0.5rem; font-size: 0.85rem; }
 .class-block > summary .flagct { color: var(--red-mid); font-weight: 600; margin-left: 1rem; font-size: 0.85rem; }
 .class-block .clips { padding: 1rem; }
@@ -5699,16 +5551,14 @@ body.ui-busy, body.ui-busy * { cursor: wait !important; }
 .load-more-btn:hover { background: var(--surface-3); border-color: var(--bd-strong); color: var(--tx-strong); }
 
 /* Predictions pills and margins style */
-.pill { display: inline-flex; align-items: center; justify-content: center;
-         padding: 1px 7px; border-radius: 10px; font-size: 0.66rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
-.pill.good { background: var(--green-soft-2); color: var(--green-deep); }
-.pill.bad { background: var(--red-tint-2); color: var(--red-solid); }
-.pill.neg { background: var(--surface-3); color: var(--tx-2); }
+{{ pill_css|safe }}
 .prob-box { background: var(--surface-2); border-radius: 8px; padding: 6px 10px; font-size: 0.74rem; border: 1px solid var(--bd); margin-top: 0.5rem; display: grid; gap: 3px; }
 .prob-row { display: grid; grid-template-columns: minmax(72px, max-content) 1fr 46px; align-items: center; gap: 6px; min-width: 0; }
 .prob-name { color: var(--tx-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .prob-bar { display: block; height: 7px; background: var(--surface-4); border-radius: 999px; overflow: hidden; }
 .prob-bar span { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--blue-mid-2), var(--blue-mid)); min-width: 1px; }
+.prob-row[data-class-token] .prob-name { color: var(--tx-strong); font-weight: 650; }
+.prob-row[data-class-token] .prob-bar span { background: linear-gradient(90deg, hsl(var(--class-hue), 45%, 50%), hsl(var(--class-hue), var(--class-sat), var(--class-bd-lum))); }
 .prob-val { text-align: right; font-variant-numeric: tabular-nums; color: var(--tx); }
 /* First row is the highest probability — emphasize it, tinted by verdict. */
 .prob-row:first-child .prob-name, .prob-row:first-child .prob-val { font-weight: 700; color: var(--tx-strong); }
@@ -5811,127 +5661,7 @@ body.ui-busy, body.ui-busy * { cursor: wait !important; }
 .library-designer { display: grid; gap: 0.85rem; min-width: 0; }
 .library-section { border: 1px solid var(--bd); border-radius: 8px; padding: 0.75rem; background: var(--surface); }
 .library-section h3 { margin: 0 0 0.6rem 0; font-size: 0.95rem; color: var(--tx-strong); display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
-/* ==== One button system ==================================================
-   Every button in the dataset-building UI (Library tab and the review tabs'
-   section headers) is one of: default / .primary / .danger / .accent, in one
-   of two sizes. Size is decided by *where* the button is, not by which family
-   it came from: anything in a section header or an inline toolbar is small,
-   anything in a main action row is regular. Before this, "Rescan from disk"
-   and "corpus headers" sat side by side at different sizes, weights and
-   colours because each came from its own one-off rule. */
-.section-action,
-button.section-refresh,
-.recipe-actions button,
-.assign-bar button,
-.tc-add-row button,
-.preset-bar button,
-.bucket-picker button,
-.library-actions button,
-.preview-cache-head button,
-.library-row-delete,
-.train-split-config button,
-.compose-run {
-    display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem;
-    min-height: 2rem; box-sizing: border-box;
-    border: 1px solid var(--bd-2); background: var(--surface); color: var(--tx);
-    border-radius: 6px; cursor: pointer; white-space: nowrap;
-    font-family: inherit; font-size: 0.78rem; line-height: 1; font-weight: 700;
-    padding: 0.42rem 0.7rem;
-    transition: background 0.15s, border-color 0.15s, color 0.15s;
-}
-.section-action:hover,
-button.section-refresh:hover,
-.recipe-actions button:hover,
-.assign-bar button:hover,
-.tc-add-row button:hover,
-.preset-bar button:hover,
-.bucket-picker button:hover,
-.library-actions button:hover,
-.preview-cache-head button:hover,
-.train-split-config button:hover,
-.compose-run:hover { background: var(--blue-tint); border-color: var(--blue-soft-2); color: var(--blue-solid); }
-
-.section-action:disabled,
-button.section-refresh:disabled,
-.recipe-actions button:disabled,
-.assign-bar button:disabled,
-.tc-add-row button:disabled,
-.preset-bar button:disabled,
-.bucket-picker button:disabled,
-.library-actions button:disabled,
-.preview-cache-head button:disabled,
-.library-row-delete:disabled,
-.train-split-config button:disabled,
-.compose-run:disabled { opacity: 0.55; cursor: default; }
-/* Busy — the action is running, as opposed to unavailable. */
-.section-action.spinning, button.section-refresh.spinning, .compose-run:disabled { cursor: wait; }
-
-/* Small: section headers and inline toolbars, where the button annotates a
-   panel rather than being the panel's action. Placement decides the size, so
-   two buttons sitting side by side in a header always match — regardless of
-   which family each came from. */
-.section-action,
-.section-head button.section-refresh,
-.preset-bar button,
-.preview-cache-head button,
-.compose-bar .rescan-chip,
-.train-split-config button,
-.library-row-delete {
-    min-height: 1.7rem; font-size: 0.74rem; padding: 0.26rem 0.55rem;
-}
-.section-head { gap: 0.4rem; }
-
-/* Tones. */
-.recipe-actions button.primary,
-.assign-bar button.primary,
-.library-actions button.primary,
-.compose-run { background: var(--inv-bg); border-color: var(--inv-bd); color: var(--inv-fg); }
-.recipe-actions button.primary:hover,
-.assign-bar button.primary:hover,
-.library-actions button.primary:hover,
-.compose-run:hover { background: var(--inv-bg-strong); border-color: var(--inv-bd-strong); color: var(--inv-fg); }
-
-.section-action.danger,
-.recipe-actions button.danger,
-.assign-bar button.danger,
-.library-actions button.danger,
-.library-row-delete { background: var(--red-tint-4); border-color: var(--red-soft-2); color: var(--red-solid); }
-.section-action.danger:hover,
-.recipe-actions button.danger:hover,
-.assign-bar button.danger:hover,
-.library-actions button.danger:hover,
-.library-row-delete:hover { background: var(--red-tint-5); border-color: var(--red-soft); color: var(--red-solid); }
-
-.tc-add-row button,
-.bucket-picker button,
-.compose-bar .rescan-chip.all { background: var(--blue-tint); border-color: var(--blue-soft); color: var(--blue-solid); }
-.tc-add-row button:hover,
-.bucket-picker button:hover,
-.compose-bar .rescan-chip.all:hover { background: var(--blue-tint-3); border-color: var(--blue-soft-2); }
-
-.library-actions button.warn { background: var(--amber-soft); border-color: var(--amber-solid); color: var(--amber-deep-3); }
-/* --amber-mid is an accent/border tone (it flips light in the dark theme), so
-   the hover fill uses the tinted-surface tone that --amber-deep-3 is legible on
-   in both themes. */
-.library-actions button.warn:hover { background: var(--amber-soft-2); border-color: var(--amber-solid-3); color: var(--amber-deep-3); }
-
-/* The ↻ glyph is shared by every rescan-style button, and spins while busy. */
-.refresh-icon { display: inline-block; font-size: 0.92rem; line-height: 1; transform-origin: 50% 50%; }
-button.section-refresh.spinning, .section-action.spinning { color: var(--blue-solid); border-color: var(--blue-soft-2); background: var(--blue-tint); }
-button.section-refresh.spinning .refresh-icon, .section-action.spinning .refresh-icon { animation: sed-spin 0.8s linear infinite; }
-@keyframes sed-spin { to { transform: rotate(360deg); } }
-
-/* Icon-only buttons: one square, one size, everywhere. */
-.dd-x, .lib-row-x {
-    display: inline-flex; align-items: center; justify-content: center;
-    width: 22px; height: 22px; padding: 0; line-height: 1;
-    border: 1px solid var(--bd); background: var(--surface); color: var(--tx-faint);
-    border-radius: 6px; cursor: pointer; font-size: 0.9rem; font-weight: 700;
-}
-.dd-x:hover, .section-status { color: var(--tx-muted); font-size: 0.78rem; font-weight: 600; margin-left: 0.35rem; }
-.section-status.err { color: var(--red-mid); }
-.section-status.ok { color: var(--green-solid); }
-.section-status.warn { color: var(--amber-solid-2); }
+{{ button_system_css|safe }}
 .feature-lab .library-filters label.check { flex-direction: row; align-items: center; gap: 0.4rem; text-transform: none; }
 .feature-preview-img { width: 100%; max-width: 760px; height: auto; image-rendering: pixelated; border-radius: 6px; min-height: 220px; background: #0f172a; }
 .feature-lab [data-feature-group] { transition: opacity 0.15s; }
@@ -5940,9 +5670,22 @@ button.section-refresh.spinning .refresh-icon, .section-action.spinning .refresh
 .feature-lab:not(.ft-db) [data-feature-group="db"] { display: none; }
 .feature-lab:not(.ft-image) [data-feature-group="image"] { display: none; }
 .feature-lab:not(.ft-std) [data-feature-group="std"] { display: none; }
-/* Vector/min-max scaling: the fitted constants are a read-only summary, not two scalar inputs. */
-.feature-lab.ft-stdvec [data-scaling-scalar] { display: none; }
-.feature-lab:not(.ft-stdvec) #feature-scaling-summary { display: none; }
+/* Fitted constants are a measurement, not a form field: one state card reports
+   method, scope, provenance, health and where the numbers came from. */
+.scaling-state { margin: 0.5rem 0 0.2rem; padding: 0.5rem 0.65rem; border: 1px solid var(--bd); border-radius: 8px; background: var(--surface-2); }
+.scaling-state-head { display: flex; align-items: center; gap: 0.45rem; margin-bottom: 0.3rem; }
+.scaling-state-title { font-size: 0.72rem; font-weight: 700; color: var(--tx-strong-2); }
+.scaling-state-pill { border: 1px solid var(--bd-2); background: var(--surface); color: var(--tx-2); border-radius: 999px; padding: 0.06rem 0.45rem; font-size: 0.64rem; font-weight: 700; }
+.scaling-state-pill.ok { border-color: var(--green-soft); background: var(--green-tint-2); color: var(--green-deep-2); }
+.scaling-state-pill.warn { border-color: var(--amber-mid); background: var(--amber-tint); color: var(--amber-deep-3); }
+.scaling-state-pill.inherited { border-color: var(--blue-soft-2); background: var(--blue-tint); color: var(--blue-solid); }
+.scaling-state-body { font-size: 0.7rem; color: var(--tx-2); line-height: 1.5; }
+.scaling-state-body b { color: var(--tx-strong-2); font-family: ui-monospace, monospace; }
+.scaling-state .recipe-actions { margin-top: 0.4rem; }
+.scaling-state-drift { margin-top: 0.35rem; padding: 0.35rem 0.5rem; border-radius: 6px; font-size: 0.7rem; line-height: 1.45; border: 1px solid var(--bd-soft-2); }
+.scaling-state-drift.ok { border-color: var(--green-soft); background: var(--green-tint-2); color: var(--green-deep-2); }
+.scaling-state-drift.warn { border-color: var(--amber-mid); background: var(--amber-tint); color: var(--amber-deep-3); }
+.scaling-state-drift.err { border-color: var(--red-soft); background: var(--red-tint); color: var(--red-solid); }
 .field-hint { font-size: 0.62rem; color: var(--tx-faint); font-weight: 600; text-transform: none; }
 .field-hint.warn { color: var(--amber-solid-2); }
 .train-split-config { margin-top: 0.4rem; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
@@ -5952,6 +5695,7 @@ button.section-refresh.spinning .refresh-icon, .section-action.spinning .refresh
 .train-val-class-summary { flex: 1 1 100%; display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; font-size: 0.72rem; color: var(--tx-2); }
 .train-val-class-summary .summary-label { font-weight: 700; color: var(--tx); }
 .train-val-class-summary .class-count { display: inline-flex; gap: 0.3rem; align-items: baseline; padding: 0.16rem 0.45rem; border: 1px solid var(--bd-2); border-radius: 999px; background: var(--surface-2); }
+.train-val-class-summary .class-count[data-class-token] { border-color: var(--class-border); background: var(--class-bg); }
 .train-val-class-summary .class-count b { color: var(--tx-strong); }
 .train-val-class-summary .class-count.zero { border-color: var(--amber-solid); background: var(--amber-tint); color: var(--amber-deep-3); }
 .train-val-class-summary .class-count.zero b { color: var(--amber-deep-3); }
@@ -6170,13 +5914,17 @@ button.btn-sm:disabled { opacity: 0.55; cursor: default; }
 .library-table tr:hover { background: var(--surface-2); }
 .library-table .time-cell { font-variant-numeric: tabular-nums; }
 .library-label-cell .label-wrap { display: inline-flex; align-items: center; gap: 0.35rem; }
-.library-table tr.assigned-test-only { box-shadow: inset 3px 0 0 var(--red-mid); }
+.library-table tr.assigned-test-only { box-shadow: inset 3px 0 0 var(--violet-mid-2); }
 .library-table tr.assigned-leak { box-shadow: inset 3px 0 0 var(--amber-solid); }
 .assigned-dot { width: 8px; height: 8px; border-radius: 999px; background: var(--green-solid-4); box-shadow: 0 0 0 2px var(--green-soft-3); flex: 0 0 auto; }
-.assigned-dot.assigned-test { background: var(--red-mid); box-shadow: 0 0 0 2px var(--red-tint-2); }
+.assigned-dot.assigned-test { background: var(--violet-mid-2); box-shadow: 0 0 0 2px var(--violet-tint-2); }
 /* Both pools at once is the dangerous case — an amber ring makes it read as a
    warning rather than as an ordinary frozen-test marker. */
 .assigned-dot.assigned-leakage { background: var(--red-mid); box-shadow: 0 0 0 2px var(--amber-mid), 0 0 0 3px var(--amber-solid); }
+.class-identity-badge { display: inline-flex; align-items: center; gap: 0.24rem; max-width: 11rem; padding: 0.07rem 0.34rem; border: 1px solid var(--class-border, var(--bd-2)); border-radius: 999px; background: var(--class-bg, var(--surface-2)); color: var(--tx-strong); font-size: 0.66rem; font-weight: 750; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.class-identity-badge i { width: 0.38rem; height: 0.38rem; border-radius: 50%; background: hsl(var(--class-hue), var(--class-sat), var(--class-bd-lum)); flex: 0 0 auto; }
+.library-label-cell .class-identity-badge { margin-left: 0.18rem; }
+.library-group-row .class-identity-badge { margin-left: 0.3rem; vertical-align: middle; }
 .library-table .action-cell { text-align: right; }
 .rule-search { font-size: 0.78rem; padding: 0.2rem 0.45rem; border: 1px solid var(--bd-2); border-radius: 6px; min-width: 13rem; margin-left: 0.5rem; }
 .rule-overlay { color: var(--violet-mid-2); }
@@ -6539,6 +6287,7 @@ button.btn-sm:disabled { opacity: 0.55; cursor: default; }
    without pushing the card taller. */
 .frozen-verdict { font-size: 0.74rem; margin: 0.15rem 0 0.3rem; display: flex; align-items: baseline; gap: 0.3rem; flex-wrap: wrap; font-variant-numeric: tabular-nums; }
 .frozen-verdict .fv-true { color: var(--tx); font-weight: 600; }
+.frozen-verdict [data-class-token] { border-bottom: 2px solid hsl(var(--class-hue), var(--class-sat), var(--class-bd-lum)); }
 .frozen-verdict .fv-arrow { color: var(--tx-vfaint); }
 .frozen-verdict .fv-pred.ok  { color: var(--green-deep-4); font-weight: 600; }
 .frozen-verdict .fv-pred.bad { color: var(--red-solid-2); font-weight: 600; }
@@ -6631,6 +6380,11 @@ button.btn-sm:disabled { opacity: 0.55; cursor: default; }
 .testset-health .compat-table th, #train-testset-list .compat-table th { color: var(--tx-muted); font-weight: 600; font-size: 0.72rem; }
 .testset-health .compat-finding { margin: 0.12rem 0; }
 /* Recommendations strip — advisory, so it reads as guidance rather than an error. */
+.train-stage-line { display: flex; align-items: baseline; gap: 0.45rem; flex-wrap: wrap; margin-bottom: 0.5rem; padding: 0.3rem 0.55rem; border-radius: 6px; font-size: 0.72rem; border: 1px solid var(--bd-2); background: var(--surface-2); color: var(--tx-2); }
+.train-stage-line.stage-1 { border-color: var(--violet-soft); background: var(--violet-tint-2); color: var(--violet-solid); }
+.train-stage-line.stage-2 { border-color: var(--blue-soft-2); background: var(--blue-tint); color: var(--blue-solid); }
+.train-stage-line b { font-weight: 700; }
+.train-stage-note { margin-left: auto; font-size: 0.66rem; opacity: 0.85; }
 .train-advice { font-size: 0.78rem; }
 .train-advice .advice-area { margin: 0.45rem 0 0.15rem; color: var(--tx); }
 .train-advice .advice-item { margin: 0.15rem 0; padding-left: 0.9rem; position: relative; }
@@ -7187,7 +6941,7 @@ button.btn-sm:disabled { opacity: 0.55; cursor: default; }
     <div style="font-size: 1.5rem; font-weight: 700; margin-top: 4px;">{{ project_id }}</div>
   </div>
   {% for cls, stat in training_selection_summary.items() %}
-  <div class="card" data-summary-class="{{ cls|e }}">
+  <div class="card" data-summary-class="{{ cls|e }}" data-class-identity="{{ cls|e }}">
     <div style="color: var(--tx-muted); font-size: 0.8rem; font-weight: 600; text-transform: uppercase;">{{ cls }}</div>
     <div style="font-size: 1.5rem; font-weight: 700; margin-top: 4px;">
       {{ stat.count }} train clips
@@ -7225,10 +6979,10 @@ button.btn-sm:disabled { opacity: 0.55; cursor: default; }
           <span class="dd-title">Dataset Definition</span>
         </button>
         <div class="preset-bar" id="dataset-preset-bar">
-          <label data-tip="A preset is a complete dataset definition: source rules plus the target-class list and split settings. Choose one, then press Load; New starts a blank dataset.">preset
+          <label data-tip="A preset is a complete dataset definition: source rules, the target-class list, and the split settings. Loading one switches the project's classes to that dataset's classes — which is what makes moving between a pretraining definition and a venue fine-tune a single action. Choose one, then press Load; New starts a blank dataset.">preset
             <select id="dataset-preset-select"><option value="">— choose preset —</option><option value="__new__">＋ New blank dataset</option></select>
           </label>
-          <button type="button" id="dataset-preset-load" data-tip="Load the selected preset: replaces the current source rules and, for presets that carry them, the target classes.">Load</button>
+          <button type="button" id="dataset-preset-load" data-tip="Load the selected preset: replaces the current source rules AND the project's target classes with that dataset's own.">Load</button>
           <button type="button" id="dataset-preset-save" data-tip="Update the active preset with the current source rules and target classes.">Save</button>
           <button type="button" id="dataset-preset-saveas" data-tip="Save the current source rules and target classes as a new named preset.">Save as…</button>
           <button type="button" id="dataset-preset-rename" data-tip="Rename the selected preset without changing its rules.">Rename</button>
@@ -7241,13 +6995,17 @@ button.btn-sm:disabled { opacity: 0.55; cursor: default; }
       </div>
       <div class="dataset-def-body" id="dataset-def-body">
         <div class="dd-toolbar">
-          <span class="dd-legend">
-            <span class="dd-key"><i class="dd-swatch train"></i>training pool</span>
-            <span class="dd-key"><i class="dd-swatch test"></i>frozen test</span>
-            <span class="dd-key"><i class="dd-swatch derived"></i>augmented</span>
-            <span class="dd-key"><i class="dd-swatch leak"></i>same bucket in both</span>
+          {# The legend doubles as the row filter: each key is a toggle that
+             narrows the table to rules of that kind. None selected = show all;
+             several selected = show the union. #}
+          <span class="dd-legend" id="dataset-def-legend" data-tip="Click a key to show only those rules. Click again to clear it; several keys show the union.">
+            <button type="button" class="dd-key" data-dd-filter="train"><i class="dd-swatch train"></i>training pool <span class="dd-key-count"></span></button>
+            <button type="button" class="dd-key" data-dd-filter="test"><i class="dd-swatch test"></i>frozen test <span class="dd-key-count"></span></button>
+            <button type="button" class="dd-key" data-dd-filter="derived"><i class="dd-swatch derived"></i>augmented <span class="dd-key-count"></span></button>
+            <button type="button" class="dd-key" data-dd-filter="leak"><i class="dd-swatch leak"></i>same bucket in both <span class="dd-key-count"></span></button>
           </span>
           <input type="search" id="source-rules-search" class="rule-search" placeholder="filter rules… (class, label, tags, overlay)" data-tip="Filter source rules by displayed text: class, label, project, density, tags, bucket, mic, or overlay class.">
+          <button type="button" class="dd-class-filter-clear" id="source-rules-class-clear" hidden>All classes</button>
           <button type="button" class="section-action danger" id="source-rules-clear" data-tip="Remove every source rule from all classes.">Clear all</button>
         </div>
         <div class="dd-table-wrap" id="library-rule-table-body">
@@ -7261,7 +7019,7 @@ button.btn-sm:disabled { opacity: 0.55; cursor: default; }
         {% if interactive %}
         <div class="library-section class-workbench">
           <h3>
-            <span class="tip" data-tip="The model's output classes ([dataset] target_classes in config.toml). Saved into dataset presets, so switching preset can switch the class space too.">Target Classes</span>
+            <span class="tip" data-tip="The model's output classes ([dataset] target_classes in config.toml). They belong to the dataset definition: assigning a bucket to a class adds that class here, and loading a dataset preset replaces this list with that dataset's classes.">Target Classes</span>
             <span class="section-head"><span class="section-status" id="tc-status"></span></span>
           </h3>
           <div id="tc-panel" class="tc-panel"></div>
@@ -7353,7 +7111,7 @@ button.btn-sm:disabled { opacity: 0.55; cursor: default; }
       <div class="library-designer">
         <div class="library-section compose-section">
           <h3>
-            <span class="tip" data-tip="Rebuild train.csv/test.csv from the current source rules and bucket assignments. Val is split live at train time (Train tab) — not composed here.">Compose &amp; Test Set</span>
+            <span class="tip" data-tip="Two actions, and only these two write the dataset. Compose applies the definition above to train.csv/test.csv. Build frozen test set is the only thing that changes which clips the automatic holdout contains — Compose reuses it unchanged. Validation is neither: it is split live at train time from train.csv (Train tab).">Compose &amp; Test Set</span>
             <span class="section-head"><span class="section-status" id="compose-views-status"></span></span>
           </h3>
           {# One line: the single write action, then the read-only per-view
@@ -7362,7 +7120,7 @@ button.btn-sm:disabled { opacity: 0.55; cursor: default; }
              disk (augmentation ran, clips deleted) without a recompose. #}
           <div class="compose-bar">
             <button type="button" class="compose-run" id="compose-dataset-btn"
-                    data-tip="Rebuild train.csv and test.csv from the current source rules, then re-read every view they affect. Turns amber when the dataset definition has changed since the last compose.">
+                    data-tip="Rebuild train.csv and test.csv from the current dataset definition, then re-read every view they affect. An existing automatic holdout is re-applied as-is, never resized. Turns amber when the definition has changed since the last compose.">
               <span class="compose-icon" aria-hidden="true">⚙</span>
               <span class="compose-label">Compose</span>
             </button>
@@ -7378,20 +7136,17 @@ button.btn-sm:disabled { opacity: 0.55; cursor: default; }
             </span>
           </div>
           <div class="compose-hint" id="compose-stale-hint" hidden></div>
-          <div class="aug-subsection">
-            <h4><span class="tip" data-tip="Two ways to freeze a test set: assign buckets role=frozen test above, or hold out an automatic slice here. Either way, only Compose writes it to test.csv.">Test set</span></h4>
-            <div class="field-hint" id="library-testset-summary">loading…</div>
-            <div class="notice" id="library-testset-stale-notice" hidden></div>
+          <div class="aug-subsection testset-panel">
+            <h4><span class="tip" data-tip="An automatic frozen test set holds back a random percentage of the training pool, spread across every class. It is off by default. Buckets you assign destination = frozen test in the Dataset Definition are always held out as well, whether or not this is on.">Test set</span></h4>
             <div class="library-filters train-split-config">
-              <label class="check" id="library-splittest-enabled-field" data-tip="Hold out a deterministic, session-grouped slice of the training pool as a frozen test set, on top of any buckets assigned above. Nothing is held out until you build it below.">
-                <input id="library-splittest-enabled" type="checkbox"> automatic test set</label>
-              <label id="library-splittest-fraction-field" data-tip="Size of the automatic slice, as a fraction of the training pool.">test %
-                <input id="library-splittest-fraction-pct" type="number" step="1" min="0" max="89"></label>
-              <button type="button" id="library-testset-save">Save</button>
-              <span class="section-status" id="library-testset-save-status"></span>
+              <label class="check" id="library-splittest-enabled-field" data-tip="Off: the frozen test contains only the buckets assigned to it. On: a random percentage of the training pool is held out too, drawn across all classes and kept whole per recording session so no session appears on both sides.">
+                <input id="library-splittest-enabled" type="checkbox"> automatic frozen test set</label>
+              <label id="library-splittest-fraction-field" data-tip="How much of the training pool to hold out, as a percentage. Applied per class, so every class is represented.">
+                <input id="library-splittest-fraction-pct" type="number" step="1" min="1" max="89"> %
+              </label>
             </div>
             <div class="recipe-actions">
-              <button type="button" id="library-testset-build" data-tip="Carve the automatic bucket-aware randomized test set now, from the current training pool. Explicit and one-off — later dataset edits reuse it unchanged until you build it again.">Build frozen test set</button>
+              <button type="button" class="primary" id="library-testset-build">Build frozen test set</button>
               <span class="library-count" id="library-testset-build-status"></span>
             </div>
           </div>
@@ -7616,9 +7371,9 @@ button.btn-sm:disabled { opacity: 0.55; cursor: default; }
              Without this the card only says correct/review and you have to open
              the probability box to learn WHY it was wrong. #}
           <div class="frozen-verdict">
-            <span class="fv-true">{{ c.true_class }}</span>
+            <span class="fv-true" data-class-identity="{{ c.true_class|e }}">{{ c.true_class }}</span>
             <span class="fv-arrow">→</span>
-            <span class="fv-pred {% if not c.has_prediction %}unscored{% elif c.correct %}ok{% else %}bad{% endif %}">{{ c.predicted_class }}</span>
+            <span class="fv-pred {% if not c.has_prediction %}unscored{% elif c.correct %}ok{% else %}bad{% endif %}" data-class-identity="{{ c.predicted_class|e }}">{{ c.predicted_class }}</span>
             {% if c.predicted_confidence is not none %}
             <span class="fv-conf">{{ '%.0f'|format(c.predicted_confidence * 100) }}%</span>
             {% endif %}
@@ -7672,7 +7427,7 @@ button.btn-sm:disabled { opacity: 0.55; cursor: default; }
             {% if origins %}
               {% for origin, origin_count in origins.items() | sort %}
               <tr>
-                <td><b>{{ cls }}</b><span class="summary-class-total">{{ summary_dict.get(cls, {}).get('count', clips | length) }} total</span></td>
+                <td><span class="class-identity-badge" data-class-identity="{{ cls|e }}"><i aria-hidden="true"></i>{{ cls }}</span><span class="summary-class-total">{{ summary_dict.get(cls, {}).get('count', clips | length) }} total</span></td>
                 <td>{{ origin }}</td>
                 <td class="num">{{ origin_count if origin_count is not none else "—" }}</td>
                 {% if interactive %}<td><input type="checkbox" class="summary-subbucket-check" data-summary-tab="{{ tab_type }}" data-summary-class="{{ cls|e }}" data-summary-origin="{{ origin|e }}" checked aria-label="Preview {{ origin }} under {{ cls }}"></td>{% endif %}
@@ -7680,7 +7435,7 @@ button.btn-sm:disabled { opacity: 0.55; cursor: default; }
               {% endfor %}
             {% else %}
               <tr>
-                <td><b>{{ cls }}</b><span class="summary-class-total">{{ summary_dict.get(cls, {}).get('count', clips | length) }} total</span></td>
+                <td><span class="class-identity-badge" data-class-identity="{{ cls|e }}"><i aria-hidden="true"></i>{{ cls }}</span><span class="summary-class-total">{{ summary_dict.get(cls, {}).get('count', clips | length) }} total</span></td>
                 <td colspan="{{ 2 if interactive else 2 }}">no source subbuckets</td>
                 {% if interactive %}<td>—</td>{% endif %}
               </tr>
@@ -7690,6 +7445,22 @@ button.btn-sm:disabled { opacity: 0.55; cursor: default; }
       </table>
     </div>
   </details>
+{%- endmacro %}
+
+{% macro subgroup_filter(tab_type, cls) %}
+  {%- if interactive -%}
+  {# First paint renders the shell only; populateSubgroupFilter() fills the
+     <optgroup>s from CLIPS_DATA.panel_subgroups at boot and after every
+     rebuildReviewTab() teardown. Deliberately not duplicated in Jinja — one
+     implementation of the axis ordering means the two can never diverge. #}
+  <label class="subgroup-filter-label" onclick="event.stopPropagation();">subgroup:
+    <select class="subgroup-filter" data-tab="{{ tab_type }}" data-class="{{ cls | e }}"
+            data-tip="List one part of this class's source clips: a single recording session, recording type, folder or date.&#10;&#10;Only groupings that actually subdivide the clips are offered — an axis that gives one group per clip is an id, not a grouping, and is left out.&#10;&#10;The list covers **every** clip, not only the previewed ones, and follows the subbuckets ticked in the Summary panel above."
+            onclick="event.stopPropagation();" disabled>
+      <option value="">all subgroups</option>
+    </select>
+  </label>
+  {%- endif -%}
 {%- endmacro %}
 
 {# ---- Dataset tab ----------------------------------------------------- #}
@@ -7731,35 +7502,14 @@ button.btn-sm:disabled { opacity: 0.55; cursor: default; }
   {{ dataset_summary_panel(panels, 'Dataset', class_summary, panel_origin_counts.get('dataset', dataset_origin_counts), 'dataset') }}
   {% endif %}
   {% for cls, clips in panels.items() %}
-  <details class="class-block" data-class="{{ cls | e }}">
+  <details class="class-block" data-class="{{ cls | e }}" data-class-identity="{{ cls | e }}">
     <summary>
       {% if interactive %}
       <input class="class-select-all" type="checkbox" aria-label="Select all in class">
       {% endif %}
-      {{ cls }}
+      <span class="class-block-name">{{ cls }}</span>
       <span class="count" data-label="clip">{{ clips|length }} clip{{ 's' if clips|length != 1 else '' }}</span>
-      {% if interactive %}
-      {# Server first-paint of the subbucket dropdown. The JS classBlockHtml()
-         renders the same control on every rebuildReviewTab() teardown, and
-         populateOriginFilter() refreshes the options — keep all three in sync. #}
-      <label class="origin-filter-label" onclick="event.stopPropagation();">view:
-        <select class="origin-filter" data-class="{{ cls | e }}" data-tip="Show only one source subbucket (the original library label / folder) assigned to this target class. 'all' shows every selected sound." onclick="event.stopPropagation();">
-          {% set origins = dataset_origin_counts.get(cls, {}) %}
-          {% if not origins %}
-            {% set ns = namespace(origins=[]) %}
-            {% for c in clips %}
-              {% set oc = c.origin_class or c.library_label or c.label %}
-              {% if oc and oc not in ns.origins %}{% set ns.origins = ns.origins + [oc] %}{% endif %}
-            {% endfor %}
-            {% set origins = dict.fromkeys(ns.origins) %}
-          {% endif %}
-          <option value="__all__">all subbuckets ({{ origins | length }})</option>
-          {% for o in origins | sort %}
-          <option value="{{ o | e }}">{{ o }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      {% endif %}
+      {{ subgroup_filter('dataset', cls) }}
     </summary>
     {% if class_images.get(cls) %}
     <a href="{{ class_images[cls] }}" target="_blank" rel="noopener">
@@ -7833,13 +7583,14 @@ button.btn-sm:disabled { opacity: 0.55; cursor: default; }
     {{ aug_total }} assigned augmented sample{{ 's' if aug_total != 1 else '' }}.
   </div>
   {% for cls, clips in aug_panels.items() %}
-  <details class="class-block" data-class="{{ cls | e }}">
+  <details class="class-block" data-class="{{ cls | e }}" data-class-identity="{{ cls | e }}">
     <summary>
       {% if interactive %}
       <input class="class-select-all" type="checkbox" aria-label="Select all in class">
       {% endif %}
-      {{ cls }}
+      <span class="class-block-name">{{ cls }}</span>
       <span class="count" data-label="augmented clip">{{ clips|length }} augmented clip{{ 's' if clips|length != 1 else '' }}</span>
+      {{ subgroup_filter('augmented', cls) }}
     </summary>
     {% if class_images.get(cls) %}
     <a href="{{ class_images[cls] }}" target="_blank" rel="noopener">
@@ -8043,13 +7794,14 @@ button.btn-sm:disabled { opacity: 0.55; cursor: default; }
     </span>
   </div>
   {% for cls, clips in frozen_panels.items() %}
-  <details class="class-block" data-class="{{ cls | e }}">
+  <details class="class-block" data-class="{{ cls | e }}" data-class-identity="{{ cls | e }}">
     <summary>
       {% if interactive %}
       <input class="class-select-all" type="checkbox" aria-label="Select all in class">
       {% endif %}
-      {{ cls }}
+      <span class="class-block-name">{{ cls }}</span>
       <span class="count" data-label="test clip">{{ clips|length }} test clip{{ 's' if clips|length != 1 else '' }}</span>
+      {{ subgroup_filter('frozen', cls) }}
     </summary>
     {% if class_images.get(cls) %}
     <a href="{{ class_images[cls] }}" target="_blank" rel="noopener">
@@ -8135,12 +7887,12 @@ button.btn-sm:disabled { opacity: 0.55; cursor: default; }
   <div class="detection-insight" id="mined-insight" hidden></div>
   {% endif %}
   {% for cls, clips in mined_panels.items() %}
-  <details class="class-block" data-class="{{ cls | e }}">
+  <details class="class-block" data-class="{{ cls | e }}" data-class-identity="{{ cls | e }}">
     <summary>
       {% if interactive %}
       <input class="class-select-all" type="checkbox" aria-label="Select all in class">
       {% endif %}
-      {{ cls }}
+      <span class="class-block-name">{{ cls }}</span>
       <span class="count" data-label="mined clip">{{ clips|length }} mined clip{{ 's' if clips|length != 1 else '' }}</span>
     </summary>
     <div class="clips" data-class-clips="{{ cls | e }}">
@@ -8183,7 +7935,7 @@ button.btn-sm:disabled { opacity: 0.55; cursor: default; }
       <div class="aug-subsection" id="model-parent-picker" style="display:none">
         <h4>Parent run</h4>
         <div class="library-filters">
-          <label data-tip="Any completed run with the exact same encoder architecture. The encoder always transfers. The classifier head transfers per class name: a class both runs share starts from the parent's fitted row (its solution already lives in this exact embedding), and a genuinely new class starts random. Set training.transfer_head_init = random for a cold head.">parent run
+          <label data-tip="Any completed run with the exact same encoder architecture. The encoder always transfers whole; what each classifier row starts from is set in the Classifier rows table below.">parent run
             <select id="model-parent-run"><option value="">— select a run —</option></select>
           </label>
           <button type="button" class="btn-sm" id="model-parent-refresh">Refresh runs</button>
@@ -8192,6 +7944,12 @@ button.btn-sm:disabled { opacity: 0.55; cursor: default; }
           <input id="model-parent-adopt" type="checkbox" checked> adopt parent feature contract
         </label>
         <div class="section-status" id="model-parent-status">Pick the run whose encoder should seed this one.</div>
+        <div class="head-map-block" id="model-head-map-block" hidden>
+          <h4><span class="tip" data-tip="The encoder always transfers whole. This decides what each output row of the classifier starts from. A row that starts from a fitted parent row begins near its solution; a row that starts random has to be re-derived from your data at the fine-tune learning rate, which is the usual reason a transfer run converges to nothing.">Classifier rows</span></h4>
+          <p class="field-hint">A class the parent also had is reused automatically. For the rest, pick the parent class that models the same sound — the vessel classes of a venue run all start from the pretraining run's general clink row.</p>
+          <div class="head-map-table" id="model-head-map"></div>
+          <div class="field-hint" id="model-head-map-note"></div>
+        </div>
       </div>
       <div id="model-source-card" class="model-source-card">loading model catalog…</div>
       <div class="aug-subsection model-constructor-section" id="model-constructor-section">
@@ -8265,10 +8023,10 @@ button.btn-sm:disabled { opacity: 0.55; cursor: default; }
               <option value="ced">CED (16 kHz dB-mel)</option>
             </select>
           </label>
-          <label data-tip="How magnitudes are compressed. Mel supports its AudioSet fast-normalized log contract or PCEN. Linear supports natural-log power, raw power, legacy dB, or PCEN. Dataset-fitted scaling (next control) can replace the fast-norm affine or rescale log/PCEN values.">normalization
-            <select id="feature-normalization"></select>
+          <label data-tip="STAGE 1 — feature generation. What turns STFT power into the numbers the network sees. It decides what the values MEAN, not what range they arrive in.&#10;&#10;log — natural log, ln(power + 1e-5). The usual choice; makes the huge dynamic range of audio additive.&#10;dB — 10·log10(power). The same curve on a decibel scale.&#10;raw power — no compression; loud partials dominate everything else.&#10;PCEN — a per-band automatic gain control. It both compresses and adapts to the running background level, so it is the one option that self-normalizes over time.&#10;&#10;The same four choices apply to mel and to linear: the basis and the compression are independent.">compression
+            <select id="feature-compression"></select>
           </label>
-          <label data-tip="Dataset-fitted scaling applied after the log/PCEN compression. Constants are fitted on the composed TRAINING split only (validation excluded), saved with the project, frozen into the model bundle, and reused identically in evaluation and deployment. z-score = (x − mean)/std; min-max = robust p1/p99 → [0, 1] with clipping. Per-band fits one pair per mel band / linear bin (the standard SED practice); global fits one pair overall. Fitted values are part of the model's frontend contract.">dataset scaling
+          <label data-tip="STAGE 2 — value normalization. Maps the compressed values into the numeric range the network trains on. It never changes what the values mean, only their scale and offset.&#10;&#10;z-score — (x − mean)/std.&#10;min–max — clip((x − lo)/(hi − lo), 0, 1).&#10;&#10;Per band fits one pair per mel band / linear bin (the standard SED practice at high band counts, because band energies differ by orders of magnitude); global fits one pair overall.&#10;&#10;Constants come from one of two places. FITTED constants are measured on the composed TRAINING split only (validation excluded), saved with the project and frozen into the bundle. FIXED constants are pinned by a checkpoint contract — EfficientAT's (x + 4.5)/5 and the legacy [-20, 60] dB image map are both fixed specs, not the absence of normalization.">value normalization
             <select id="feature-scaling"></select>
           </label>
           <label data-feature-group="linear" data-tip="STFT engine for the linear feature. librosa = the standard frontend (pre-emphasis, Hann window, centered frames). scipy = the legacy soundDetection spectrogram (scipy.signal.spectrogram: Tukey 0.25 window, per-segment detrend, no pre-emphasis/centering, PSD scaling at int16 full-scale) — any n_fft is allowed, e.g. the legacy 190.">STFT engine
@@ -8285,10 +8043,10 @@ button.btn-sm:disabled { opacity: 0.55; cursor: default; }
           </label>
         </div>
         <div class="library-filters" data-feature-group="db">
-          <label data-tip="Lower edge of the legacy dB normalization: this power (10·log10, int16 full-scale with the scipy engine) maps to 0. Legacy system: -20 dB.">db min (dB)
+          <label data-tip="Lower edge of the fixed min–max window, in the compressed domain's own units (dB here, at int16 full-scale with the scipy engine). This value maps to 0. Legacy system: -20 dB.">fixed lo (dB)
             <input id="feature-db_min" type="number" step="1">
           </label>
-          <label data-tip="Upper edge of the legacy dB normalization: this power maps to 1 (values are clipped to 0–1). Legacy system: 60 dB.">db max (dB)
+          <label data-tip="Upper edge of the fixed min–max window. This value maps to 1; anything outside [lo, hi] is clipped. Legacy system: 60 dB.">fixed hi (dB)
             <input id="feature-db_max" type="number" step="1">
           </label>
         </div>
@@ -8345,24 +8103,26 @@ button.btn-sm:disabled { opacity: 0.55; cursor: default; }
             <input id="feature-pcen_eps" type="number" step="0.000001" min="0">
           </label>
         </div>
-        <div class="library-filters" data-feature-group="std">
-          <label data-scaling-scalar="1" data-tip="Global training-set mean subtracted from raw natural-log mel or linear power. This fitted value is part of the checkpoint contract.">fitted mean
-            <input id="feature-standardize_mean" type="number" step="0.1">
-          </label>
-          <label data-scaling-scalar="1" data-tip="Global training-set standard deviation (must be > 0). Training, evaluation and deployment must use this exact value.">fitted std
-            <input id="feature-standardize_std" type="number" step="0.1" min="0.0001">
-          </label>
-          <span class="field-hint" id="feature-scaling-summary"></span>
-          <label data-tip="Fit the selected scaling with Welford accumulation over at most 2,048 training-only clips, balanced across classes and source groups. Validation clips are excluded; the fit reports a normalization health check.">&nbsp;
-            <button type="button" id="feature-standardize-estimate">Estimate from dataset</button>
-          </label>
+        <div class="scaling-state" data-feature-group="std">
+          <div class="scaling-state-head">
+            <span class="scaling-state-title tip" data-tip="The constants the normalization stage applies. Fitted ones are measured on the composed TRAINING split only; fixed ones come with a checkpoint. Either way they are saved with the project, frozen into the model bundle, and replayed unchanged in evaluation, threshold calibration and live inference — which is why changing them later invalidates a trained model.">Normalization constants</span>
+            <span class="scaling-state-pill" id="feature-scaling-pill">not fitted</span>
+          </div>
+          <div class="scaling-state-body" id="feature-scaling-summary">not fitted yet</div>
+          <div class="recipe-actions">
+            <button type="button" id="feature-standardize-estimate" data-tip="Fit the selected scaling with Welford accumulation over the training split, balanced across classes and source groups. Validation clips never contribute.">Estimate from dataset</button>
+            <button type="button" id="feature-scaling-drift" data-tip="Score this project's clips against the constants currently active, without changing them. This is the question that matters for a fine-tune: its scaling is inherited from the parent on purpose, so what you need to know is whether the new material still lands inside it.">Check fit on this dataset</button>
+            <span class="field-hint" id="feature-standardize-status"></span>
+          </div>
+          <div class="scaling-state-drift" id="feature-scaling-drift-out" hidden></div>
+          <input id="feature-standardize_mean" type="hidden" value="0">
+          <input id="feature-standardize_std" type="hidden" value="1">
           <input id="feature-scaling_stats" type="hidden" value="">
           <input id="feature-standardize_stats_resolved" type="hidden" value="true">
           <input id="feature-standardize_stats_dataset_sha256" type="hidden" value="">
           <input id="feature-standardize_stats_split_seed" type="hidden" value="0">
           <input id="feature-standardize_stats_val_fraction" type="hidden" value="0">
           <input id="feature-standardize_stats_clips" type="hidden" value="0">
-          <span class="field-hint" id="feature-standardize-status"></span>
         </div>
         <div class="recipe-actions">
           <button type="button" class="primary" id="feature-training-apply">Use this feature for project training</button>
@@ -8502,6 +8262,7 @@ button.btn-sm:disabled { opacity: 0.55; cursor: default; }
           </span>
         </h3>
         <div class="aug-subsection">
+          <div class="train-stage-line" id="train-stage-line" hidden></div>
           <div class="field-hint" style="margin-bottom:0.5rem;">
             What the current feature, model and training-schedule choices cost for
             detecting glass clinks — and, when there is more than one target class,
@@ -8621,9 +8382,9 @@ button.btn-sm:disabled { opacity: 0.55; cursor: default; }
           <div class="library-filters compact">
             <label data-tip="Head-only epochs before the selected encoder stages unfreeze. 0 = automatic. See the guide below for what this costs and why it exists.">encoder unfreeze after
               <input id="train-fine_tune_warmup_epochs" type="number" step="1" min="0"></label>
-            <label id="train-transfer_head_init-field" data-tip="What the classifier head starts from when initializing from a previous run. Shared classes reuses the parent's fitted weight row for every class name both runs have — those rows were fitted against the exact embedding this run starts from, so the class begins near its solution instead of being re-derived. New classes always start random. Only applies to 'from previous run' initialization.">classifier head
+            <label id="train-transfer_head_init-field" data-tip="Master switch for the classifier warm start. Reuse takes each row from the parent class named in the Model tab's Classifier rows table; random ignores that table entirely and starts every row cold, which is only useful as a deliberate baseline.">classifier head
               <select id="train-transfer_head_init">
-                <option value="matching_classes">reuse parent rows for shared classes</option>
+                <option value="matching_classes">reuse parent rows (per Model tab)</option>
                 <option value="random">start random (cold head)</option>
               </select></label>
           </div>
@@ -8864,14 +8625,14 @@ button.btn-sm:disabled { opacity: 0.55; cursor: default; }
           <div class="train-recipe-card train-estimate-result" id="train-estimate-result" hidden></div>
         </div>
         <div class="aug-subsection train-launch-panel">
-          <div class="field-hint">Train settings are staged while you edit. <b>Start training</b> saves every value here to this project and freezes it into the new run; you never need to return to the Model tab to confirm hyperparameters. A changed seed or validation split automatically refits standardized-linear train-only statistics before launch.</div>
+          <div class="field-hint">Train settings are staged while you edit. <b>Start training</b> saves every value here to this project and freezes it into the new run; you never need to return to the Model tab to confirm hyperparameters. A changed seed or validation split automatically refits the dataset scaling constants on the new train split before launch.</div>
           <div class="train-launch-row">
             <label class="train-launch-description" data-tip="Free-form note stored in the model manifest and used as a slug in the model id.">description
               <input id="train-description" type="text" placeholder="e.g. wide-snr mn20 trial"></label>
             <label class="train-launch-replicates" data-tip="How many times to train THIS configuration, changing nothing but the random seed.&#10;&#10;*Why:* one run is a single draw. Two architectures whose frozen-test scores differ by two points may be identical models sampled twice — with n=1 there is no spread to compare that gap against. Replicates give you the noise floor: the runs table shows mean ±sd across the group, and a difference smaller than the sd is not a result.&#10;&#10;Seeds are consecutive from the configured seed, so replicate 1 is exactly the run you would have got anyway. Each replicate re-splits train/val on its own seed and re-fits feature scaling for that split. Cost is linear — 5 replicates is 5 full trainings, run back to back.">replicates
               <input id="train-replicates" type="number" min="1" max="20" step="1" value="1"></label>
             <div class="train-launch-actions">
-              <button type="button" class="primary" id="train-launch" data-tip="Start saves every Train-tab value into this project and freezes it into the run. When a standardized linear feature needs fresh train-only statistics after a seed or validation-split change, Start refits them before launching.">Start training (save settings)</button>
+              <button type="button" class="primary" id="train-launch" data-tip="Start saves every Train-tab value into this project and freezes it into the run. When the dataset scaling constants are stale after a seed or validation-split change, Start refits them on the new train split before launching.">Start training (save settings)</button>
               <span class="train-reg-pill" id="train-reg-pill" hidden></span>
               <span class="library-count" id="train-launch-status"></span>
             </div>
@@ -9306,6 +9067,8 @@ button.btn-sm:disabled { opacity: 0.55; cursor: default; }
             </div>
             <h4>Trigger targets</h4>
             <div class="infer-targets" id="train-infer-targets"></div>
+            <h4 data-tip="Role decides what a class does at decision time: target fires, suppressor competes for the window but never fires (a hard-negative class), negative never competes and only vetoes the window (like _negative). Mining is independent of role — any class, including negative/suppressor ones, can be captured for review at its own confidence.">Class roles &amp; mining</h4>
+            <div class="infer-class-roles" id="train-class-roles"></div>
             <div class="recipe-actions">
               <button type="button" class="primary" id="train-infer-start">Start inference</button>
               <button type="button" class="danger" id="train-infer-stop" disabled>Stop</button>
@@ -9412,6 +9175,7 @@ button.btn-sm:disabled { opacity: 0.55; cursor: default; }
   "panels": {{ panels_json | safe }},
   "dataset_origin_counts": {{ dataset_origin_counts_json | safe }},
   "panel_origin_counts": {{ panel_origin_counts_json | safe }},
+  "panel_subgroups": {{ panel_subgroups_json | safe }},
   "aug_panels": {{ aug_panels_json | safe }},
   "frozen_panels": {{ frozen_panels_json | safe }},
   "frozen_context": {{ frozen_context_json | safe }},
@@ -9431,7 +9195,7 @@ const projectId = {{ project_id | tojson }};
 const MODEL_CLASSES = {{ model_classes | tojson }};
 // Config-default augmentation knobs (AugmentationCfg) — form fallbacks.
 const AUG_DEFAULTS = {{ aug_defaults_json | safe }};
-let CLIPS_DATA = { panels: {}, dataset_origin_counts: {}, panel_origin_counts: {}, aug_panels: {}, frozen_panels: {}, frozen_context: {}, mined_panels: {}, library_items: [], pretraining_panels: {}, pretraining_counts: {}, class_summary: {}, training_selection_summary: {}, model_classes: [] };
+let CLIPS_DATA = { panels: {}, dataset_origin_counts: {}, panel_origin_counts: {}, panel_subgroups: {}, aug_panels: {}, frozen_panels: {}, frozen_context: {}, mined_panels: {}, library_items: [], pretraining_panels: {}, pretraining_counts: {}, class_summary: {}, training_selection_summary: {}, model_classes: [] };
 // True per-class counts per tab (dataset/augmented/frozen/mined), independent
 // of the display card cap, so headers/tab counts show the real dataset size.
 let panelTotals = {};
@@ -9641,38 +9405,79 @@ function libraryTimeTitle(row) {
     return parts.join("\\n");
 }
 
-function stableHue(text) {
-    let hash = 0;
-    const value = String(text || "");
-    for (let i = 0; i < value.length; i++) hash = ((hash * 31) + value.charCodeAt(i)) >>> 0;
-    return hash % 360;
+// One project dataset owns this mapping.  It is allocated server-side and
+// persisted in dataset_selection.json / dataset presets, so two class names
+// can never collide just because their hashes happen to match.  The hue set is
+// deliberately categorical and colour-vision-safe; text, shape and grouping
+// carry the same meaning so hue is never the only cue.
+const CLASS_TINT_PALETTE = {
+    slate:   { h: 0,   s: 0,  l: 57, b: 45 }, // _negative: achromatic, not a target event
+    blue:    { h: 213, s: 76, l: 65, b: 40 },
+    orange:  { h: 17,  s: 76, l: 65, b: 40 },
+    teal:    { h: 159, s: 76, l: 65, b: 40 },
+    violet:  { h: 249, s: 76, l: 65, b: 40 },
+    gold:    { h: 41,  s: 76, l: 65, b: 40 },
+    magenta: { h: 337, s: 76, l: 65, b: 40 },
+    green:   { h: 120, s: 76, l: 65, b: 40 },
+    coral:   { h: 0,   s: 76, l: 65, b: 40 },
+};
+const CLASS_TINT_TOKENS = ["blue", "orange", "teal", "violet", "gold", "magenta", "green", "coral"];
+let CLASS_VISUALS = {};
+
+function classVisualOrder(extraClasses) {
+    const ordered = [];
+    const seen = new Set();
+    const add = value => {
+        const name = String(value || "").trim();
+        if (name && !seen.has(name)) { seen.add(name); ordered.push(name); }
+    };
+    (typeof MODEL_CLASSES !== "undefined" ? MODEL_CLASSES : []).forEach(add);
+    (extraClasses || []).forEach(add);
+    return ordered;
 }
 
-const CLASS_TINT_PALETTE = [
-    { h: 210, s: 58, l: 93, b: 47 },
-    { h: 150, s: 46, l: 91, b: 42 },
-    { h: 42,  s: 56, l: 91, b: 46 },
-    { h: 270, s: 42, l: 93, b: 52 },
-    { h: 184, s: 48, l: 90, b: 40 },
-    { h: 16,  s: 48, l: 92, b: 49 },
-    { h: 226, s: 48, l: 92, b: 49 },
-    { h: 96,  s: 40, l: 90, b: 39 },
-    { h: 318, s: 36, l: 93, b: 50 },
-    { h: 52,  s: 46, l: 89, b: 43 },
-    { h: 198, s: 44, l: 91, b: 42 },
-    { h: 6,   s: 38, l: 93, b: 48 },
-];
+function resolveClassVisuals(rawVisuals, extraClasses) {
+    const raw = rawVisuals && typeof rawVisuals === "object" ? rawVisuals : {};
+    const resolved = {};
+    const ordered = classVisualOrder(extraClasses);
+    const used = new Set();
+    if (ordered.includes("_negative")) resolved._negative = "slate";
+    ordered.forEach(name => {
+        if (name === "_negative") return;
+        const token = raw[name];
+        if (CLASS_TINT_TOKENS.includes(token) && !used.has(token)) {
+            resolved[name] = token;
+            used.add(token);
+        }
+    });
+    const free = CLASS_TINT_TOKENS.filter(token => !used.has(token));
+    let overflow = 0;
+    ordered.forEach(name => {
+        if (resolved[name]) return;
+        resolved[name] = free.length
+            ? free.shift()
+            : CLASS_TINT_TOKENS[overflow++ % CLASS_TINT_TOKENS.length];
+    });
+    return resolved;
+}
 
-// Stable, moderately tinted class colors. All rules for one target class share
-// the same tint; frozen-test rules use a stronger edge treatment below.
-const RULE_TINT_PALETTE = [
-    { h: 204, s: 55, l: 94, b: 48 }, { h: 162, s: 48, l: 92, b: 44 },
-    { h: 38, s: 62, l: 93, b: 48 }, { h: 274, s: 48, l: 94, b: 53 },
-    { h: 185, s: 58, l: 92, b: 43 }, { h: 14, s: 58, l: 94, b: 50 },
-    { h: 232, s: 56, l: 94, b: 51 }, { h: 92, s: 48, l: 92, b: 43 },
-    { h: 324, s: 48, l: 94, b: 53 }, { h: 52, s: 60, l: 92, b: 47 },
-    { h: 194, s: 52, l: 93, b: 44 }, { h: 348, s: 52, l: 94, b: 50 },
-];
+function setClassVisuals(rawVisuals, extraClasses) {
+    CLASS_VISUALS = resolveClassVisuals(rawVisuals, extraClasses);
+    if (typeof selectionState !== "undefined" && selectionState && rawVisuals && typeof rawVisuals === "object") {
+        selectionState.class_visuals = Object.assign({}, rawVisuals);
+    }
+    applyClassIdentityToDocument();
+}
+
+function classVisualToken(className) {
+    const name = String(className || "");
+    if (name === "_negative") return "slate";
+    if (CLASS_VISUALS[name]) return CLASS_VISUALS[name];
+    // Before /api/selection returns, preserve an intelligible first paint from
+    // configured class order. The persisted server map replaces this shortly.
+    const fallback = resolveClassVisuals({}, [name]);
+    return fallback[name] || "slate";
+}
 
 // The tint is handed over as hue components, not as a finished colour: an
 // inline colour outranks every stylesheet rule, so the theme could never
@@ -9684,13 +9489,57 @@ function classTintVars(p, bgAlpha, borderAlpha) {
 }
 
 function classTintStyle(className) {
-    const p = CLASS_TINT_PALETTE[stableHue(className) % CLASS_TINT_PALETTE.length];
-    return classTintVars(p, 0.86, 0.58);
+    const token = classVisualToken(className);
+    const p = CLASS_TINT_PALETTE[token] || CLASS_TINT_PALETTE.slate;
+    const neutral = token === "slate"
+        ? "--class-bg:var(--negative-class-bg);--class-border:var(--negative-class-border);"
+        : "";
+    return classTintVars(p, 0.86, 0.58) + neutral;
 }
 
-function ruleTintStyle(className, rule) {
-    const p = CLASS_TINT_PALETTE[stableHue(className) % CLASS_TINT_PALETTE.length];
-    return classTintVars(p, 0.92, 0.76);
+function ruleTintStyle(className) {
+    const token = classVisualToken(className);
+    const p = CLASS_TINT_PALETTE[token] || CLASS_TINT_PALETTE.slate;
+    const neutral = token === "slate"
+        ? "--class-bg:var(--negative-class-bg);--class-border:var(--negative-class-border);"
+        : "";
+    return classTintVars(p, 0.92, 0.76) + neutral;
+}
+
+function applyClassTint(element, className) {
+    if (!element) return;
+    const token = classVisualToken(className);
+    const p = CLASS_TINT_PALETTE[token] || CLASS_TINT_PALETTE.slate;
+    element.style.setProperty("--class-hue", p.h);
+    element.style.setProperty("--class-sat", `${p.s}%`);
+    element.style.setProperty("--class-lum", `${p.l}%`);
+    element.style.setProperty("--class-bd-lum", `${p.b}%`);
+    element.style.setProperty("--class-a", "0.86");
+    element.style.setProperty("--class-bd-a", "0.58");
+    if (token === "slate") {
+        element.style.setProperty("--class-bg", "var(--negative-class-bg)");
+        element.style.setProperty("--class-border", "var(--negative-class-border)");
+    } else {
+        element.style.removeProperty("--class-bg");
+        element.style.removeProperty("--class-border");
+    }
+    element.dataset.classToken = token;
+}
+
+function applyClassIdentityToDocument(root = document) {
+    if (!root || !root.querySelectorAll) return;
+    root.querySelectorAll("[data-class-identity], [data-summary-class], .class-block[data-class], [data-prob-class]")
+        .forEach(element => {
+            const className = element.dataset.classIdentity
+                || element.dataset.summaryClass || element.dataset.class || element.dataset.probClass;
+            if (className) applyClassTint(element, className);
+        });
+}
+
+function classIdentityBadgeHtml(className, extraClass = "") {
+    const name = String(className || "");
+    if (!name) return "";
+    return `<span class="class-identity-badge ${escapeHtml(extraClass)}" data-class-identity="${escapeHtml(name)}" style="${escapeHtml(classTintStyle(name))}"><i aria-hidden="true"></i>${escapeHtml(name)}</span>`;
 }
 
 function micChannels(c) {
@@ -10228,9 +10077,9 @@ function frozenVerdictHtml(c) {
     }
     const primaryState = !c.has_prediction ? "unscored" : (c.correct ? "ok" : "bad");
     return `<div class="frozen-verdict">
-        <span class="fv-true">${escapeHtml(c.true_class || "")}</span>
+        <span class="fv-true" data-class-identity="${escapeHtml(c.true_class || "")}" style="${escapeHtml(classTintStyle(c.true_class || ""))}">${escapeHtml(c.true_class || "")}</span>
         <span class="fv-arrow">→</span>
-        <span class="fv-pred ${primaryState}">${escapeHtml(c.predicted_class || "—")}</span>
+        <span class="fv-pred ${primaryState}" data-class-identity="${escapeHtml(c.predicted_class || "")}" style="${escapeHtml(classTintStyle(c.predicted_class || ""))}">${escapeHtml(c.predicted_class || "—")}</span>
         ${c.predicted_confidence != null ? `<span class="fv-conf">${pct(c.predicted_confidence)}</span>` : ""}
         ${cmpHtml}
     </div>`;
@@ -10853,9 +10702,10 @@ function renderLibraryTable() {
         const assignedClass = !assignedClasses.length ? ""
             : (hasTrain && hasTest) ? "assigned assigned-leak"
             : (hasTest ? "assigned assigned-test-only" : "assigned");
+        const classBadges = assignedClasses.map(className => classIdentityBadgeHtml(className)).join("");
         return `
         <tr data-key="${escapeHtml(row.key)}" data-index="${index}" data-render-index="${renderIndex}" class="bucket-row ${selected ? 'selected' : ''} ${assignedClass} ${isDerived ? 'derived' : ''} ${isPretraining ? 'pretraining' : ''}">
-            <td class="library-label-cell"><span class="label-wrap">${dotHtml}<span>${escapeHtml(c.label || '')}</span></span></td>
+            <td class="library-label-cell"><span class="label-wrap">${dotHtml}<span>${escapeHtml(c.label || '')}</span>${classBadges}</span></td>
             <td>${row.count}</td>
             <td>${escapeHtml(rateLabel)}</td>
             <td>${escapeHtml(lengthLabel)}</td>
@@ -10881,11 +10731,14 @@ function renderLibraryTable() {
             assignedDot = `<span class="assigned-dot" data-tip="Assigned to train for: ${escapeHtml([...group.assignedClasses].sort().join(', '))}"></span>`;
         }
         const groupUnit = group.label === "corpus" ? "class" : "bucket";
+        const groupClassBadges = [...group.assignedClasses].sort()
+            .map(className => classIdentityBadgeHtml(className)).join("");
         const header = `
         <tr class="library-group-row" data-group-label="${escapeHtml(group.label)}">
             <td colspan="11">
                 <span class="group-toggle">${isOpen ? '▾' : '▸'}</span>
                 ${assignedDot}<span class="group-label">${escapeHtml(group.label)}</span>
+                ${groupClassBadges}
                 <span class="group-stats">${group.rows.length} ${groupUnit}${group.rows.length !== 1 ? 's' : ''} · ${group.clipCount} clips</span>
                 <span class="group-selected" data-group-selected="${escapeHtml(group.label)}">${group.selectedCount ? `${group.selectedCount} selected` : ''}</span>
             </td>
@@ -11699,11 +11552,11 @@ function sourceRuleEditorHtml(className, rule) {
     ).join("");
     const split = String((rule && rule.split) || "train").toLowerCase() === "test" ? "test" : "train";
     return {
-        target: `<select data-rule-field="target_class" data-tip="Move this rule to another target class.">${targetOptions}</select>`,
-        split: `<select data-rule-field="split" class="${split === "test" ? "dd-dest-test" : ""}" data-tip="Where these clips land: the training pool, or the frozen test set held out from training.">
+        target: `<select data-rule-field="target_class" class="dd-target-select" style="${escapeHtml(classTintStyle(className))}" data-tip="Move this rule to another target class.">${targetOptions}</select>`,
+        split: `<span class="dd-destination ${split}"><span class="dd-pool-badge"><span class="dd-pool-icon" aria-hidden="true">${split === "test" ? "❄" : "↗"}</span>${split === "test" ? "Frozen" : "Training"}</span><select data-rule-field="split" class="${split === "test" ? "dd-dest-test" : ""}" data-tip="Where these clips land: the training pool, or the frozen test set held out from training.">
             <option value="train"${split === "train" ? " selected" : ""}>training pool</option>
             <option value="test"${split === "test" ? " selected" : ""}>frozen test</option>
-        </select>`,
+        </select></span>`,
     };
 }
 
@@ -11786,12 +11639,90 @@ async function updateSelectionRule(editor) {
     } finally { setRefreshHeld(false); }
 }
 
+// The Dataset Definition legend is also the table's row filter. A rule can
+// carry several kinds at once (an augmented bucket that also leaks), so the
+// filter is a set and an empty set means "show everything".
+const DD_KIND_LABELS = {
+    train: "training pool", test: "frozen test",
+    derived: "augmented", leak: "same bucket in both",
+};
+let datasetDefKindFilter = new Set();
+let datasetDefClassFilter = new Set();
+
+function sourceRuleKinds(rule, bucketSplits) {
+    const kinds = new Set();
+    const isTest = String((rule && rule.split) || "train").toLowerCase() === "test";
+    kinds.add(isTest ? "test" : "train");
+    if (rule && rule.source_bucket === "derived") kinds.add("derived");
+    const splits = bucketSplits.get(ruleComparable(rule));
+    if (splits && splits.has("train") && splits.has("test")) kinds.add("leak");
+    return kinds;
+}
+
+function sourceRuleMatchesKindFilter(kinds) {
+    if (!datasetDefKindFilter.size) return true;
+    for (const kind of datasetDefKindFilter) if (kinds.has(kind)) return true;
+    return false;
+}
+
+function sourceRuleMatchesClassFilter(className) {
+    return !datasetDefClassFilter.size || datasetDefClassFilter.has(String(className));
+}
+
+function toggleDatasetDefClassFilter(className) {
+    const name = String(className || "");
+    if (!name) return;
+    if (datasetDefClassFilter.has(name)) datasetDefClassFilter.delete(name);
+    else datasetDefClassFilter.add(name);
+    renderSelectionRules();
+}
+
+function clearDatasetDefClassFilter() {
+    if (!datasetDefClassFilter.size) return;
+    datasetDefClassFilter.clear();
+    renderSelectionRules();
+}
+
+function renderDatasetDefLegend(rows, kindsOf) {
+    const box = document.getElementById("dataset-def-legend");
+    if (!box) return;
+    const totals = { train: 0, test: 0, derived: 0, leak: 0 };
+    (rows || []).forEach(({ rule }) => kindsOf(rule).forEach(k => { totals[k] = (totals[k] || 0) + 1; }));
+    box.querySelectorAll("[data-dd-filter]").forEach(btn => {
+        const kind = btn.dataset.ddFilter;
+        const n = totals[kind] || 0;
+        const active = datasetDefKindFilter.has(kind);
+        btn.classList.toggle("active", active);
+        btn.disabled = !n && !active;
+        const count = btn.querySelector(".dd-key-count");
+        if (count) count.textContent = n ? String(n) : "";
+        btn.setAttribute("data-tip", n
+            ? `${n} rule${n === 1 ? "" : "s"}: ${DD_KIND_LABELS[kind]}. Click to ${active ? "stop filtering by this" : "show only these"}.`
+            : `No ${DD_KIND_LABELS[kind]} rules.`);
+    });
+}
+
+function toggleDatasetDefKindFilter(kind) {
+    if (datasetDefKindFilter.has(kind)) datasetDefKindFilter.delete(kind);
+    else datasetDefKindFilter.add(kind);
+    renderSelectionRules();
+}
+
+function datasetDefClassOrder(rows) {
+    const configured = classVisualOrder();
+    const known = new Set(configured);
+    const extras = [...new Set((rows || []).map(row => String(row.className || "")))]
+        .filter(name => name && !known.has(name))
+        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    return configured.concat(extras);
+}
+
 function renderSelectionRules() {
     const box = document.getElementById("library-rule-table-body");
     if (!box) return;
     const assignments = selectionState.assignments || {};
     const rows = [];
-    Object.keys(assignments).sort().forEach(className => {
+    Object.keys(assignments).forEach(className => {
         (assignments[className] || []).forEach(rule => rows.push({ className, rule }));
     });
     if (!selectionLoaded && selectionLoadError) {
@@ -11804,17 +11735,9 @@ function renderSelectionRules() {
     }
     const clearBtn = document.getElementById("source-rules-clear");
     if (clearBtn) clearBtn.disabled = false;
-    const q = (sourceRuleQuery || "").trim().toLowerCase();
-    const filtered = q
-        ? rows.filter(({ className, rule }) => sourceRuleHaystack(className, rule).includes(q))
-        : rows;
-    if (!rows.length) setSourceRulesStatus("0 rules", "");
-    else if (q) setSourceRulesStatus(`showing ${filtered.length} of ${rows.length}`, filtered.length ? "ok" : "");
-    else setSourceRulesStatus(`${rows.length} rule${rows.length === 1 ? "" : "s"}`, "ok");
 
-    // A bucket that feeds both the training pool and the frozen test set is
-    // train/test leakage — flag it on both rows rather than only in the Library
-    // table, so it is visible from the dataset definition itself.
+    // A bucket that feeds both pools is leakage. Flag both concrete rows so
+    // it remains visible inside the pool where the operator is working.
     const bucketSplits = new Map();
     rows.forEach(({ rule }) => {
         const key = ruleComparable(rule);
@@ -11822,17 +11745,40 @@ function renderSelectionRules() {
         seen.add(String(rule.split || "train").toLowerCase() === "test" ? "test" : "train");
         bucketSplits.set(key, seen);
     });
+    const kindsOf = rule => sourceRuleKinds(rule, bucketSplits);
+    const classOrder = datasetDefClassOrder(rows);
+    const validClasses = new Set(classOrder);
+    [...datasetDefClassFilter].forEach(name => {
+        if (!validClasses.has(name)) datasetDefClassFilter.delete(name);
+    });
+
+    const q = (sourceRuleQuery || "").trim().toLowerCase();
+    const filtered = rows.filter(({ className, rule }) =>
+        (!q || sourceRuleHaystack(className, rule).includes(q))
+        && sourceRuleMatchesKindFilter(kindsOf(rule))
+        && sourceRuleMatchesClassFilter(className));
+    renderDatasetDefLegend(rows, kindsOf);
+    const narrowed = q || datasetDefKindFilter.size || datasetDefClassFilter.size;
+    if (!rows.length) setSourceRulesStatus("0 rules", "");
+    else if (narrowed) setSourceRulesStatus(`showing ${filtered.length} of ${rows.length}`, filtered.length ? "ok" : "");
+    else setSourceRulesStatus(`${rows.length} rule${rows.length === 1 ? "" : "s"}`, "ok");
 
     let emptyMsg = `<div class="lib-empty">No source rules yet — filter the Library below, pick buckets, then press <b>Assign bucket to class</b>.</div>`;
-    if (rows.length && !filtered.length) emptyMsg = `<div class="lib-empty">No source rules match “${escapeHtml(q)}”.</div>`;
+    if (rows.length && !filtered.length) {
+        const bits = [];
+        if (q) bits.push(`“${escapeHtml(q)}”`);
+        if (datasetDefKindFilter.size) bits.push([...datasetDefKindFilter].map(k => DD_KIND_LABELS[k] || k).join(" or "));
+        if (datasetDefClassFilter.size) bits.push([...datasetDefClassFilter].join(" or "));
+        emptyMsg = `<div class="lib-empty">No source rules match ${bits.join(" + ")}.</div>`;
+    }
 
     // Keep the target-class chips current even when the last source rule was
     // removed. The empty-state return below used to skip this refresh and
     // leave the previous assigned-sample totals visible in the Library.
     tcRenderChips();
+    renderDatasetDefStats(rows);
     if (!filtered.length) {
         box.innerHTML = emptyMsg;
-        renderDatasetDefStats(rows);
         renderLibraryTable();
         updateMutatingBusy();
         return;
@@ -11848,8 +11794,8 @@ function renderSelectionRules() {
         const projects = rule.project_ids === "*" ? "*" : (rule.project_ids || []).join(", ");
         const tags = (rule.tags_all || []).join(", ");
         const rowClass = ["dd-rule-row", leaks ? "dd-leak" : (isTest ? "dd-test" : "dd-train"), isDerived ? "dd-derived" : ""].filter(Boolean).join(" ");
-        return `<tr class="${rowClass}" style="${escapeHtml(ruleTintStyle(className, rule))}"
-                    data-rule-editor="${escapeHtml(rule.id || "")}" data-class="${escapeHtml(className)}">
+        return `<tr class="${rowClass}" style="${escapeHtml(ruleTintStyle(className))}"
+                    data-rule-editor="${escapeHtml(rule.id || "")}" data-class="${escapeHtml(className)}" data-class-token="${escapeHtml(classVisualToken(className))}">
             <td>${editors.target}</td>
             <td>${editors.split}${leaks ? ' <span class="dd-warn" data-tip="This same bucket is also assigned to the other pool. Clips in the frozen test set that the model also trained on make its score meaningless.">leak</span>' : ""}</td>
             <td class="dd-label-cell"><b>${escapeHtml(sourceRuleAudioLabel(rule))}</b>${isDerived ? ' <span class="aug-hint" data-tip="Generated augmentation bucket.">⨯aug</span>' : ""}</td>
@@ -11864,12 +11810,34 @@ function renderSelectionRules() {
         </tr>`;
     };
 
+    const poolGroups = [
+        { split: "train", className: "dd-pool-train", icon: "↗", label: "Training pool" },
+        { split: "test", className: "dd-pool-test", icon: "❄", label: "Frozen test" },
+    ].map(pool => {
+        const poolRows = filtered.filter(({ rule }) =>
+            (String(rule && rule.split || "train").toLowerCase() === "test" ? "test" : "train") === pool.split);
+        if (!poolRows.length) return "";
+        const byClass = new Map();
+        poolRows.forEach(row => {
+            const group = byClass.get(row.className) || [];
+            group.push(row);
+            byClass.set(row.className, group);
+        });
+        const classGroups = classOrder.filter(name => byClass.has(name)).map(className => {
+            const classRows = byClass.get(className) || [];
+            const clips = classRows.reduce((total, row) => total + Number(row.rule.count || 0), 0);
+            return `<tr class="dd-class-heading" data-class-token="${escapeHtml(classVisualToken(className))}" style="${escapeHtml(classTintStyle(className))}"><th colspan="10" scope="rowgroup"><span class="dd-class-band" aria-hidden="true"></span><strong>${escapeHtml(className)}</strong><span class="dd-class-meta">${classRows.length} rule${classRows.length === 1 ? "" : "s"} · ${clips.toLocaleString()} clips</span></th></tr>${classRows.map(rowHtml).join("")}`;
+        }).join("");
+        const clips = poolRows.reduce((total, row) => total + Number(row.rule.count || 0), 0);
+        const classes = byClass.size;
+        return `<tbody class="${pool.className}" data-pool="${pool.split}"><tr class="dd-pool-heading ${pool.className}"><th colspan="10" scope="rowgroup"><span class="dd-pool-badge"><span class="dd-pool-icon" aria-hidden="true">${pool.icon}</span>${pool.label}</span><span class="dd-pool-meta">${poolRows.length} rule${poolRows.length === 1 ? "" : "s"} · ${clips.toLocaleString()} clips · ${classes} class${classes === 1 ? "" : "es"}</span></th></tr>${classGroups}</tbody>`;
+    }).join("");
+
     box.innerHTML = `<table class="dd-rule-table">
         <thead><tr>
             <th>target class</th><th>destination</th><th>source label</th><th>bucket</th>
             <th>project</th><th>density</th><th>tags</th><th>kind/mic</th><th class="num">clips</th><th></th>
-        </tr></thead>
-        <tbody>${filtered.map(rowHtml).join("")}</tbody>
+        </tr></thead>${poolGroups}
     </table>`;
 
     box.querySelectorAll("[data-remove-rule]").forEach(btn => {
@@ -11881,7 +11849,6 @@ function renderSelectionRules() {
             select.addEventListener("change", () => updateSelectionRule(editor));
         });
     });
-    renderDatasetDefStats(rows);
     renderLibraryTable();
     updateMutatingBusy();
 }
@@ -11906,22 +11873,29 @@ function renderDatasetDefStats(rows) {
         const key = String(rule.split || "train").toLowerCase() === "test" ? "test" : "train";
         bucket[key] += Number(rule.count || 0);
     });
-    const orphans = [...totals.keys()].filter(cls => !classes.includes(cls));
-    const pills = [...classes, ...orphans].map(cls => {
+    // A class named by the dataset definition IS a target class — the server
+    // adopts it into config on the same request that creates the rule. Anything
+    // listed here that MODEL_CLASSES has not caught up with yet is just a stale
+    // client-side list, so it is shown as an ordinary class rather than an error.
+    const extras = [...totals.keys()].filter(cls => !classes.includes(cls)).sort((a, b) => a.localeCompare(b));
+    const pills = [...classes, ...extras].map(cls => {
         const t = totals.get(cls) || { train: 0, test: 0, rules: 0 };
         const empty = !t.rules;
-        const unknown = orphans.includes(cls);
-        const tip = unknown
-            ? `“${cls}” has source rules but is not in the project's target classes — its clips are dropped at compose time. Add the class, or move these rules.`
-            : `${t.rules} rule${t.rules === 1 ? "" : "s"} · ${t.train.toLocaleString()} training clips · ${t.test.toLocaleString()} frozen-test clips`;
-        return `<span class="dd-class-pill${empty ? " empty" : ""}" style="${escapeHtml(classTintStyle(cls))}" data-tip="${escapeHtml(tip)}">
-            <b>${escapeHtml(cls)}</b>${unknown ? ' <span class="dd-warn">not a class</span>' : ""}
+        const tip = `${t.rules} rule${t.rules === 1 ? "" : "s"} · ${t.train.toLocaleString()} training clips · ${t.test.toLocaleString()} frozen-test clips`;
+        const active = datasetDefClassFilter.has(cls);
+        return `<button type="button" class="dd-class-pill${empty ? " empty" : ""}${active ? " active" : ""}" style="${escapeHtml(classTintStyle(cls))}" data-class-token="${escapeHtml(classVisualToken(cls))}" data-dd-class-filter="${escapeHtml(cls)}" aria-pressed="${active ? "true" : "false"}" data-tip="${escapeHtml(tip)}. Click to ${active ? "show every class" : "show only this class alongside any other selected classes"}.">
+            <b>${escapeHtml(cls)}</b>
             <span class="dd-split">${t.train.toLocaleString()}${t.test ? ` + ${t.test.toLocaleString()} test` : ""}</span>
-        </span>`;
+        </button>`;
     }).join("");
     box.innerHTML = "";
     if (status) box.appendChild(status);
     box.insertAdjacentHTML("beforeend", pills || `<span class="section-status">No target classes yet.</span>`);
+    box.querySelectorAll("[data-dd-class-filter]").forEach(button => {
+        button.addEventListener("click", () => toggleDatasetDefClassFilter(button.dataset.ddClassFilter));
+    });
+    const clear = document.getElementById("source-rules-class-clear");
+    if (clear) clear.hidden = !datasetDefClassFilter.size;
 }
 
 async function clearAllSelectionRules() {
@@ -11968,6 +11942,20 @@ function applySelectionMeta(data) {
     if (!data || typeof data !== "object") return;
     if (data.compose_state && typeof data.compose_state === "object") selectionMeta.compose_state = data.compose_state;
     if (data.preset_state && typeof data.preset_state === "object") selectionMeta.preset_state = data.preset_state;
+    const selectionVisuals = data.selection && data.selection.class_visuals;
+    if (data.class_visuals || selectionVisuals) {
+        setClassVisuals(data.class_visuals || selectionVisuals,
+            Array.isArray(data.target_classes) ? data.target_classes : undefined);
+        applyLibraryTargetClassTint();
+    }
+    // Assigning a bucket to a class the project did not list yet adds it
+    // server-side, so every rule-mutating response can hand back the effective
+    // class list. Re-render only when it actually moved.
+    if (Array.isArray(data.target_classes) && data.target_classes.length
+        && typeof MODEL_CLASSES !== "undefined"
+        && data.target_classes.join(",") !== MODEL_CLASSES.join(",")) {
+        applyTargetClasses(data.target_classes, data.class_visuals || selectionVisuals);
+    }
     renderDatasetPresetBar();
     updateRecomposeFlag();
 }
@@ -12038,7 +12026,7 @@ function renderDatasetPresetBar() {
         // option itself — switching pretraining ↔ fine-tune is a class switch.
         const classDetail = p.has_classes
             ? `${classes.length} class${classes.length === 1 ? "" : "es"}: ${classes.slice(0, 3).join(", ")}${classes.length > 3 ? "…" : ""}`
-            : "rules only";
+            : "no classes";
         const detail = `${p.rule_count} rule${p.rule_count === 1 ? "" : "s"}${clips ? ` + ${clips} clips` : ""} · ${classDetail}`;
         return `<option value="${escapeHtml(p.slug)}">${escapeHtml(p.name)} · ${detail}</option>`;
     }).join("");
@@ -12114,7 +12102,9 @@ async function loadDatasetPreset() {
         // the new list into the live UI (class chips, assign dropdown,
         // MODEL_CLASSES) or every class-keyed control keeps the old space.
         const presetClasses = (data.preset || {}).classes;
-        if (Array.isArray(presetClasses) && presetClasses.length) applyTargetClasses(presetClasses);
+        if (Array.isArray(presetClasses) && presetClasses.length) {
+            applyTargetClasses(presetClasses, (data.selection || {}).class_visuals || data.class_visuals);
+        }
         if (data.selection) {
             selectionState = data.selection;
             selectionLoaded = true;
@@ -12124,7 +12114,7 @@ async function loadDatasetPreset() {
         markReviewDirty();
         const classNote = Array.isArray(presetClasses) && presetClasses.length
             ? ` · classes: ${presetClasses.join(", ")}`
-            : " · rules only (this preset carries no class list)";
+            : " · no classes (this definition assigns nothing yet)";
         flash(slug === "__new__"
             ? "new blank dataset loaded"
             : `preset “${(data.preset || {}).name || slug}” loaded${classNote} — recompose to rebuild the dataset`, "ok");
@@ -12970,12 +12960,12 @@ function classBlockHtml(tabType, className, clips) {
     const label = tabType === "augmented" ? "augmented clip" : tabType === "frozen" ? "test clip" : tabType === "mined" ? "mined clip" : "clip";
     const selectAll = isInteractive ? `<input class="class-select-all" type="checkbox" aria-label="Select all in class">` : "";
     return `
-      <details class="class-block" data-class="${escapeHtml(className)}">
+      <details class="class-block" data-class="${escapeHtml(className)}" data-class-identity="${escapeHtml(className)}" style="${escapeHtml(classTintStyle(className))}">
         <summary>
           ${selectAll}
-          ${escapeHtml(className)}
+          <span class="class-block-name">${escapeHtml(className)}</span>
           <span class="count" data-label="${label}">${clips.length} ${label}${clips.length === 1 ? "" : "s"}</span>
-          ${originFilterHtml(tabType, className, clips)}
+          ${subgroupFilterHtml(tabType, className)}
         </summary>
         <div class="clips" data-class-clips="${escapeHtml(className)}"></div>
       </details>
@@ -12993,7 +12983,7 @@ function rebuildReviewTab(tabType) {
     panel.querySelectorAll("details.class-block, .dynamic-empty").forEach(el => el.remove());
     panel.querySelectorAll(":scope > .notice").forEach(el => el.remove());
     const data = panelDataForTab(tabType);
-    const classes = Object.keys(data).sort();
+    const classes = classVisualOrder(Object.keys(data)).filter(className => Object.prototype.hasOwnProperty.call(data, className));
     if (!classes.length) {
         if (tabType === "frozen") {
             const ctx = CLIPS_DATA.frozen_context || {};
@@ -13107,9 +13097,11 @@ function removeDeletedPathsFromPanelMap(panelMap, deletedSet) {
 function removeDeletedPathsFromReviewData(deletedSet) {
     CLIPS_DATA.library_items = (CLIPS_DATA.library_items || []).filter(c => !deletedSet.has(c.path));
     removeDeletedPathsFromPanelMap(CLIPS_DATA.panels || {}, deletedSet);
-    Object.values(DATASET_ORIGIN_PAGES).forEach(byOrigin => {
-        Object.keys(byOrigin || {}).forEach(origin => {
-            byOrigin[origin] = (byOrigin[origin] || []).filter(c => !deletedSet.has(c.path));
+    Object.values(FILTER_PAGES).forEach(byClass => {
+        Object.values(byClass || {}).forEach(bySig => {
+            Object.values(bySig || {}).forEach(page => {
+                page.cards = (page.cards || []).filter(c => !deletedSet.has(c.path));
+            });
         });
     });
     removeDeletedPathsFromPanelMap(CLIPS_DATA.aug_panels || {}, deletedSet);
@@ -13208,12 +13200,13 @@ function renderProjectSummary() {
     const cards = classes.map(cls => {
         const stat = summary[cls] || { dataset: 0, augmented: 0, count: 0 };
         const raw = Number(stat.dataset || 0), augmented = Number(stat.augmented || 0);
-        return `<div class="card" data-summary-class="${escapeHtml(cls)}">` +
+        return `<div class="card" data-summary-class="${escapeHtml(cls)}" data-class-identity="${escapeHtml(cls)}" style="${escapeHtml(classTintStyle(cls))}">` +
             `<div style="color: var(--tx-muted); font-size: 0.8rem; font-weight: 600; text-transform: uppercase;">${escapeHtml(cls)}</div>` +
             `<div style="font-size: 1.5rem; font-weight: 700; margin-top: 4px;">${Number(stat.count || 0)} train clips</div>` +
             `<div class="summary-breakdown">${raw.toLocaleString()} Dataset + ${augmented.toLocaleString()} Augmented</div></div>`;
     }).join("");
     wrap.innerHTML = (project ? project.outerHTML : "") + cards;
+    applyClassIdentityToDocument(wrap);
 }
 
 // Each clips tab gets one compact source-subbucket summary. The unchecked set
@@ -13291,7 +13284,7 @@ function renderClipTabSummary(tabType) {
             const checked = !excluded.has(origin);
             available += 1;
             if (checked) included += 1;
-            rows.push(`<tr><td><b>${escapeHtml(className)}</b><span class="summary-class-total">${total.toLocaleString()} total</span></td>`
+            rows.push(`<tr><td><span class="class-identity-badge" data-class-identity="${escapeHtml(className)}" style="${escapeHtml(classTintStyle(className))}"><i aria-hidden="true"></i>${escapeHtml(className)}</span><span class="summary-class-total">${total.toLocaleString()} total</span></td>`
                 + `<td>${escapeHtml(origin)}</td><td class="num">${Number(origins[origin] || 0).toLocaleString()}</td>`
                 + `<td><input type="checkbox" class="summary-subbucket-check" data-summary-tab="${escapeHtml(tabType)}" data-summary-class="${escapeHtml(className)}" data-summary-origin="${escapeHtml(origin)}"${checked ? " checked" : ""} aria-label="Preview ${escapeHtml(origin)} under ${escapeHtml(className)}"></td></tr>`);
         });
@@ -13301,6 +13294,7 @@ function renderClipTabSummary(tabType) {
         + (rows.length
             ? `<div class="field-hint">${included} of ${available} subbuckets included in preview. Uncheck a bucket to hide it.${hidden ? ` ${hidden} empty bucket${hidden === 1 ? "" : "s"} hidden.` : ""}</div>`
             : '<div class="field-hint">No clips are in this tab.</div>');
+    applyClassIdentityToDocument(body);
     body.querySelectorAll(".summary-subbucket-check").forEach(box => {
         box.addEventListener("change", () => {
             const tab = box.dataset.summaryTab;
@@ -13308,12 +13302,12 @@ function renderClipTabSummary(tabType) {
             const origin = box.dataset.summaryOrigin;
             const excluded = summaryExcludedSet(tab, cls);
             if (box.checked) excluded.delete(origin); else excluded.add(origin);
-            if (tab === "dataset") {
-                ORIGIN_FILTER[cls] = "__all__";
-                cancelDatasetRequests(cls);
-            }
+            // Any page in flight is for the previous set of buckets.
+            cancelFilterRequests(tab, cls);
+            // Redraw the table now for immediate feedback, but debounce the
+            // clip re-render so ticking several boxes costs one request.
             renderClipTabSummary(tab);
-            applyFilters(tab);
+            scheduleFilteredRender(tab);
         });
     });
 }
@@ -13332,16 +13326,27 @@ function applyReviewDataPayload(data, options = {}) {
     });
     if (data.panels !== undefined) {
         CLIPS_DATA.panels = data.panels || {};
-        DATASET_ORIGIN_PAGES = {};
-        cancelDatasetRequests();
+        clearFilterPages("dataset");
     }
     if (data.dataset_origin_counts !== undefined) CLIPS_DATA.dataset_origin_counts = data.dataset_origin_counts || {};
     if (data.panel_origin_counts !== undefined) CLIPS_DATA.panel_origin_counts = data.panel_origin_counts || {};
-    if (data.aug_panels !== undefined) CLIPS_DATA.aug_panels = data.aug_panels || {};
-    if (data.frozen_panels !== undefined) CLIPS_DATA.frozen_panels = data.frozen_panels || {};
+    // Per tab, so a scoped rescan of one tab cannot blank another's dropdowns.
+    if (data.panel_subgroups && typeof data.panel_subgroups === "object") {
+        CLIPS_DATA.panel_subgroups = CLIPS_DATA.panel_subgroups || {};
+        Object.keys(data.panel_subgroups).forEach(tab => {
+            CLIPS_DATA.panel_subgroups[tab] = data.panel_subgroups[tab] || {};
+        });
+    }
+    if (data.aug_panels !== undefined) {
+        CLIPS_DATA.aug_panels = data.aug_panels || {};
+        clearFilterPages("augmented");
+    }
+    if (data.frozen_panels !== undefined) {
+        CLIPS_DATA.frozen_panels = data.frozen_panels || {};
+        clearFilterPages("frozen");
+    }
     if (data.frozen_context !== undefined) {
         CLIPS_DATA.frozen_context = data.frozen_context || {};
-        renderLibraryTestSetStaleNotice();
     }
     if (data.mined_panels !== undefined) CLIPS_DATA.mined_panels = data.mined_panels || {};
     if (data.library_items !== undefined) CLIPS_DATA.library_items = data.library_items || [];
@@ -13496,7 +13501,9 @@ async function composeDataset(extra = null, options = {}) {
         let finalJob = await runComposeJob("", extra, onProgress);
         if ((finalJob.summary || {}).needs_confirmation) {
             const summary = finalJob.summary || {};
-            if (!confirmFrozenTestChange(summary)) {
+            // The Test set panel already asked, in the terms of the action its
+            // button named — don't prompt twice for one press.
+            if (!options.frozenTestConfirmed && !confirmFrozenTestChange(summary)) {
                 flash("compose canceled — frozen test unchanged", "warn");
                 setBackgroundJobStatus("Compose canceled; frozen test unchanged.", "warn");
                 return;
@@ -13535,43 +13542,65 @@ async function composeDataset(extra = null, options = {}) {
 // from routine Compose: dataset/source-rule edits never resize an existing
 // frozen test on their own (see build_split_test in compose_dataset()). Val
 // lives in the Train tab now — it's split live at train time, not composed.
+//
+// The panel is deliberately simple: the checkbox and percentage are just a
+// form — toggling them changes nothing on disk. The single button below is
+// the only action, and its own label says what pressing it will do (build at
+// the given percentage, or return the existing holdout to the training pool).
 function libTestEl(id) { return document.getElementById("library-" + id); }
 
+let LIBRARY_TESTSET = { enabled: false, fraction: 0, built: false, builtClips: 0, loaded: false };
+
 async function loadLibraryTestConfig() {
-    const summary = libTestEl("testset-summary");
     try {
         const d = await (await fetch("/api/dataset/test-config", { cache: "no-store" })).json();
         if (!d.ok) throw new Error(d.error || "failed");
-        const enEl = libTestEl("splittest-enabled"); if (enEl) enEl.checked = !!d.split_test_enabled;
-        const fracEl = libTestEl("splittest-fraction-pct"); if (fracEl) fracEl.value = Math.round(d.split_test_fraction * 100);
-        updateLibraryTestSetGating();
-        if (summary) {
-            if (d.frozen_test_present) {
-                const sc = d.frozen_test_source_counts || {};
-                summary.textContent = `${d.frozen_test_total} clips frozen — ${Number(sc.selected_buckets || 0)} pinned holdout + ${Number(sc.split_derived || 0)} randomized`;
-            } else {
-                summary.textContent = "no frozen test set yet";
-            }
-        }
-    } catch (e) { if (summary) summary.textContent = "test set status error: " + e.message; }
-    renderLibraryTestSetStaleNotice();
+        const st = d.split_test_state || {};
+        LIBRARY_TESTSET = {
+            enabled: !!d.split_test_enabled,
+            fraction: Number(d.split_test_fraction) || 0,
+            built: !!st.built,
+            builtClips: Number(st.clips) || 0,
+            loaded: true,
+        };
+        const enEl = libTestEl("splittest-enabled");
+        if (enEl) enEl.checked = LIBRARY_TESTSET.enabled;
+        const fracEl = libTestEl("splittest-fraction-pct");
+        // A never-configured project has no meaningful percentage yet; show the
+        // default so enabling the checkbox lands on a sane number.
+        if (fracEl) fracEl.value = Math.round((LIBRARY_TESTSET.fraction || 0.1) * 100);
+    } catch (e) {
+        LIBRARY_TESTSET.loaded = false;
+    }
+    updateLibraryTestSetGating();
 }
 
-// Sourced from CLIPS_DATA.frozen_context — already computed once per
-// render/rescan, not re-fetched here. That check re-scans the library per
-// class (including on-demand pretraining-corpus header probes) and can take
-// a minute-plus on large corpora, so it must never run on every tab load.
-function renderLibraryTestSetStaleNotice() {
-    const notice = libTestEl("testset-stale-notice");
-    if (!notice) return;
-    const ctx = CLIPS_DATA.frozen_context || {};
-    if (ctx.stale) {
-        notice.hidden = false;
-        notice.textContent = ctx.stale_reason || "Dataset rules changed since the frozen test set was last composed.";
-    } else {
-        notice.hidden = true;
-        notice.textContent = "";
+// Percentage currently typed into the field (not necessarily the saved one).
+function libraryTestSetFormPct() {
+    const fracEl = libTestEl("splittest-fraction-pct");
+    const raw = fracEl ? parseFloat(fracEl.value) : NaN;
+    return isFinite(raw) ? Math.max(0, Math.min(89, Math.round(raw))) : 0;
+}
+
+// The panel has exactly one action: build (or rebuild) the automatic holdout
+// when the checkbox is on, or return it to the training pool when it is off.
+function libraryTestSetPlan() {
+    const enEl = libTestEl("splittest-enabled");
+    const on = !!(enEl && enEl.checked);
+    const pct = libraryTestSetFormPct();
+    const s = LIBRARY_TESTSET;
+    if (!s.loaded) return { action: "none", label: "Build frozen test set", disabled: true };
+    if (!on) {
+        if (!s.built) return { action: "none", label: "Build frozen test set", disabled: true };
+        const clips = `${s.builtClips} clip${s.builtClips === 1 ? "" : "s"}`;
+        return { action: "remove", label: `Return ${clips} to the training pool`, disabled: false };
     }
+    if (pct <= 0) return { action: "none", label: "Build frozen test set", disabled: true };
+    return {
+        action: "build",
+        label: s.built ? `Rebuild frozen test set (${pct}%)` : `Build frozen test set (${pct}%)`,
+        disabled: false,
+    };
 }
 
 function updateLibraryTestSetGating() {
@@ -13581,54 +13610,65 @@ function updateLibraryTestSetGating() {
     const fracEl = libTestEl("splittest-fraction-pct");
     if (fracEl) fracEl.disabled = !on;
     if (fracField) fracField.classList.toggle("disabled", !on);
+    const plan = libraryTestSetPlan();
     const buildBtn = libTestEl("testset-build");
-    // Disabling automatic splitting must still leave a way to apply the
-    // change: building with it off removes the prior automatic holdout and
-    // returns those clips to the composed training pool (after confirmation).
     if (buildBtn && !composeRunning && !refreshRunning) {
-        buildBtn.disabled = false;
-        buildBtn.textContent = on ? "Build frozen test set" : "Apply: return automatic holdout";
+        buildBtn.disabled = !!plan.disabled;
+        buildBtn.textContent = plan.label;
+        buildBtn.classList.toggle("danger", plan.action === "remove");
+        buildBtn.classList.toggle("primary", plan.action === "build");
+        buildBtn.dataset.testsetAction = plan.action;
+        buildBtn.setAttribute("data-tip", plan.action === "remove"
+            ? "Clears the automatic holdout and recomposes, so those clips train again. Buckets assigned to the frozen test are untouched."
+            : "Saves the percentage, carves the holdout from the current training pool, and recomposes train.csv/test.csv.");
     }
 }
 
 async function saveLibraryTestConfig() {
-    const st = libTestEl("testset-save-status");
-    const enEl = libTestEl("splittest-enabled"), fracEl = libTestEl("splittest-fraction-pct");
-    const body = {};
-    if (enEl) body.split_test_enabled = enEl.checked;
-    if (fracEl && fracEl.value !== "") body.split_test_fraction = Math.max(0, Math.min(89, parseFloat(fracEl.value) || 0)) / 100;
-    if (st) { st.className = "section-status"; st.textContent = "saving…"; }
-    try {
-        const r = await fetch("/api/dataset/split-config", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body) });
-        const d = await r.json();
-        if (!d.ok) throw new Error(d.error || "failed to save");
-        if (st) st.textContent = "saved";
-        await loadLibraryTestConfig();
-        return true;
-    } catch (e) {
-        if (st) { st.className = "section-status err"; st.textContent = "error: " + e.message; }
-        return false;
-    }
+    const enEl = libTestEl("splittest-enabled");
+    const body = { split_test_enabled: !!(enEl && enEl.checked) };
+    const pct = libraryTestSetFormPct();
+    if (pct > 0) body.split_test_fraction = pct / 100;
+    const r = await fetch("/api/dataset/split-config", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body) });
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.error || "failed to save the test-set settings");
+    return true;
 }
 
 async function buildFrozenTestSet() {
     const btn = libTestEl("testset-build");
     const st = libTestEl("testset-build-status");
     if (composeRunning || refreshRunning) return;
-    if (btn) { btn.disabled = true; btn.textContent = "Applying…"; }
+    const plan = libraryTestSetPlan();
+    if (plan.action === "none") return;
+    // One confirmation, phrased as the consequence of the button that was
+    // pressed. Compose's generic frozen-test prompt is suppressed below so a
+    // single press never asks twice.
+    if (plan.action === "remove") {
+        if (!confirm(`Return the ${LIBRARY_TESTSET.builtClips} automatically held-out clip(s) to the training pool?`)) return;
+    } else if (LIBRARY_TESTSET.built) {
+        if (!confirm(`Rebuild the automatic frozen test set at ${libraryTestSetFormPct()}%? `
+                     + `A new random holdout replaces the current ${LIBRARY_TESTSET.builtClips} clip(s).`)) return;
+    }
+    if (btn) { btn.disabled = true; btn.textContent = plan.action === "remove" ? "Returning…" : "Building…"; }
     if (st) { st.className = "library-count busy"; st.textContent = "starting…"; }
     try {
-        // Persist the current % settings before carving so the build always
-        // reflects what's on screen, not the last-saved value.
-        if (!await saveLibraryTestConfig()) return;
-        const enabled = !!(libTestEl("splittest-enabled") || {}).checked;
-        // Passing false is intentional: it makes Compose apply the disabled
-        // state and clear only the automatic part of the frozen test set.
-        await composeDataset({ build_split_test: enabled }, { statusEl: st });
+        // Persist what is on screen before carving, so the build always reflects
+        // the visible percentage rather than the last-saved one.
+        await saveLibraryTestConfig();
+        // build_split_test=true covers both directions here: with the toggle
+        // on it carves a new holdout, with it off it clears the persisted one
+        // (see compose_dataset()'s build_split_test docstring).
+        await composeDataset(
+            { build_split_test: true },
+            { statusEl: st, frozenTestConfirmed: true },
+        );
         if (st) { st.className = "library-count"; st.textContent = ""; }
+    } catch (e) {
+        if (st) { st.className = "library-count err"; st.textContent = "failed: " + (e.message || e); }
     } finally {
         if (btn) btn.disabled = false;
-        updateLibraryTestSetGating();
+        await loadLibraryTestConfig();
     }
 }
 
@@ -13715,60 +13755,109 @@ async function refreshReviewDataJob(options = {}) {
     }
 }
 
-// Per-target-class "origin class" (subbucket) filter for the Dataset tab. Lets
-// you view only one source class under a target that aggregates thousands of
-// clips from many origins.
-const ORIGIN_FILTER = {};
-// Bucket pages are kept separate from the default per-class preview. Selecting
-// a bucket that falls after the initial 200 cards must not require loading every
-// earlier card first.
-let DATASET_ORIGIN_PAGES = {};
-let DATASET_ORIGIN_REQUESTS = {};
-let DATASET_CLIP_PAGE_REQUESTS = {};
+// ---- Server-side clip filtering (subbucket + sub-group) -------------------
+//
+// The Summary panel's subbucket checkboxes and each class block's "subgroup:"
+// dropdown both narrow the same thing, so they share one request path. Filtered
+// pages are kept apart from the default per-class preview: a bucket or a
+// recording that falls after the initial cap must not require loading every
+// earlier card first, and the true total comes back from the server rather than
+// from whatever happens to be in memory.
+const FILTER_PAGES = {};      // tab -> class -> sig -> {cards, total}
+const FILTER_REQUESTS = {};   // tab -> class -> {sig, controller, promise}
+const CLIP_PAGE_REQUESTS = {}; // "tab:class:sig:offset" -> {controller, promise}
+const SUBGROUP_FILTER = {};   // tab -> class -> {axis, key}
+// Coalesces a run of checkbox clicks into one request per class.
+const FILTER_DEBOUNCE_MS = 250;
+const FILTER_TIMERS = {};
 
-function cancelDatasetRequests(className = "") {
-    Object.entries(DATASET_ORIGIN_REQUESTS).forEach(([cls, req]) => {
-        if (!className || cls === className) req.controller.abort();
+function filterableTab(tabType) {
+    return tabType === "dataset" || tabType === "augmented" || tabType === "frozen";
+}
+
+function activeSubgroup(tabType, className) {
+    const sel = (SUBGROUP_FILTER[tabType] || {})[className];
+    return sel && sel.axis && sel.key ? sel : null;
+}
+
+// Subbuckets this class should show, or null for "all of them" — the state the
+// server reads as an unfiltered request.
+function activeOrigins(tabType, className) {
+    // Read the inventory from the unfiltered panel, never from clipsForClass:
+    // that would ask the active filter what the active filter is.
+    const all = Object.keys(
+        summarySubbuckets(tabType, className, panelDataForTab(tabType)[className] || []));
+    const excluded = summaryExcludedSet(tabType, className);
+    if (!excluded.size || !all.length) return null;
+    const kept = all.filter(origin => !excluded.has(origin));
+    return kept.length === all.length ? null : kept.sort();
+}
+
+// Stable identity of the current selection. "" is the unfiltered view, which
+// keeps using the payload's own panel data and costs no request at all.
+function filterSig(tabType, className) {
+    if (!filterableTab(tabType) || !isInteractive) return "";
+    const origins = activeOrigins(tabType, className);
+    const group = activeSubgroup(tabType, className);
+    if (!origins && !group) return "";
+    return JSON.stringify({
+        o: origins,
+        a: group ? group.axis : "",
+        k: group ? group.key : "",
     });
-    Object.entries(DATASET_CLIP_PAGE_REQUESTS).forEach(([key, req]) => {
-        if (!className || key.startsWith(`dataset:${className}:`)) req.controller.abort();
-    });
-    if (className) {
-        delete DATASET_ORIGIN_REQUESTS[className];
-        Object.keys(DATASET_CLIP_PAGE_REQUESTS).forEach(key => {
-            if (key.startsWith(`dataset:${className}:`)) delete DATASET_CLIP_PAGE_REQUESTS[key];
+}
+
+function filterParams(sig) {
+    const spec = JSON.parse(sig);
+    const params = {};
+    if (spec.o) params.origins = spec.o.join("|");
+    if (spec.a && spec.k) { params.group_axis = spec.a; params.group_key = spec.k; }
+    return params;
+}
+
+function filterPageStore(tabType, className) {
+    const byClass = FILTER_PAGES[tabType] || (FILTER_PAGES[tabType] = {});
+    return byClass[className] || (byClass[className] = {});
+}
+
+function filterPage(tabType, className, sig) {
+    return sig ? filterPageStore(tabType, className)[sig] || null : null;
+}
+
+function cancelFilterRequests(tabType = "", className = "") {
+    Object.entries(FILTER_REQUESTS).forEach(([tab, byClass]) => {
+        if (tabType && tab !== tabType) return;
+        Object.entries(byClass).forEach(([cls, req]) => {
+            if (className && cls !== className) return;
+            req.controller.abort();
+            delete byClass[cls];
         });
-    } else {
-        DATASET_ORIGIN_REQUESTS = {};
-        DATASET_CLIP_PAGE_REQUESTS = {};
-    }
+    });
+    // Trailing ":" so cancelling "cheers" cannot also abort "cheers_loud".
+    const prefix = tabType ? `${tabType}:${className ? className + ":" : ""}` : "";
+    Object.entries(CLIP_PAGE_REQUESTS).forEach(([key, req]) => {
+        if (prefix && !key.startsWith(prefix)) return;
+        req.controller.abort();
+        delete CLIP_PAGE_REQUESTS[key];
+    });
+}
+
+function clearFilterPages(tabType = "") {
+    (tabType ? [tabType] : Object.keys(FILTER_PAGES)).forEach(tab => {
+        delete FILTER_PAGES[tab];
+    });
+    cancelFilterRequests(tabType);
 }
 
 function clipOriginClass(c) { return c.origin_class || c.library_label || c.base_label || c.origin || c.label || ""; }
 
-// Distinct source subbuckets (original library label/folder) within a class.
-function originsForClips(clips) {
-    return Array.from(new Set((clips || []).map(clipOriginClass).filter(Boolean))).sort();
-}
-
-function originsForClass(className, clips) {
-    const counts = (CLIPS_DATA.dataset_origin_counts || {})[className];
-    return counts && typeof counts === "object" && Object.keys(counts).length
-        ? Object.keys(counts).sort()
-        : originsForClips(clips);
-}
-
-function activeDatasetOrigin(className) {
-    const origin = ORIGIN_FILTER[className] || "__all__";
-    return origin === "__all__" ? "" : origin;
-}
-
 function clipsForClass(tabType, className) {
     const searched = searchedClipsForClass(tabType, className);
     if (searched !== null) return searched;
-    if (tabType === "dataset") {
-        const origin = activeDatasetOrigin(className);
-        if (origin) return ((DATASET_ORIGIN_PAGES[className] || {})[origin] || []);
+    const sig = filterSig(tabType, className);
+    if (sig) {
+        const page = filterPage(tabType, className, sig);
+        return page ? page.cards : [];
     }
     return panelDataForTab(tabType)[className] || [];
 }
@@ -13783,11 +13872,11 @@ function allReviewTabClips(tabType) {
     Object.values(CLIP_SEARCH_RESULTS[tabType] || {}).forEach(row => {
         (row.clips || []).forEach(c => byPath.set(c.path, c));
     });
-    if (tabType === "dataset") {
-        Object.values(DATASET_ORIGIN_PAGES).forEach(byOrigin => {
-            Object.values(byOrigin || {}).flat().forEach(c => byPath.set(c.path, c));
+    Object.values(FILTER_PAGES[tabType] || {}).forEach(bySig => {
+        Object.values(bySig || {}).forEach(page => {
+            (page.cards || []).forEach(c => byPath.set(c.path, c));
         });
-    }
+    });
     return Array.from(byPath.values());
 }
 
@@ -13806,10 +13895,10 @@ function mergeDatasetIntegrityCards(panels) {
     });
 }
 
-function reuseDatasetCardObjects(cards) {
-    // A source page can overlap the default preview. Keep one object per path
-    // so checked/excluded state survives switching between "all" and a bucket.
-    const existing = new Map(allDatasetClips().map(card => [card.path, card]));
+function reuseCardObjects(tabType, cards) {
+    // A filtered page overlaps the default preview. Keep one object per path so
+    // checked/excluded state survives switching between "all" and a selection.
+    const existing = new Map(allReviewTabClips(tabType).map(card => [card.path, card]));
     return (cards || []).map(card => {
         const prior = existing.get(card.path);
         if (!prior) return card;
@@ -13820,114 +13909,240 @@ function reuseDatasetCardObjects(cards) {
     });
 }
 
-// Single source of truth for the dropdown's <option> markup, shared by the
-// initial class-block render and the per-class refresh, so they never diverge.
-function originFilterOptionsHtml(className, clips, selected) {
-    const origins = originsForClass(className, clips);
-    const sel = origins.includes(selected) ? selected : "__all__";
-    if (selected && selected !== sel) ORIGIN_FILTER[className] = sel;
-    return `<option value="__all__"${sel === "__all__" ? " selected" : ""}>all subbuckets (${origins.length})</option>`
-        + origins.map(o => `<option value="${escapeHtml(o)}"${o === sel ? " selected" : ""}>${escapeHtml(o)}</option>`).join("");
+// ---- The "subgroup:" dropdown --------------------------------------------
+//
+// A source subbucket is often a whole imported corpus folder, so reviewing it
+// means reaching one recording session or one recording type inside it. No
+// single field carves every subbucket up usefully — imported clips only carry
+// their filename, recorder clips carry real session metadata and a per-clip
+// UUID — so the server sends every axis that survived its usefulness check
+// (sed/data/subgroups.py) and they are listed together as <optgroup>s, best
+// first. The inventory is uncapped, built from the same gathered items as the
+// Summary panel, so the two controls can never disagree.
+const AXIS_LABELS = {
+    prefix: "by name prefix",
+    folder: "by folder",
+    session: "by recording session",
+    date: "by date",
+};
+const AXIS_ORDER = ["prefix", "folder", "session", "date"];
+const MAX_BROWSABLE_GROUPS = 80;
+
+function panelSubgroupsForTab(tabType) {
+    return (CLIPS_DATA.panel_subgroups || {})[tabType] || {};
 }
 
-// Full dropdown markup for a dataset class-block summary (empty for other tabs
-// or non-interactive mode). Built into classBlockHtml so the filter survives the
-// rebuildReviewTab() teardown that recreates every class block.
-function originFilterHtml(tabType, className, clips) {
-    if (tabType !== "dataset" || !isInteractive) return "";
-    return `<label class="origin-filter-label" onclick="event.stopPropagation();">view:`
-        + `<select class="origin-filter" data-class="${escapeHtml(className)}"`
-        + ` data-tip="Show only one source subbucket (the original library label / folder) assigned to this target class. 'all' shows every selected sound."`
+// Merge the per-subbucket axis maps of every checked bucket, so the dropdown
+// describes exactly the clips the Summary panel is currently letting through.
+function subgroupAxesFor(tabType, className) {
+    const byOrigin = panelSubgroupsForTab(tabType)[className] || {};
+    const excluded = summaryExcludedSet(tabType, className);
+    const merged = {};
+    Object.entries(byOrigin).forEach(([origin, axes]) => {
+        if (excluded.has(origin)) return;
+        Object.entries(axes || {}).forEach(([axis, groups]) => {
+            const target = merged[axis] || (merged[axis] = {});
+            Object.entries(groups || {}).forEach(([key, count]) => {
+                target[key] = (target[key] || 0) + Number(count || 0);
+            });
+        });
+    });
+    return merged;
+}
+
+// Mirror of subgroups.default_axis: the finest grouping still browsable in a
+// dropdown, else the coarsest one left.
+function defaultSubgroupAxis(axes) {
+    const usable = AXIS_ORDER.filter(axis => Object.keys(axes[axis] || {}).length > 1);
+    if (!usable.length) return "";
+    const size = axis => Object.keys(axes[axis]).length;
+    const browsable = usable.filter(axis => size(axis) <= MAX_BROWSABLE_GROUPS);
+    const pool = browsable.length ? browsable : usable;
+    const best = browsable.length
+        ? Math.max(...pool.map(size))
+        : Math.min(...pool.map(size));
+    return pool.find(axis => size(axis) === best) || "";
+}
+
+// Folder keys are full paths from the library root, so every option under one
+// subbucket repeats the same leading segments. Drop the shared prefix from the
+// label only — the value stays whole so it still matches server-side.
+function shortestUniqueLabels(keys) {
+    if (keys.length < 2) return new Map(keys.map(k => [k, k]));
+    const split = keys.map(k => k.split("/"));
+    let shared = 0;
+    while (split[0].length > shared + 1
+           && split.every(parts => parts.length > shared + 1 && parts[shared] === split[0][shared])) {
+        shared += 1;
+    }
+    return new Map(keys.map((k, i) => [k, split[i].slice(shared).join("/") || k]));
+}
+
+function subgroupOptionsHtml(tabType, className) {
+    const axes = subgroupAxesFor(tabType, className);
+    const active = activeSubgroup(tabType, className);
+    const total = AXIS_ORDER.reduce((n, axis) => n + Object.keys(axes[axis] || {}).length, 0);
+    if (!total) return `<option value="">no subgroups</option>`;
+    const ordered = [defaultSubgroupAxis(axes), ...AXIS_ORDER]
+        .filter((axis, i, all) => axis && all.indexOf(axis) === i && Object.keys(axes[axis] || {}).length);
+    let html = `<option value=""${active ? "" : " selected"}>all subgroups</option>`;
+    ordered.forEach(axis => {
+        const keys = Object.keys(axes[axis]).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+        const labels = shortestUniqueLabels(keys);
+        html += `<optgroup label="${escapeHtml(AXIS_LABELS[axis])} (${keys.length})">`;
+        keys.forEach(key => {
+            const value = JSON.stringify([axis, key]);
+            const on = active && active.axis === axis && active.key === key;
+            html += `<option value="${escapeHtml(value)}"${on ? " selected" : ""}>`
+                + `${escapeHtml(labels.get(key))} — ${Number(axes[axis][key]).toLocaleString()}</option>`;
+        });
+        html += `</optgroup>`;
+    });
+    return html;
+}
+
+// Built into classBlockHtml (and mirrored by the server's first paint) so the
+// control survives the rebuildReviewTab() teardown that recreates every block.
+function subgroupFilterHtml(tabType, className) {
+    if (!filterableTab(tabType) || !isInteractive) return "";
+    return `<label class="subgroup-filter-label" onclick="event.stopPropagation();">subgroup:`
+        + `<select class="subgroup-filter" data-tab="${escapeHtml(tabType)}" data-class="${escapeHtml(className)}"`
+        + ` data-tip="List one part of this class's source clips: a single recording session, recording type, folder or date.\n\nOnly groupings that actually subdivide the clips are offered — an axis that gives one group per clip is an id, not a grouping, and is left out.\n\nThe list covers **every** clip, not only the previewed ones, and follows the subbuckets ticked in the Summary panel above."`
         + ` onclick="event.stopPropagation();">`
-        + originFilterOptionsHtml(className, clips, ORIGIN_FILTER[className] || "__all__")
+        + subgroupOptionsHtml(tabType, className)
         + `</select></label>`;
 }
 
-function wireOriginFilter(sel) {
+function wireSubgroupFilter(sel) {
     if (!sel || sel._wired) return;
     sel._wired = true;
-    sel.addEventListener("change", async () => {
+    sel.addEventListener("change", () => {
+        const tab = sel.dataset.tab;
         const cls = sel.dataset.class;
-        ORIGIN_FILTER[cls] = sel.value;
-        if (sel.value === "__all__") {
-            cancelDatasetRequests(cls);
-            renderClassClips("dataset", cls);
-            updateLiveCounts();
-            return;
+        const byClass = SUBGROUP_FILTER[tab] || (SUBGROUP_FILTER[tab] = {});
+        if (!sel.value) {
+            delete byClass[cls];
+        } else {
+            try {
+                const [axis, key] = JSON.parse(sel.value);
+                byClass[cls] = { axis, key };
+            } catch (e) { delete byClass[cls]; }
         }
-        cancelDatasetRequests(cls);
-        await loadDatasetOriginPage(cls, sel.value);
+        cancelFilterRequests(tab, cls);
+        renderClassClips(tab, cls);
+        updateLiveCounts();
     });
 }
 
-// Wire the server-rendered origin dropdowns at load so the filter works
-// immediately, before the async review-data refresh runs.
-function setupOriginFilters() {
-    document.querySelectorAll('#tab-dataset .origin-filter').forEach(wireOriginFilter);
-}
-
-// Refresh an existing dropdown's options to match the current clip set, keeping
-// the user's selection. The <select> itself is created by classBlockHtml / the
-// server template; this only re-fills it.
-function populateOriginFilter(className, clips) {
-    const sel = document.querySelector(`.origin-filter[data-class="${cssEscape(className)}"]`);
+// Re-fill an existing dropdown after the inventory or the checked subbuckets
+// changed, keeping the selection when it still exists. The <select> itself is
+// created by classBlockHtml or the server template; this only refreshes it.
+function populateSubgroupFilter(tabType, className) {
+    const sel = document.querySelector(
+        `#tab-${cssEscape(tabType)} .subgroup-filter[data-class="${cssEscape(className)}"]`);
     if (!sel) return;
-    const sig = originsForClass(className, clips).join("|");
+    const axes = subgroupAxesFor(tabType, className);
+    const active = activeSubgroup(tabType, className);
+    // A selection can vanish when its subbucket is unchecked — fall back to
+    // "all subgroups" rather than filtering on a group that no longer exists.
+    if (active && !(axes[active.axis] || {})[active.key]) {
+        delete (SUBGROUP_FILTER[tabType] || {})[className];
+    }
+    const sig = AXIS_ORDER.map(axis => `${axis}:${Object.keys(axes[axis] || {}).join(",")}`).join("|")
+        + `#${activeSubgroup(tabType, className) ? JSON.stringify(activeSubgroup(tabType, className)) : ""}`;
     if (sel._sig !== sig) {
         sel._sig = sig;
-        sel.innerHTML = originFilterOptionsHtml(className, clips, ORIGIN_FILTER[className] || "__all__");
+        sel.innerHTML = subgroupOptionsHtml(tabType, className);
     }
-    wireOriginFilter(sel);
+    // Locked out while its own page is in flight: choosing a second group
+    // before the first arrived would race two answers into one list.
+    const empty = !AXIS_ORDER.some(axis => Object.keys(axes[axis] || {}).length);
+    const busy = Boolean((FILTER_REQUESTS[tabType] || {})[className]);
+    sel.disabled = empty || busy;
+    const label = sel.closest(".subgroup-filter-label");
+    if (label) label.dataset.state = busy ? "busy" : (empty ? "empty" : "");
+    wireSubgroupFilter(sel);
 }
 
-async function loadDatasetOriginPage(className, originClass) {
-    const pages = DATASET_ORIGIN_PAGES[className] || (DATASET_ORIGIN_PAGES[className] = {});
-    if (!Array.isArray(pages[originClass])) {
-        const activeRequest = DATASET_ORIGIN_REQUESTS[className];
-        if (activeRequest && activeRequest.originClass === originClass) {
-            return activeRequest.promise;
-        }
-        if (activeRequest) activeRequest.controller.abort();
-        const controller = new AbortController();
-        const activityKey = `clip-origin:${className}`;
-        localActivityStart(
-            activityKey,
-            "Loading source bucket",
-            `dataset · ${className} · ${originClass}`,
-            "dataset",
-        );
-        let request;
-        try {
-            const params = new URLSearchParams({
-                tab: "dataset", "class": className, origin_class: originClass,
-                offset: "0", limit: "200",
-            });
-            request = fetch(`/api/clips?${params.toString()}`, {
-                cache: "no-store", signal: controller.signal,
-            }).then(async r => {
-                const j = await r.json();
-                if (!r.ok || !j.ok) throw new Error(j.error || `HTTP ${r.status}`);
-                pages[originClass] = reuseDatasetCardObjects(
-                    Array.isArray(j.clips) ? j.clips : [],
-                );
-            });
-            DATASET_ORIGIN_REQUESTS[className] = { originClass, controller, promise: request };
-            await request;
-        } catch (e) {
-            if (e && e.name === "AbortError") return;
-            delete pages[originClass];
-            flash(`bucket load failed: ${e.message || e}`, "err");
-            return;
-        } finally {
-            const current = DATASET_ORIGIN_REQUESTS[className];
-            if (current && current.controller === controller) delete DATASET_ORIGIN_REQUESTS[className];
-            localActivityStop(activityKey);
-        }
+// Wire the server-rendered dropdowns at load so the filter works immediately,
+// before the async review-data refresh runs.
+function setupSubgroupFilters() {
+    document.querySelectorAll(".subgroup-filter").forEach(sel => {
+        wireSubgroupFilter(sel);
+        populateSubgroupFilter(sel.dataset.tab, sel.dataset.class);
+    });
+}
+
+// Fetch the first page for the active subbucket/sub-group selection. Kept apart
+// from the default preview so a selection that starts past the display cap does
+// not require loading every earlier card first.
+async function loadFilteredPage(tabType, className, sig) {
+    const store = filterPageStore(tabType, className);
+    if (store[sig]) return store[sig];
+    const byClass = FILTER_REQUESTS[tabType] || (FILTER_REQUESTS[tabType] = {});
+    const active = byClass[className];
+    if (active && active.sig === sig) return active.promise;
+    if (active) active.controller.abort();
+
+    const controller = new AbortController();
+    const activityKey = `clip-filter:${tabType}:${className}`;
+    localActivityStart(activityKey, "Loading selection", `${tabType} · ${className}`, tabType);
+    const params = new URLSearchParams({
+        tab: tabType, "class": className, offset: "0", limit: "200",
+        ...filterParams(sig),
+    });
+    if (tabType === "frozen") {
+        const runId = selectedFrozenRunId();
+        if (runId) params.set("run_id", runId);
     }
-    if (activeDatasetOrigin(className) === originClass) {
-        renderClassClips("dataset", className);
+    let aborted = false;
+    const promise = fetch(`/api/clips?${params.toString()}`, {
+        cache: "no-store", signal: controller.signal,
+    }).then(async r => {
+        const j = await r.json();
+        if (!r.ok || !j.ok) throw new Error(j.error || `HTTP ${r.status}`);
+        const page = {
+            cards: reuseCardObjects(tabType, Array.isArray(j.clips) ? j.clips : []),
+            total: Number(j.total) || 0,
+        };
+        store[sig] = page;
+        return page;
+    }).catch(e => {
+        aborted = Boolean(e && e.name === "AbortError");
+        if (!aborted) flash(`filter load failed: ${e.message || e}`, "err");
+        return null;
+    }).finally(() => {
+        if (byClass[className] && byClass[className].controller === controller) {
+            delete byClass[className];
+        }
+        localActivityStop(activityKey);
+    });
+    byClass[className] = { sig, controller, promise };
+    populateSubgroupFilter(tabType, className);   // reflect the busy lock now
+    const page = await promise;
+    populateSubgroupFilter(tabType, className);
+    if (filterSig(tabType, className) !== sig) return page;   // superseded
+    if (page) {
+        renderClassClips(tabType, className);
         updateLiveCounts();
+    } else if (!aborted) {
+        // Never leave the placeholder standing: say the selection failed and
+        // let the reader retry by picking again.
+        const container = document.querySelector(
+            `#tab-${cssEscape(tabType)} .clips[data-class-clips="${cssEscape(className)}"]`);
+        if (container) container.innerHTML = "<em>Could not load this selection.</em>";
     }
+    return page;
+}
+
+// Coalesce a run of Summary checkbox clicks into one re-render — and therefore
+// one request per class — instead of one per click.
+function scheduleFilteredRender(tabType) {
+    clearTimeout(FILTER_TIMERS[tabType]);
+    FILTER_TIMERS[tabType] = setTimeout(() => {
+        delete FILTER_TIMERS[tabType];
+        applyFilters(tabType);
+    }, FILTER_DEBOUNCE_MS);
 }
 
 function renderClassClips(tabType, className, append = false) {
@@ -13938,22 +14153,19 @@ function renderClassClips(tabType, className, append = false) {
     const container = panel.querySelector(`.clips[data-class-clips="${cssEscape(className)}"]`);
     if (!container) return;
 
-    const selectedOrigin = tabType === "dataset" && !clipTabSearchQuery(tabType)
-        ? activeDatasetOrigin(className) : "";
-    if (selectedOrigin && !Array.isArray((DATASET_ORIGIN_PAGES[className] || {})[selectedOrigin])) {
-        container.innerHTML = "<em>Loading source bucket…</em>";
-        loadDatasetOriginPage(className, selectedOrigin);
+    if (filterableTab(tabType)) populateSubgroupFilter(tabType, className);
+
+    // A subbucket/sub-group selection is resolved by the server, because the
+    // matching clips may lie entirely past the preview cap.
+    const sig = clipTabSearchQuery(tabType) ? "" : filterSig(tabType, className);
+    if (sig && !filterPage(tabType, className, sig)) {
+        container.innerHTML = "<em>Loading selection…</em>";
+        loadFilteredPage(tabType, className, sig);
         return;
     }
 
     const clips = clipsForClass(tabType, className);
-
-    let filtered = filterReviewClipsList(clips, tabType, className);
-    if (tabType === "dataset") {
-        populateOriginFilter(className, clips);
-        const of = ORIGIN_FILTER[className];
-        if (of && of !== "__all__") filtered = filtered.filter(c => clipOriginClass(c) === of);
-    }
+    const filtered = filterReviewClipsList(clips, tabType, className);
     const key = `${tabType}:${className}`;
     if (!append) {
         PAGINATION_STATE[key] = 100;
@@ -14012,6 +14224,7 @@ function renderClassClips(tabType, className, append = false) {
     }
 
     bindCardEvents(container, tabType);
+    applyClassIdentityToDocument(container);
     const details = container.closest(".class-block");
     if (details) updateClassSelectAllStatus(details);
 }
@@ -14066,20 +14279,21 @@ async function fetchMoreClips(tabType, className) {
         CLIP_SEARCH_REQUESTS[pageKey] = request;
         return await request;
     }
-    const originClass = tabType === "dataset" ? activeDatasetOrigin(className) : "";
-    const data = originClass
-        ? (DATASET_ORIGIN_PAGES[className] || (DATASET_ORIGIN_PAGES[className] = {}))
-        : panelDataForTab(tabType);
-    const arr = data[originClass || className] || (data[originClass || className] = []);
+    // Paging continues within whatever the class is currently filtered to, so
+    // "Load More" walks the selection rather than restarting at the full class.
+    const sig = filterSig(tabType, className);
+    const page = sig ? filterPage(tabType, className, sig) : null;
+    if (sig && !page) return 0;   // first page is still loading
+    const arr = page
+        ? page.cards
+        : (panelDataForTab(tabType)[className] || (panelDataForTab(tabType)[className] = []));
     const offset = arr.length;
-    const pageKey = `${tabType}:${className}:${originClass || "__all__"}:${offset}`;
-    const existing = tabType === "dataset" ? DATASET_CLIP_PAGE_REQUESTS[pageKey] : null;
+    const pageKey = `${tabType}:${className}:${sig || "__all__"}:${offset}`;
+    const existing = CLIP_PAGE_REQUESTS[pageKey];
     if (existing) return existing.promise;
-    if (tabType === "dataset") {
-        Object.entries(DATASET_CLIP_PAGE_REQUESTS).forEach(([key, request]) => {
-            if (key.startsWith(`dataset:${className}:`) && key !== pageKey) request.controller.abort();
-        });
-    }
+    Object.entries(CLIP_PAGE_REQUESTS).forEach(([key, request]) => {
+        if (key.startsWith(`${tabType}:${className}:`) && key !== pageKey) request.controller.abort();
+    });
     const controller = new AbortController();
     const activityKey = `clip-page:${tabType}:${className}`;
     localActivityStart(
@@ -14092,28 +14306,33 @@ async function fetchMoreClips(tabType, className) {
     try {
         const params = new URLSearchParams({
             tab: tabType, "class": className, offset: String(offset), limit: "200",
+            ...(sig ? filterParams(sig) : {}),
         });
-        if (originClass) params.set("origin_class", originClass);
+        if (tabType === "frozen") {
+            const runId = selectedFrozenRunId();
+            if (runId) params.set("run_id", runId);
+        }
         request = fetch(`/api/clips?${params.toString()}`, {
             cache: "no-store", signal: controller.signal,
         }).then(async r => {
             const j = await r.json();
             if (!r.ok || !j.ok) throw new Error(j.error || `HTTP ${r.status}`);
-            const incoming = Array.isArray(j.clips) ? j.clips : [];
+            const incoming = reuseCardObjects(tabType, Array.isArray(j.clips) ? j.clips : []);
             const seen = new Set(arr.map(c => c.path));
             let added = 0;
             incoming.forEach(c => { if (!seen.has(c.path)) { arr.push(c); added++; } });
+            if (page) page.total = Number(j.total ?? page.total) || page.total;
             return added;
         });
-        if (tabType === "dataset") DATASET_CLIP_PAGE_REQUESTS[pageKey] = { controller, promise: request };
+        CLIP_PAGE_REQUESTS[pageKey] = { controller, promise: request };
         return await request;
     } catch (e) {
         if (e && e.name === "AbortError") return 0;
         flash(`load more failed: ${e.message || e}`, "err");
         return 0;
     } finally {
-        const current = DATASET_CLIP_PAGE_REQUESTS[pageKey];
-        if (current && current.controller === controller) delete DATASET_CLIP_PAGE_REQUESTS[pageKey];
+        const current = CLIP_PAGE_REQUESTS[pageKey];
+        if (current && current.controller === controller) delete CLIP_PAGE_REQUESTS[pageKey];
         localActivityStop(activityKey);
     }
 }
@@ -14499,12 +14718,12 @@ function classTrueTotal(tabType, className) {
         }
         return Math.max(Number((CLIP_SEARCH_RESULTS[tabType][className] || {}).total) || 0, loaded);
     }
-    const originClass = tabType === "dataset" ? activeDatasetOrigin(className) : "";
-    if (originClass) {
-        const originCounts = (CLIPS_DATA.dataset_origin_counts || {})[className] || {};
-        if (originCounts[originClass] != null) {
-            return Math.max(Number(originCounts[originClass]) || 0, loaded);
-        }
+    // A filtered view's true size is whatever the server counted for exactly
+    // this selection — the one number both filters and the card list agree on.
+    const sig = filterSig(tabType, className);
+    if (sig) {
+        const page = filterPage(tabType, className, sig);
+        return page ? Math.max(page.total, loaded) : loaded;
     }
     const excluded = (SUBBUCKET_EXCLUDED[tabType] || {})[className];
     const originCounts = panelOriginCountsForTab(tabType)[className] || {};
@@ -14657,57 +14876,7 @@ document.querySelectorAll(".expand-all").forEach(btn => {
     });
 });
 
-// Single smooth hover tooltip
-const hoverTip = document.getElementById("hover-tip");
-let tipTimer = null;
-function placeTip(ev) {
-    if (!hoverTip) return;
-    const pad = 12;
-    hoverTip.style.left = "0px";
-    hoverTip.style.top = "0px";
-    const rect = hoverTip.getBoundingClientRect();
-    let x = ev.clientX + 14;
-    let y = ev.clientY + 14;
-    if (x + rect.width + pad > window.innerWidth) x = ev.clientX - rect.width - 14;
-    if (y + rect.height + pad > window.innerHeight) y = ev.clientY - rect.height - 14;
-    hoverTip.style.left = Math.max(pad, x) + "px";
-    hoverTip.style.top = Math.max(pad, y) + "px";
-}
-// Tooltips carry real explanations now — which threshold a metric depends on,
-// then the formula, then the prose — and a wall of one-line text hid exactly the
-// part that mattered. So a tiny markup: **bold**, *italic*, and newlines.
-//
-// The text is escaped FIRST and the markers applied to the escaped string, so a
-// tip built from user data (a model id, a run description) cannot inject markup
-// no matter what it contains. The worst a literal "**" in a description can do
-// is render bold.
-function tipMarkup(raw) {
-    const esc = String(raw)
-        .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    return esc
-        .replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>")
-        .replace(/\*([^*\n]+)\*/g, "<i>$1</i>")
-        .replace(/\n/g, "<br>");
-}
-document.addEventListener("mouseover", ev => {
-    const el = ev.target.closest("[data-tip]");
-    if (!el || !el.dataset.tip) return;
-    clearTimeout(tipTimer);
-    hoverTip.innerHTML = tipMarkup(el.dataset.tip);
-    placeTip(ev);
-    tipTimer = setTimeout(() => hoverTip.classList.add("show"), 120);
-});
-document.addEventListener("mousemove", ev => {
-    const el = ev.target.closest("[data-tip]");
-    if (el) placeTip(ev);
-});
-document.addEventListener("mouseout", ev => {
-    const el = ev.target.closest("[data-tip]");
-    if (el) {
-        clearTimeout(tipTimer);
-        hoverTip.classList.remove("show");
-    }
-});
+{{ tooltip_js|safe }}
 
 // --- Tabs Switch -----------------------------------------------------------
 document.querySelectorAll(".tabs button").forEach(btn => {
@@ -15012,8 +15181,96 @@ function modelLabUpdateParentStatus() {
             + (warn ? ". " + warn : "")
             + (needsAdopt ? ". The parent's frozen training config is the feature contract." : "");
     }
+    modelLabRenderHeadMap();
     modelLabPopulateFeatureSource();
     modelLabRefreshFit();
+}
+// ---- classifier head map ---------------------------------------------------
+// Which parent class each of this run's classes warm-starts from. Exact name
+// matches need no row here; the editor exists for the cross-stage case, where a
+// pretraining run labels the umbrella event and the venue run labels variants of
+// it, so every target row would otherwise start random.
+let MODEL_HEAD_MAP = {};
+let MODEL_HEAD_MAP_TOUCHED = false;
+function modelLabTargetClasses() {
+    return (MODEL_CATALOG || {}).target_classes || [];
+}
+function modelLabRenderHeadMap() {
+    const block = modelLabEl("head-map-block"), body = modelLabEl("head-map");
+    if (!block || !body) return;
+    const c = modelLabSelectedParent();
+    const parentClasses = (c && c.classes) || [];
+    const childClasses = modelLabTargetClasses();
+    const on = modelLabIsParentInit() && parentClasses.length > 0 && childClasses.length > 0;
+    block.hidden = !on;
+    if (!on) return;
+    // Seed once from the saved config, then from the server's suggestion for any
+    // class the config does not cover. Never overwrite an edit in this session.
+    if (!MODEL_HEAD_MAP_TOUCHED) {
+        const suggested = (c && c.head_map_suggestion) || {};
+        MODEL_HEAD_MAP = Object.assign({}, suggested, (MODEL_CATALOG || {}).transfer_head_map || {});
+    }
+    const known = new Set(parentClasses);
+    const rows = childClasses.map(cls => {
+        const exact = known.has(cls);
+        const mapped = !exact && known.has(MODEL_HEAD_MAP[cls]) ? MODEL_HEAD_MAP[cls] : "";
+        const state = exact ? "exact" : (mapped ? "mapped" : "random");
+        const label = exact ? "reuses the parent's own row"
+            : (mapped ? "starts from the parent's row" : "starts random");
+        const select = exact
+            ? `<span class="head-map-fixed">${escapeHtml(cls)}</span>`
+            : `<select data-head-map-child="${escapeHtml(cls)}">`
+                + `<option value="">— start random —</option>`
+                + parentClasses.map(p =>
+                    `<option value="${escapeHtml(p)}"${p === mapped ? " selected" : ""}>${escapeHtml(p)}</option>`
+                  ).join("")
+                + `</select>`;
+        return `<div class="head-map-row head-map-${state}">`
+            + `<span class="head-map-class">${escapeHtml(cls)}</span>`
+            + `<span class="head-map-arrow" aria-hidden="true">←</span>`
+            + `<span class="head-map-source">${select}</span>`
+            + `<span class="head-map-state">${escapeHtml(label)}</span>`
+            + `</div>`;
+    });
+    body.innerHTML = rows.join("");
+    body.querySelectorAll("[data-head-map-child]").forEach(sel => {
+        sel.addEventListener("change", () => {
+            MODEL_HEAD_MAP_TOUCHED = true;
+            const child = sel.getAttribute("data-head-map-child");
+            if (sel.value) MODEL_HEAD_MAP[child] = sel.value; else delete MODEL_HEAD_MAP[child];
+            modelLabRenderHeadMap();
+        });
+    });
+    const note = modelLabEl("head-map-note");
+    if (note) {
+        const cold = childClasses.filter(cls => !known.has(cls) && !known.has(MODEL_HEAD_MAP[cls]));
+        const dropped = parentClasses.filter(p => !childClasses.includes(p));
+        const bits = [];
+        if (cold.length) {
+            note.className = "field-hint warn";
+            bits.push(cold.length + " row(s) start random: " + cold.join(", ")
+                + ". Expect them to need a higher head learning rate or a deeper fine-tune.");
+        } else {
+            note.className = "field-hint";
+            bits.push("Every row starts from a fitted parent row.");
+        }
+        if (dropped.length) bits.push("Parent classes not in this run are dropped: " + dropped.join(", ") + ".");
+        note.textContent = bits.join(" ");
+    }
+}
+function modelLabHeadMapPayload() {
+    if (!modelLabIsParentInit()) return {};
+    const c = modelLabSelectedParent();
+    const known = new Set((c && c.classes) || []);
+    const childClasses = modelLabTargetClasses();
+    const out = {};
+    childClasses.forEach(cls => {
+        const source = MODEL_HEAD_MAP[cls];
+        // Exact matches are handled by name, and an unknown source would be
+        // rejected server-side — only send rows that actually mean something.
+        if (source && source !== cls && known.has(source) && !known.has(cls)) out[cls] = source;
+    });
+    return out;
 }
 function modelLabSetRecipeActionsEnabled(enabled) {
     ["recipe-save", "verify"].forEach(id => {
@@ -15393,10 +15650,18 @@ function modelLabContractFeature() {
         window_seconds: 0.4,
         upstream_window_seconds: c["features.window_seconds"] || 1.0,
         frontend: c["features.frontend"] || "efficientat",
-        pcen: false, log_power: true, stft_engine: "librosa", db_norm: false,
+        compression: c["features.compression"] || "log",
+        pcen: (c["features.compression"] || "log") === "pcen",
+        log_power: (c["features.compression"] || "log") !== "none",
+        stft_engine: "librosa", db_norm: false,
         db_min: -20, db_max: 60, colormap: "none", image_size: 96,
-        // A published checkpoint contract is always plain log-mel/dB-mel —
-        // explicit off, so a stale standardize=True left in the project's
+        // The normalization the checkpoint pins — for EfficientAT that is its
+        // fixed (x + 4.5) / 5 affine, spelled as the fixed z-score it is.
+        scaling_method: c["features.scaling_method"] || "none",
+        scaling_scope: c["features.scaling_scope"] || "global",
+        scaling_source: c["features.scaling_source"] || "fixed",
+        scaling_stats: c["features.scaling_stats"] || {},
+        // Explicit off, so a stale standardize=True left in the project's
         // current [features] cannot survive the Verify-time merge.
         standardize: false, standardize_mean: 0, standardize_std: 1,
         standardize_stats_resolved: true, standardize_stats_dataset_sha256: "",
@@ -15715,7 +15980,16 @@ function modelLabParentBodyFields() {
         parent_project: c ? c.parent_project : "",
         parent_run: c ? c.parent_run : "",
         adopt_parent_feature: modelLabParentAdoptFlag(),
+        transfer_head_map: modelLabHeadMapPayload(),
     };
+}
+// After a save the config is authoritative again, so the next render seeds from
+// it rather than from the in-session edits.
+function modelLabAdoptSavedHeadMap(recipe) {
+    if (!recipe) return;
+    MODEL_CATALOG.transfer_head_map = recipe.transfer_head_map || {};
+    MODEL_HEAD_MAP_TOUCHED = false;
+    modelLabRenderHeadMap();
 }
 // Server errors from recipe endpoints: a structured missing-dependency error
 // becomes an actionable install hint instead of a raw constructor traceback.
@@ -15747,6 +16021,7 @@ async function modelLabSelectRecipe() {
         const r = await fetch("/api/model-recipe/select", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)});
         const d = await r.json(); if (!d.ok) throw new Error(modelLabErrorText(d, "recipe validation failed"));
         MODEL_CATALOG.active_recipe = d.recipe;
+        modelLabAdoptSavedHeadMap(d.recipe);
         if (status) status.textContent = `Model recipe selected — ${d.recipe.backbone}: ${d.probe.feat_dim}-d embedding, ${d.probe.n_stages} stages. Next: pick the audio feature below and click “Verify model”.`;
         modelLabPopulateFeatureSource();
         modelLabRefreshFit();
@@ -15784,6 +16059,7 @@ async function modelLabVerify() {
         const r = await fetch("/api/model-recipe/select", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)});
         const d = await r.json(); if (!d.ok) throw new Error(modelLabErrorText(d, "recipe validation failed"));
         MODEL_CATALOG.active_recipe = d.recipe;
+        modelLabAdoptSavedHeadMap(d.recipe);
         if (d.feature) {
             MODEL_CATALOG.feature = d.feature;
             if (d.feature.source) MODEL_CATALOG.feature_source = d.feature.source;
@@ -15982,12 +16258,18 @@ async function tcPost(body) {
 
 function tcStatus(msg) { const el = document.getElementById("tc-status"); if (el) el.textContent = msg || ""; }
 
+function applyLibraryTargetClassTint() {
+    const select = document.getElementById("library-target-class");
+    if (select && select.value) applyClassTint(select, select.value);
+}
+
 // Apply a new target-class list to the live UI (no full reload): the Library
 // "target class" assign dropdown, the global MODEL_CLASSES array, the open
 // manage panel, and any corpus-subbucket assign selects.
-function applyTargetClasses(classes) {
+function applyTargetClasses(classes, classVisuals) {
     if (!Array.isArray(classes)) return;
     if (typeof MODEL_CLASSES !== "undefined") { MODEL_CLASSES.length = 0; classes.forEach(c => MODEL_CLASSES.push(c)); }
+    setClassVisuals(classVisuals || (selectionState || {}).class_visuals || CLASS_VISUALS, classes);
     const sel = document.getElementById("library-target-class");
     if (sel) {
         const prev = sel.value;
@@ -15995,6 +16277,7 @@ function applyTargetClasses(classes) {
         if (classes.includes(prev)) sel.value = prev;
     }
     tcRenderChips(classes);
+    applyLibraryTargetClassTint();
     // The source-rule table's per-row class dropdowns and the class pills are
     // both keyed on the class list, so re-render them together.
     if (typeof selectionLoaded !== "undefined" && selectionLoaded) renderSelectionRules();
@@ -16029,6 +16312,7 @@ function tcRenderChips(classes) {
         const chip = document.createElement("span");
         chip.className = "tc-chip" + (c === "_negative" ? " negative" : "");
         chip.style.cssText = classTintStyle(c);
+        chip.dataset.classToken = classVisualToken(c);
         const n = Number(counts[c] || 0);
         chip.setAttribute("data-tip", n
             ? `${n.toLocaleString()} clips assigned to “${c}” by the current source rules.`
@@ -16057,7 +16341,7 @@ async function tcAdd() {
     const d = await tcPost({ action: "add", name });
     if (!d.ok) { tcStatus(d.error || "add failed"); return; }
     if (inp) inp.value = "";
-    applyTargetClasses(d.classes);
+    applyTargetClasses(d.classes, d.class_visuals);
     tcStatus("Added " + name + " — now in the Target class dropdown.");
 }
 
@@ -16065,7 +16349,7 @@ async function tcRemove(name) {
     if (!confirm("Remove target class '" + name + "'? Its assignment rules are dropped.")) return;
     const d = await tcPost({ action: "remove", name });
     if (!d.ok) { tcStatus(d.error || "remove failed"); return; }
-    applyTargetClasses(d.classes);
+    applyTargetClasses(d.classes, d.class_visuals);
     tcStatus("Removed " + name + ".");
 }
 
@@ -16074,7 +16358,7 @@ async function tcRename(name) {
     if (!nn || nn.trim() === name) return;
     const d = await tcPost({ action: "rename", name, new_name: nn.trim() });
     if (!d.ok) { tcStatus(d.error || "rename failed"); return; }
-    applyTargetClasses(d.classes);
+    applyTargetClasses(d.classes, d.class_visuals);
     tcStatus("Renamed " + name + " → " + nn.trim() + ".");
 }
 
@@ -16088,7 +16372,7 @@ async function tcRename(name) {
 
 // Wire the per-class "view: subbuckets" dropdowns rendered server-side, so the
 // Dataset filter works on first paint (before the async review-data refresh).
-(function () { if (typeof setupOriginFilters === "function") setupOriginFilters(); })();
+(function () { if (typeof setupSubgroupFilters === "function") setupSubgroupFilters(); })();
 
 // --- Pretraining corpus subbuckets -----------------------------------------
 // The corpus is far too large to list per clip, so it enters the Library table
@@ -16179,24 +16463,41 @@ let FEATURE_PRESETS_CACHE = [];
 let FEATURE_CONTRACT = null;       // unsaved model-default feature from /api/feature-presets
 const FEATURE_VIRTUAL_DEFAULTS = new Map(); // exact payloads handed off by Model or the API
 let FEATURE_PREVIEW_PRESET = "";
+// The fixed constants the loaded feature pins, if any — {method, scope, stats}.
+// Selecting "fixed constants" in the normalization dropdown replays exactly
+// these; nothing in the lab invents fixed constants of its own.
+let FEATURE_FIXED_SCALING = null;
 let FEATURE_LOADING_FORM = false;
 let FEATURE_CURRENT_SOURCE = {kind:"custom", name:"", label:"Custom audio feature", base_kind:"", base_name:""};
 
 function featureLabEl(id) { return document.getElementById("feature-" + id); }
 
-// The dataset-scaling <select> folds method+scope into one value:
-// none | zscore | zscore_band | minmax | minmax_band.
+// The normalization <select> folds method + scope + source into one value:
+//   none | fixed | zscore | zscore_band | minmax | minmax_band
+// "fixed" is whatever constants the current feature already pins (a checkpoint
+// contract, or the legacy dB window); everything else is fitted on the dataset.
 function featureScalingValue() {
     const raw = (featureLabEl("scaling") || {}).value || "none";
-    if (raw === "none") return { method: "none", scope: "global", value: "none" };
+    if (raw === "none") return { method: "none", scope: "global", source: "dataset", value: "none" };
+    if (raw === "fixed") {
+        const pinned = FEATURE_FIXED_SCALING || {};
+        return {
+            method: pinned.method || "zscore",
+            scope: pinned.scope || "global",
+            source: "fixed",
+            value: "fixed",
+        };
+    }
     return {
         method: raw.indexOf("minmax") === 0 ? "minmax" : "zscore",
         scope: raw.indexOf("_band") >= 0 ? "per_band" : "global",
+        source: "dataset",
         value: raw,
     };
 }
-function featureScalingSelectValue(method, scope) {
+function featureScalingSelectValue(method, scope, source) {
     if (!method || method === "none") return "none";
+    if (source === "fixed") return "fixed";
     return method + (scope === "per_band" ? "_band" : "");
 }
 function featureScalingStatsFromForm() {
@@ -16224,19 +16525,123 @@ function featureInvalidateFittedStats() {
     featureUpdateScalingSummary();
 }
 
+// A run initialized from a parent inherits that parent's fitted constants as
+// part of the encoder's numeric contract — refitting them on the child's data
+// would move the input distribution the transferred weights expect, so the
+// estimator is deliberately unavailable and the drift check replaces it.
+function featureScalingInheritsFromParent() {
+    const recipe = (MODEL_CATALOG || {}).active_recipe || {};
+    return String(recipe.initialization || "") === "parent";
+}
 function featureUpdateScalingSummary(form) {
-    const el = featureLabEl("scaling-summary"); if (!el) return;
+    const el = featureLabEl("scaling-summary");
+    const pill = featureLabEl("scaling-pill");
+    const estimate = featureLabEl("standardize-estimate");
+    const drift = featureLabEl("scaling-drift");
+    if (!el) return;
     const scaling = featureScalingValue();
-    if (scaling.method === "none") { el.textContent = ""; return; }
+    const inherited = featureScalingInheritsFromParent();
+    const compression = (featureLabEl("compression") || {}).value || "log";
+    const compLabel = { log: "log power", db: "decibels", none: "raw power",
+                        pcen: "PCEN" }[compression] || compression;
+    if (scaling.method === "none") {
+        el.innerHTML = "<b>No normalization.</b> The " + escapeHtml(compLabel)
+            + " values reach the model exactly as the compression produced them"
+            + (compression === "pcen"
+                ? " — which is defensible here, because PCEN's adaptive gain already keeps them in a bounded range."
+                : ", on whatever scale this recording chain happens to produce.");
+        if (pill) { pill.textContent = "none"; pill.className = "scaling-state-pill"; }
+        if (estimate) estimate.disabled = true;
+        if (drift) drift.disabled = true;
+        return;
+    }
     const stats = (form && form.scaling_stats) || featureScalingStatsFromForm();
     const keys = scaling.method === "minmax" ? ["lo", "hi"] : ["mean", "std"];
     const a = (stats && stats[keys[0]]) || [], b = (stats && stats[keys[1]]) || [];
-    if (!a.length) { el.textContent = "not fitted yet — press Estimate from dataset"; return; }
+    const clips = parseInt((featureLabEl("standardize_stats_clips") || {}).value, 10) || 0;
+    const hash = (featureLabEl("standardize_stats_dataset_sha256") || {}).value || "";
+    const label = escapeHtml(compLabel) + " → "
+        + (scaling.method === "minmax" ? "min–max" : "z-score")
+        + " · " + (scaling.scope === "per_band" ? "per band" : "global");
+    // Fixed constants are a contract, not a measurement: there is nothing to fit
+    // and nothing to drift away from.
+    if (scaling.source === "fixed") {
+        const fmt = v => Number(v).toFixed(2);
+        const pair = a.length
+            ? (keys[0] + " <b>" + fmt(a[0]) + "</b> · " + keys[1] + " <b>" + fmt(b[0]) + "</b>")
+            : "constants pinned by the contract";
+        el.innerHTML = label + " · <b>fixed</b> — " + pair
+            + ". These were not measured on your data; they come with the checkpoint (or the "
+            + "legacy dB window). Switch to a fitted option to measure them here instead.";
+        if (pill) { pill.textContent = "fixed"; pill.className = "scaling-state-pill inherited"; }
+        if (estimate) { estimate.disabled = true; estimate.textContent = "Estimate from dataset"; }
+        if (drift) drift.disabled = true;
+        return;
+    }
+    if (estimate) {
+        estimate.disabled = inherited;
+        estimate.textContent = inherited ? "Estimate unavailable (inherited)" : "Estimate from dataset";
+    }
+    if (drift) drift.disabled = !a.length;
+    if (!a.length) {
+        el.innerHTML = label + " — <b>not fitted</b>. "
+            + (inherited
+                ? "This run initializes from a parent, so its constants come from the parent's frozen config; re-select the parent run in the Model tab to adopt them."
+                : "Press Estimate from dataset to fit them on the training split.");
+        if (pill) { pill.textContent = "not fitted"; pill.className = "scaling-state-pill warn"; }
+        return;
+    }
     const fmt = v => Number(v).toFixed(2);
     const rng = arr => arr.length === 1 ? fmt(arr[0])
         : (fmt(Math.min.apply(null, arr)) + "…" + fmt(Math.max.apply(null, arr)));
-    el.textContent = "fitted " + (a.length === 1 ? "global values" : a.length + "-band vectors")
-        + " · " + keys[0] + " " + rng(a) + " · " + keys[1] + " " + rng(b);
+    const bits = [label,
+        (a.length === 1 ? "one value pair" : a.length + " bands"),
+        keys[0] + " <b>" + rng(a) + "</b>",
+        keys[1] + " <b>" + rng(b) + "</b>"];
+    if (clips) bits.push("fitted on " + clips + " training clips");
+    if (hash) bits.push("dataset " + hash.slice(0, 8));
+    el.innerHTML = bits.join(" · ");
+    if (pill) {
+        pill.textContent = inherited ? "inherited from parent" : "fitted";
+        pill.className = "scaling-state-pill " + (inherited ? "inherited" : "ok");
+    }
+}
+async function featureCheckScalingDrift() {
+    const out = featureLabEl("scaling-drift-out");
+    const btn = featureLabEl("scaling-drift");
+    if (!out) return;
+    out.hidden = false;
+    out.className = "scaling-state-drift";
+    out.textContent = "measuring this project's clips against the active constants…";
+    if (btn) btn.disabled = true;
+    try {
+        const d = await (await fetch("/api/feature-scaling-drift", { cache: "no-store" })).json();
+        if (!d.ok) throw new Error(d.error || "measurement failed");
+        const r = d.drift || {};
+        if (r.status === "skipped") {
+            out.textContent = "Not measured: " + (r.reason || "unavailable");
+            return;
+        }
+        const scope = r.clips + " clips · " + r.groups + " recording groups";
+        if (r.method === "zscore") {
+            out.className = "scaling-state-drift " + (r.status === "ok" ? "ok" : r.status === "warn" ? "warn" : "err");
+            out.textContent = (r.status === "ok"
+                ? "These clips sit inside the fitted scale"
+                : "These clips sit outside the fitted scale")
+                + " — worst band offset " + r.max_mean_shift_sigma + "σ (median "
+                + r.median_mean_shift_sigma + "σ), spread ratio " + r.min_std_ratio
+                + "–" + r.max_std_ratio + ". " + scope + ".";
+        } else {
+            out.className = "scaling-state-drift " + (r.status === "ok" ? "ok" : r.status === "warn" ? "warn" : "err");
+            out.textContent = (100 * (r.clipped_fraction || 0)).toFixed(1)
+                + "% of values fall outside the fitted range and are clipped. " + scope + ".";
+        }
+    } catch (e) {
+        out.className = "scaling-state-drift err";
+        out.textContent = "Measurement failed: " + e.message;
+    } finally {
+        if (btn) btn.disabled = false;
+    }
 }
 
 function featureReadForm() {
@@ -16246,26 +16651,40 @@ function featureReadForm() {
         const el = featureLabEl(f);
         if (el) out[f] = (f === "window_seconds") ? parseFloat(el.value) : parseInt(el.value, 10);
     });
-    // One normalization selector drives the pcen + log_power + db_norm flags the
-    // backend expects: logmel/log → log; raw → raw power; db → the legacy
-    // fixed-range dB map; pcen → PCEN (AGC). The dataset-scaling selector adds
-    // the fitted scaling on top of log/PCEN compression.
-    const norm = (featureLabEl("normalization") || {}).value || "logmel";
-    out.normalization = norm;
-    out.pcen = (norm === "pcen");
-    out.log_power = (norm !== "raw");
-    out.db_norm = (norm === "db");
+    // Axis 1 — compression. The legacy flags are derived from it so older
+    // readers (and the preview endpoint's defaults) stay correct.
+    const compression = (featureLabEl("compression") || {}).value || "log";
+    out.compression = compression;
+    out.pcen = (compression === "pcen");
+    out.log_power = (compression !== "none");
+    // Axis 2 — normalization. db_norm is the legacy spelling of exactly one
+    // shape: a fixed global min-max over the dB window.
     const scaling = featureScalingValue();
     out.scaling_method = scaling.method;
     out.scaling_scope = scaling.scope;
-    out.scaling_stats = featureScalingStatsFromForm();
-    // The legacy bool spells exactly the non-PCEN global z-score; the backend
-    // validator keeps them mirrored either way.
-    out.standardize = (scaling.method === "zscore" && scaling.scope === "global" && !out.pcen);
+    out.scaling_source = scaling.source;
+    out.db_norm = (compression === "db" && scaling.method === "minmax"
+                   && scaling.scope === "global" && scaling.source === "fixed");
     FEATURE_STD_FIELDS.forEach(f => {
         const el = featureLabEl(f);
         if (el) out[f] = parseFloat(el.value);
     });
+    FEATURE_DB_FIELDS.forEach(f => {
+        const el = featureLabEl(f);
+        if (el) out[f] = parseFloat(el.value);
+    });
+    if (scaling.source === "fixed") {
+        // Fixed constants are never fitted: replay the pinned pair, or the
+        // lo/hi edges the user typed for a fixed min-max.
+        out.scaling_stats = (scaling.method === "minmax")
+            ? { lo: [out.db_min], hi: [out.db_max] }
+            : ((FEATURE_FIXED_SCALING || {}).stats || {});
+    } else {
+        out.scaling_stats = featureScalingStatsFromForm();
+    }
+    // The legacy bool spells exactly the fitted global z-score over log values.
+    out.standardize = (scaling.method === "zscore" && scaling.scope === "global"
+                       && scaling.source === "dataset" && compression === "log");
     if (out.standardize && !(out.scaling_stats.mean || []).length) {
         out.scaling_stats = {
             mean: [out.standardize_mean || 0], std: [out.standardize_std || 1],
@@ -16328,26 +16747,39 @@ function featureWriteForm(preset, source) {
         if (cmap) cmap.value = (preset.colormap === "jet") ? "jet" : "none";
         const isz = featureLabEl("image_size");
         if (isz && preset.image_size !== undefined && preset.image_size !== null) isz.value = preset.image_size;
-        // Map the preset's pcen / db_norm / log_power flags onto the single
-        // normalization selector; scaling has its own selector.
+        // Axis 1 — compression. Canonical field first, legacy flags as fallback
+        // for presets saved before the field existed.
         const ftype = preset.feature_type || (t && t.value) || "mel";
-        const norm = preset.pcen ? "pcen"
-            : (ftype === "linear"
-                ? (preset.db_norm ? "db" : (preset.log_power === false ? "raw" : "log"))
-                : "logmel");
-        featurePopulateNormalization(norm);
-        const ns = featureLabEl("normalization");
-        if (ns) ns.value = norm;
-        // Dataset scaling: canonical fields first, legacy standardize as the
-        // global z-score fallback.
+        const compression = preset.compression || (preset.pcen ? "pcen"
+            : (preset.db_norm ? "db"
+                : (preset.frontend === "ced" ? "db"
+                    : (ftype === "linear" && preset.log_power === false ? "none" : "log"))));
+        featurePopulateCompression(compression);
+        const cs = featureLabEl("compression");
+        if (cs) cs.value = compression;
+        // Axis 2 — normalization. Canonical fields first, legacy standardize as
+        // the fitted-global-z-score fallback.
         const scalingMethod = (preset.scaling_method && preset.scaling_method !== "none")
             ? preset.scaling_method
             : (preset.standardize ? "zscore" : "none");
         const scalingScope = (preset.scaling_method && preset.scaling_method !== "none")
             ? (preset.scaling_scope || "global") : "global";
-        featurePopulateScaling(featureScalingSelectValue(scalingMethod, scalingScope));
+        const scalingSource = (preset.scaling_method && preset.scaling_method !== "none")
+            ? (preset.scaling_source || "dataset") : "dataset";
+        // Remember what this feature pins so "fixed constants" can replay it
+        // exactly instead of the lab inventing constants of its own.
+        FEATURE_FIXED_SCALING = (scalingSource === "fixed" && scalingMethod !== "none")
+            ? {
+                method: scalingMethod, scope: scalingScope,
+                stats: preset.scaling_stats || {},
+                label: (scalingMethod === "minmax" ? "min–max" : "z-score")
+                    + " · " + (scalingScope === "per_band" ? "per band" : "global"),
+            }
+            : null;
+        const scalingValue = featureScalingSelectValue(scalingMethod, scalingScope, scalingSource);
+        featurePopulateScaling(scalingValue);
         const sc = featureLabEl("scaling");
-        if (sc) sc.value = featureScalingSelectValue(scalingMethod, scalingScope);
+        if (sc) sc.value = scalingValue;
         const statsVec = featureLabEl("scaling_stats");
         if (statsVec) {
             const hasVec = preset.scaling_stats && Object.keys(preset.scaling_stats).length;
@@ -16374,83 +16806,82 @@ function featureWriteForm(preset, source) {
     if (source) featureSetCurrentSource(source, preset);
 }
 
-// Normalization options depend on the feature type: mel → {log-mel contract, PCEN};
-// linear → {log power, raw power, legacy dB, PCEN}. PCEN and legacy dB each
-// replace the log/raw normalization; the fitted z-score / min-max live in the
-// separate dataset-scaling selector.
-function featurePopulateNormalization(requested = null) {
-    const sel = featureLabEl("normalization"); if (!sel) return;
-    const type = (featureLabEl("type") || {}).value || "mel";
+// Compression is one axis with the same four choices for mel and linear — the
+// basis and the compression are independent. Only the CED frontend pins one,
+// because its published checkpoint IS a dB-mel.
+function featurePopulateCompression(requested = null) {
+    const sel = featureLabEl("compression"); if (!sel) return;
     const frontend = (featureLabEl("frontend") || {}).value || "efficientat";
     const opts = (frontend === "ced")
-        ? [["logmel", "dB mel (CED contract)"]]
-        : (type === "linear")
-        ? [["log", "log power"], ["db", "legacy dB [-20, 60] (compatibility)"], ["pcen", "PCEN (AGC)"]]
-        : [["logmel", "log-mel (AudioSet contract)"], ["pcen", "PCEN (AGC)"]];
-    const prevRaw = requested === null ? sel.value : requested;
-    const prev = (prevRaw === "std")
-        ? (type === "linear" ? "log" : "logmel")  // legacy option migrated to dataset scaling
-        : prevRaw;
-    if (prev === "raw" && !opts.some(o => o[0] === "raw")) {
-        opts.push(["raw", "raw power (legacy existing config)"]);
-    }
+        ? [["db", "dB — pinned by the CED checkpoint"]]
+        : [
+            ["log", "log power — ln(power + 1e-5)"],
+            ["db", "dB — 10·log10(power)"],
+            ["none", "raw power — no compression"],
+            ["pcen", "PCEN — per-band adaptive gain"],
+        ];
+    const prev = requested === null ? sel.value : requested;
     sel.innerHTML = opts.map(o => "<option value='" + o[0] + "'>" + escapeHtml(o[1]) + "</option>").join("");
     sel.value = opts.some(o => o[0] === prev) ? prev : opts[0][0];
+    sel.disabled = frontend === "ced";
 }
 
-// Dataset scaling applies to log-mel, log-linear, and PCEN outputs; raw power,
-// the legacy dB map, colormap images, and the pinned CED frontend take none.
+// Normalization is the other axis. It applies after ANY compression, so the
+// options never depend on the compression — only a colormap render (already a
+// [0, 1] picture) and the pinned CED frontend restrict it.
 function featurePopulateScaling(requested = null) {
     const sel = featureLabEl("scaling"); if (!sel) return;
     const type = (featureLabEl("type") || {}).value || "mel";
     const frontend = (featureLabEl("frontend") || {}).value || "efficientat";
-    const norm = (featureLabEl("normalization") || {}).value || "logmel";
     const cmap = (featureLabEl("colormap") || {}).value || "none";
-    const blocked = frontend === "ced" || norm === "raw" || norm === "db"
-        || (type === "linear" && cmap !== "none");
+    const image = type === "linear" && cmap !== "none";
     const prev = requested === null ? sel.value : requested;
-    const pcenMode = norm === "pcen";
-    const opts = (blocked || pcenMode) ? [["none", "none"]] : [
-        ["none", "none"], ["zscore_band", "dataset-wide per-band z-score"],
-    ];
-    const legacyLabels = {
-        zscore: "z-score global (legacy existing config)",
-        minmax: "min-max global (legacy existing config)",
-        minmax_band: "min-max per-band (legacy existing config)",
-    };
-    if (!blocked && prev !== "none" && !opts.some(o => o[0] === prev)) {
-        opts.push([prev, legacyLabels[prev] || "legacy stacked scaling (existing config)"]);
+    let opts;
+    if (frontend === "ced") {
+        opts = [["none", "none — the CED contract applies no affine"]];
+    } else if (image) {
+        opts = [["fixed", "fixed min–max over the dB window below (legacy image)"]];
+    } else {
+        opts = [
+            ["none", "none — values reach the model as-is"],
+            ["zscore_band", "fitted z-score · per band (recommended)"],
+            ["zscore", "fitted z-score · global"],
+            ["minmax_band", "fitted min–max · per band"],
+            ["minmax", "fitted min–max · global"],
+        ];
+        if (FEATURE_FIXED_SCALING) {
+            opts.splice(1, 0, ["fixed", "fixed constants — " + FEATURE_FIXED_SCALING.label]);
+        }
     }
     sel.innerHTML = opts.map(o => "<option value='" + o[0] + "'>" + escapeHtml(o[1]) + "</option>").join("");
-    sel.value = opts.some(o => o[0] === prev) ? prev : "none";
-    sel.disabled = blocked || (pcenMode && prev === "none");
+    sel.value = opts.some(o => o[0] === prev) ? prev : opts[0][0];
+    sel.disabled = opts.length < 2;
 }
 
 function featureUpdateTypeUI() {
     const frontend = (featureLabEl("frontend") || {}).value || "efficientat";
     const typeEl = featureLabEl("type");
     if (frontend === "ced" && typeEl && typeEl.value !== "mel") typeEl.value = "mel";
-    featurePopulateNormalization();
+    featurePopulateCompression();
     featurePopulateScaling();
     const lab = document.querySelector(".feature-lab");
     const t = (featureLabEl("type") || {}).value || "mel";
-    const norm = (featureLabEl("normalization") || {}).value;
-    const pcen = (norm === "pcen");
+    const compression = (featureLabEl("compression") || {}).value || "log";
+    const pcen = (compression === "pcen");
     const cmap = (featureLabEl("colormap") || {}).value || "none";
     const scaling = featureScalingValue();
     if (lab) {
         lab.classList.toggle("ft-mel", t === "mel");
         lab.classList.toggle("ft-linear", t === "linear");
         lab.classList.toggle("ft-pcen", pcen);
-        // The legacy dB range fields only apply to the linear dB normalization.
-        lab.classList.toggle("ft-db", t === "linear" && norm === "db");
+        // The fixed lo/hi edges are the constants of a fixed min-max, so they
+        // are shown exactly when that is the selected normalization.
+        lab.classList.toggle("ft-db", scaling.value === "fixed" && scaling.method === "minmax");
         // The image-size field only applies when a colormap image is rendered.
         lab.classList.toggle("ft-image", t === "linear" && cmap !== "none");
-        // The fitted-constants block shows whenever a dataset scaling is on;
-        // per-band and min-max render a read-only summary instead of scalars.
-        lab.classList.toggle("ft-std", scaling.method !== "none");
-        lab.classList.toggle("ft-stdvec", scaling.method !== "none"
-            && !(scaling.method === "zscore" && scaling.scope === "global"));
+        // The constants card is always shown: "no normalization" is a decision
+        // worth seeing, not an empty space.
+        lab.classList.toggle("ft-std", true);
     }
     featureUpdateScalingSummary();
     const hop = featureLabEl("hop_length"), sr = featureLabEl("sample_rate"), ms = featureLabEl("hop-ms");
@@ -16465,12 +16896,14 @@ function featureFormToParams(form) {
     params.set("feature_type", form.feature_type);
     params.set("frontend", form.frontend || "efficientat");
     FEATURE_FIELDS.forEach(f => { if (form[f] !== undefined && !isNaN(form[f])) params.set(f, form[f]); });
+    params.set("compression", form.compression || "log");
     params.set("log_power", form.log_power ? "1" : "0");
     params.set("pcen", form.pcen ? "1" : "0");
     params.set("stft_engine", form.stft_engine || "librosa");
     params.set("db_norm", form.db_norm ? "1" : "0");
     params.set("scaling_method", form.scaling_method || "none");
     params.set("scaling_scope", form.scaling_scope || "global");
+    params.set("scaling_source", form.scaling_source || "dataset");
     if (form.scaling_method && form.scaling_method !== "none"
             && form.scaling_stats && Object.keys(form.scaling_stats).length) {
         params.set("scaling_stats", JSON.stringify(form.scaling_stats));
@@ -17843,22 +18276,27 @@ function initFeatureLab() {
     if (!document.getElementById("tab-audiofeatures")) return;
     const typeSel = featureLabEl("type");
     if (typeSel) typeSel.addEventListener("change", () => { featureInvalidateFittedStats(); featureMarkCustom(); featureUpdateTypeUI(); featureRefreshPreview(); });
-    const norm = featureLabEl("normalization");
-    if (norm) norm.addEventListener("change", () => {
+    const comp = featureLabEl("compression");
+    if (comp) comp.addEventListener("change", () => {
+        // Constants fitted in one compressed domain are meaningless in another,
+        // and a fixed contract's constants describe the domain it shipped with.
         featureInvalidateFittedStats();
-        if (norm.value === "pcen") {
-            const scaling = featureLabEl("scaling");
-            if (scaling) scaling.value = "none";
+        const scaling = featureLabEl("scaling");
+        if (scaling && scaling.value === "fixed") {
+            FEATURE_FIXED_SCALING = null;
+            scaling.value = "none";
         }
         featureMarkCustom(); featureUpdateTypeUI(); featureRefreshPreview();
     });
     const scalingSel = featureLabEl("scaling");
     if (scalingSel) scalingSel.addEventListener("change", () => { featureInvalidateFittedStats(); featureMarkCustom(); featureUpdateTypeUI(); featureRefreshPreview(); });
+    const driftBtn = featureLabEl("scaling-drift");
+    if (driftBtn) driftBtn.addEventListener("click", featureCheckScalingDrift);
     const stdEstimate = featureLabEl("standardize-estimate");
     if (stdEstimate) stdEstimate.addEventListener("click", async () => {
         const st = featureLabEl("standardize-status");
         if (featureScalingValue().method === "none") {
-            if (st) st.textContent = "select a dataset scaling first";
+            if (st) st.textContent = "choose a fitted normalization first";
             return;
         }
         if (st) st.textContent = "measuring…";
@@ -17999,10 +18437,15 @@ if (datasetDefToggle) datasetDefToggle.addEventListener("click", () => {
 });
 const sourceRulesClear = document.getElementById("source-rules-clear");
 if (sourceRulesClear) sourceRulesClear.addEventListener("click", clearAllSelectionRules);
+const sourceRulesClassClear = document.getElementById("source-rules-class-clear");
+if (sourceRulesClassClear) sourceRulesClassClear.addEventListener("click", clearDatasetDefClassFilter);
 const sourceRulesSearch = document.getElementById("source-rules-search");
 if (sourceRulesSearch) sourceRulesSearch.addEventListener("input", () => {
     sourceRuleQuery = sourceRulesSearch.value || "";
     renderSelectionRules();
+});
+document.querySelectorAll("#dataset-def-legend [data-dd-filter]").forEach(btn => {
+    btn.addEventListener("click", () => toggleDatasetDefKindFilter(btn.dataset.ddFilter));
 });
 // Dataset source-rule presets + top-bar recompose flag
 const datasetPresetSelect = document.getElementById("dataset-preset-select");
@@ -18030,6 +18473,8 @@ const libraryAssignClass = document.getElementById("library-assign-class");
 if (libraryAssignClass) {
     libraryAssignClass.addEventListener("click", () => addSelectionRule());
 }
+const libraryTargetClass = document.getElementById("library-target-class");
+if (libraryTargetClass) libraryTargetClass.addEventListener("change", applyLibraryTargetClassTint);
 const libraryDeleteSelected = document.getElementById("library-delete-selected");
 if (libraryDeleteSelected) {
     libraryDeleteSelected.addEventListener("click", () => deleteSelectedLibraryRows());
@@ -18053,8 +18498,13 @@ if (composeDatasetBtn) {
 }
 const librarySplittestEnabled = document.getElementById("library-splittest-enabled");
 if (librarySplittestEnabled) librarySplittestEnabled.addEventListener("change", updateLibraryTestSetGating);
-const libraryTestsetSave = document.getElementById("library-testset-save");
-if (libraryTestsetSave) libraryTestsetSave.addEventListener("click", saveLibraryTestConfig);
+// The percentage is part of the state the single button reports on, so the
+// label has to follow it as it is typed.
+const librarySplittestPct = document.getElementById("library-splittest-fraction-pct");
+if (librarySplittestPct) {
+    librarySplittestPct.addEventListener("input", updateLibraryTestSetGating);
+    librarySplittestPct.addEventListener("change", updateLibraryTestSetGating);
+}
 const libraryTestsetBuild = document.getElementById("library-testset-build");
 if (libraryTestsetBuild) libraryTestsetBuild.addEventListener("click", buildFrozenTestSet);
 loadLibraryTestConfig();
@@ -18591,7 +19041,6 @@ async function refreshFrozenRun(selectedRun, { statusBusyText = "loading predict
         currentFrozenRunId = payload.run_id || selectedRun || (payload.context || {}).viewed_run_id || "";
         CLIPS_DATA.frozen_context = payload.context || CLIPS_DATA.frozen_context || {};
         renderFrozenRunSelect(CLIPS_DATA.frozen_context);
-        renderLibraryTestSetStaleNotice();
         if (payload.panels) {
             CLIPS_DATA.frozen_panels = payload.panels || {};
             panelTotals.frozen = {};
@@ -19111,18 +19560,7 @@ function syncPreviewActivity() {
     }
 }
 
-// --- toast stack ---
-function toast(msg, cls) {
-    const stack = document.getElementById("toast-stack");
-    if (!stack) return;              // non-interactive page: no bar
-    const el = document.createElement("div");
-    el.className = "toast" + (cls ? " " + cls : "");
-    el.textContent = msg;
-    const remove = () => { el.classList.add("hide"); setTimeout(() => el.remove(), 260); };
-    el.addEventListener("click", remove);
-    stack.appendChild(el);
-    setTimeout(remove, cls === "err" ? 8000 : 5000);
-}
+{{ toast_js|safe }}
 
 // --- navigation from a chip / log entry to its tab (and sub-section) ---
 function navigateToJob(job) {
@@ -20001,19 +20439,28 @@ function renderTrainFeatureReadout(f) {
         ["feature", f.feature_type || "mel"], ["bins", bins], ["sample rate", (f.sample_rate||0) + " Hz"],
         ["hop", (f.hop_length||0) + hopMs], ["window", (f.window_seconds||0) + " s"], ["preset", f.preset || "—"],
     ];
+    // Report the two value axes separately: what the numbers mean, then what
+    // range they arrive in and where those constants came from.
+    const compression = f.compression || (f.pcen ? "pcen"
+        : (f.db_norm ? "db" : (f.log_power === false ? "none" : "log")));
+    parts.push(["compression", { log: "log power", db: "decibels",
+                                 none: "raw power", pcen: "PCEN" }[compression] || compression]);
     const scalingMethod = (f.scaling_method && f.scaling_method !== "none")
         ? f.scaling_method : (f.standardize ? "zscore" : "none");
-    if (scalingMethod !== "none") {
-        const fitted = !!f.standardize_stats_resolved && !!f.standardize_stats_dataset_sha256
-            && Number(f.standardize_stats_clips || 0) > 0;
-        const label = (scalingMethod === "minmax" ? "min-max" : "z-score")
-            + (f.scaling_scope === "per_band" ? " per-band" : "")
-            + (f.pcen ? " on PCEN" : "");
-        parts.push(["normalization", fitted
-            ? (label + " · " + Number(f.standardize_stats_clips) + " train-only clips · seed " + (f.standardize_stats_split_seed || 0) + " · val " + (100 * Number(f.standardize_stats_val_fraction || 0)).toFixed(1) + "%")
-            : (label + " · needs train-only fit")]);
+    if (scalingMethod === "none") {
+        parts.push(["normalization", "none"]);
     } else {
-        parts.push(["normalization", f.pcen ? "PCEN" : (f.db_norm ? "dB mapping" : (f.log_power === false ? "raw power" : "log power"))]);
+        const label = (scalingMethod === "minmax" ? "min-max" : "z-score")
+            + (f.scaling_scope === "per_band" ? " per-band" : " global");
+        if (f.scaling_source === "fixed") {
+            parts.push(["normalization", label + " · fixed contract constants"]);
+        } else {
+            const fitted = !!f.standardize_stats_resolved && !!f.standardize_stats_dataset_sha256
+                && Number(f.standardize_stats_clips || 0) > 0;
+            parts.push(["normalization", fitted
+                ? (label + " · " + Number(f.standardize_stats_clips) + " train-only clips · seed " + (f.standardize_stats_split_seed || 0) + " · val " + (100 * Number(f.standardize_stats_val_fraction || 0)).toFixed(1) + "%")
+                : (label + " · needs train-only fit")]);
+        }
     }
     el.innerHTML = parts.map(p => "<span><b>" + p[0] + ":</b> " + trainEsc(p[1]) + "</span>").join("");
 }
@@ -20069,7 +20516,7 @@ function renderTrainValClassCounts() {
             notes.push(name + ": " + explanation);
         }
         const tip = explanation ? ` data-tip="${trainEsc(explanation)}"` : "";
-        return `<span class="class-count${count === 0 ? " zero" : ""}"${tip}>`
+        return `<span class="class-count${count === 0 ? " zero" : ""}" data-class-identity="${escapeHtml(name)}" style="${classTintStyle(name)}"${tip}>`
             + `<span>${trainEsc(name)}</span><b>${count.toLocaleString()}</b></span>`;
     });
     box.innerHTML = `<span class="summary-label">Validation by class</span>${pills.join("")}`
@@ -20128,7 +20575,7 @@ function renderTrainReadiness(c, featureReadiness) {
         el.textContent = (feature.problems || ["The selected feature is not ready for training."])[0];
     } else if (feature.ready === false && feature.auto_repairable) {
         el.className = "train-readiness warn";
-        el.textContent = "Dataset ready — standardized linear statistics are stale or unresolved. Start training will safely refit them on the saved grouped train split before launch.";
+        el.textContent = "Dataset ready — the dataset scaling constants are stale or unresolved. Start training will refit them on the saved grouped train split before launch.";
     } else {
         el.className = "train-readiness ok";
         el.textContent = "Dataset ready — train ~" + tr + " · val ~" + va + " (split at train start) · frozen test " + te + (va<1 ? "  (no val: early stopping disabled)" : "");
@@ -23227,6 +23674,25 @@ async function loadTrainAdvice() {
         const r = await fetch("/api/advice");
         const d = await r.json();
         if (!d.ok) throw new Error(d.error || "failed");
+        // Which stage of the two-stage workflow this run is. Almost every
+        // recommendation below reads differently for a domain pretrain than for
+        // a venue fine-tune, so name it before listing them.
+        const stageLine = trainEl("stage-line");
+        if (stageLine) {
+            const s = d.stage || {};
+            if (s.stage) {
+                const parent = (s.parent_project && s.parent_run)
+                    ? ` ← ${s.parent_project}/${s.parent_run}` : "";
+                stageLine.hidden = false;
+                stageLine.className = "train-stage-line stage-" + s.stage;
+                stageLine.innerHTML = `<b>stage ${s.stage} · ${escapeHtml(String(s.label || ""))}</b>`
+                    + escapeHtml(parent)
+                    + `<span class="train-stage-note">frontend scaling: `
+                    + escapeHtml(String(s.frontend_source || "")) + `</span>`;
+            } else {
+                stageLine.hidden = true;
+            }
+        }
         const areas = [
             ["features", "Audio feature"],
             ["model", "Model"],
@@ -25621,6 +26087,7 @@ function renderInferenceSettings(d) {
     }
     renderInferenceDevices(d.device || {});
     renderInferenceTargets(d);
+    renderClassRoles(d);
     updateInferenceRunSummary();
 }
 
@@ -25674,7 +26141,10 @@ function renderInferenceDevices(d) {
 
 function renderInferenceTargets(d) {
     const box = trainEl("infer-targets"); if (!box) return;
-    const rows = (d.target_rows || []).filter(r => !r.negative);
+    // Only role=="target" classes can fire at all, so only they make sense as
+    // an operational "watch this subset" restriction — a suppressor always
+    // competes for the window regardless of this list (see Config.class_roles).
+    const rows = (d.target_rows || []).filter(r => r.role ? r.role === "target" : !r.negative);
     if (!rows.length) { box.innerHTML = "<span class=\"section-status\">No target classes.</span>"; return; }
     const active = new Set(INFER_TARGETS || d.active_targets || []);
     box.innerHTML = rows.map(r => {
@@ -25686,6 +26156,62 @@ function renderInferenceTargets(d) {
         INFER_TARGETS = inferSelectedTargets();
         updateInferenceRunSummary();
     }));
+}
+
+const CLASS_ROLE_OPTIONS = ["target", "negative", "suppressor"];
+
+// Role/mine/mine-confidence editor for every class, independent of the
+// trigger-target checkbox list above (which only shows role=="target" rows).
+// Posts straight to `/api/target-classes {action:"set_target"}` — see
+// `_handle_set_target_fields` in inspect_server.py.
+function renderClassRoles(d) {
+    const box = trainEl("class-roles"); if (!box) return;
+    const rows = d.target_rows || [];
+    if (!rows.length) { box.innerHTML = "<span class=\"section-status\">No classes.</span>"; return; }
+    box.innerHTML = "<table class=\"class-roles-table\"><thead><tr>"
+        + "<th>class</th><th>role</th><th>mine</th><th>mine confidence</th>"
+        + "</tr></thead><tbody>"
+        + rows.map(r => {
+            const cls = trainEsc(r.class);
+            const roleOpts = CLASS_ROLE_OPTIONS.map(role =>
+                "<option value=\"" + role + "\"" + (r.role === role ? " selected" : "") + ">" + role + "</option>"
+            ).join("");
+            const mineChecked = r.mine ? " checked" : "";
+            const mineThreshold = r.mine_threshold == null ? "" : Number(r.mine_threshold).toFixed(2);
+            return "<tr data-class=\"" + cls + "\">"
+                + "<td>" + cls + "</td>"
+                + "<td><select class=\"cr-role\">" + roleOpts + "</select></td>"
+                + "<td><input type=\"checkbox\" class=\"cr-mine\"" + mineChecked + "></td>"
+                + "<td><input type=\"number\" class=\"cr-mine-threshold\" min=\"0\" max=\"1\" step=\"0.01\" value=\"" + mineThreshold + "\" placeholder=\"threshold\"></td>"
+                + "</tr>";
+        }).join("")
+        + "</tbody></table>";
+
+    box.querySelectorAll("tr[data-class]").forEach(row => {
+        const cls = row.dataset.class;
+        const roleSel = row.querySelector(".cr-role");
+        const mineBox = row.querySelector(".cr-mine");
+        const mineThr = row.querySelector(".cr-mine-threshold");
+        if (roleSel) roleSel.addEventListener("change", () => setClassTargetFields(cls, { role: roleSel.value }));
+        if (mineBox) mineBox.addEventListener("change", () => setClassTargetFields(cls, { mine: mineBox.checked }));
+        if (mineThr) mineThr.addEventListener("change", () => {
+            const v = mineThr.value === "" ? null : Number(mineThr.value);
+            if (v !== null && (!isFinite(v) || v <= 0 || v > 1)) {
+                tcStatus("mine confidence must be between 0 and 1");
+                return;
+            }
+            setClassTargetFields(cls, { mine_threshold: v });
+        });
+    });
+}
+
+async function setClassTargetFields(name, fields) {
+    const d = await tcPost({ action: "set_target", name, fields });
+    if (!d.ok) { tcStatus(d.error || "update failed"); return; }
+    tcStatus("Updated " + name + ".");
+    // The role/threshold/veto change can move which classes fire or vetoes —
+    // refresh the whole inference-settings payload rather than patch one row.
+    if (typeof loadTrainInferenceSettings === "function") loadTrainInferenceSettings();
 }
 
 function renderInferenceChannels(channels, levels) {
@@ -26017,11 +26543,16 @@ function renderInferenceClasses(classes, stats, activeTargets) {
     const active = new Set(activeTargets || []);
     const list = (classes && classes.length ? classes : Object.keys(scores));
     if (!list.length) { box.innerHTML = "<div class=\"section-status\">waiting…</div>"; return; }
+    // Every negative/suppressor class that hard-vetoes the window, keyed by
+    // its own ceiling (see Config.class_vetoes) — not just the literal
+    // `_negative` class against one scalar `negative_max`.
+    const vetoes = stats.vetoes || {};
     box.innerHTML = list.map(cls => {
         const score = Number(scores[cls] || 0);
-        const isNeg = cls === "_negative";
-        const threshold = isNeg ? stats.negative_max : thresholds[cls];
-        const blocked = isNeg && threshold != null && score > Number(threshold);
+        const vetoCeiling = vetoes[cls];
+        const isNeg = vetoCeiling != null;
+        const threshold = isNeg ? vetoCeiling : thresholds[cls];
+        const blocked = isNeg && score > Number(vetoCeiling);
         const rowClass = (active.has(cls) ? " active" : "") + (isNeg ? " negative" : "") + (blocked ? " blocked" : "");
         return "<div class=\"infer-class-row" + rowClass + "\">"
             + "<div class=\"infer-class-name\" data-tip=\"" + trainEsc(cls) + "\">" + trainEsc(cls) + "</div>"

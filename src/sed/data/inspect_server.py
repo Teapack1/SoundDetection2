@@ -966,7 +966,8 @@ def _dataset_shape(layout: ProjectLayout) -> dict:
     safe to call from a page-load endpoint.
     """
     empty = {"rows": 0, "classes": [], "by_class": {}, "n_classes": 0,
-             "negative_share": 0.0, "min_class_groups": 0, "min_class_rows": 0}
+             "negative_share": 0.0, "min_class_groups": 0, "min_class_rows": 0,
+             "negative_origins": []}
     path = layout.dataset_dir / "train.csv"
     if not path.exists():
         return empty
@@ -974,6 +975,10 @@ def _dataset_shape(layout: ProjectLayout) -> dict:
     from collections import Counter, defaultdict
     counts: Counter = Counter()
     groups: dict[str, set] = defaultdict(set)
+    # Which library buckets `_negative` is made of. Some of them are room tone
+    # and some are near-misses; the advice layer can only suggest splitting the
+    # second kind out if it can see the names.
+    negative_origins: set[str] = set()
     try:
         with open(path, "r", encoding="utf-8") as f:
             for row in _csv.DictReader(f):
@@ -984,6 +989,10 @@ def _dataset_shape(layout: ProjectLayout) -> dict:
                 session = str(row.get("session_id") or "")
                 if session:
                     groups[name].add(session)
+                if name == "_negative":
+                    origin = str(row.get("origin_class") or "").strip()
+                    if origin:
+                        negative_origins.add(origin)
     except Exception:  # noqa: BLE001 — advisory input only
         return empty
     if not counts:
@@ -998,6 +1007,7 @@ def _dataset_shape(layout: ProjectLayout) -> dict:
         "negative_share": round(counts.get("_negative", 0) / total, 4) if total else 0.0,
         "min_class_groups": min(group_sizes) if group_sizes else 0,
         "min_class_rows": min(counts.values()),
+        "negative_origins": sorted(negative_origins),
     }
 
 
@@ -1088,10 +1098,16 @@ def _fitted_scaling_training_readiness(
     cfg: Config, layout: ProjectLayout,
 ) -> dict[str, Any]:
     """Expose the exact fitted-scaling launch gate to the Inspect UI."""
+    from sed.config import resolved_features
     from sed.train.train import _effective_scaling_method
 
-    features = cfg.features
-    enabled = _effective_scaling_method(features) != "none"
+    features = resolved_features(cfg.features)
+    # Only constants that are meant to be fitted can be stale; fixed contract
+    # constants (the AudioSet affine, the legacy dB window) have nothing to fit.
+    enabled = (
+        _effective_scaling_method(features) != "none"
+        and str(getattr(features, "scaling_source", "dataset")) == "dataset"
+    )
     if not enabled:
         return {"enabled": False, "ready": True, "problems": [], "auto_repairable": False}
     try:
@@ -2087,12 +2103,19 @@ def _inference_device_payload(
 
 
 def _active_inference_targets(cfg: Config) -> set[str]:
+    """Classes that may fire a trigger — role == "target" only.
+
+    Routed through `cfg.class_roles()` rather than reading `[targets].enabled`
+    directly: that keeps this in sync with the real arbiter (`build_arbiter`),
+    which already applies the suppressor name-heuristic default and the
+    negative-role exclusion. Reading `[targets]` directly here used to miss
+    both — an unconfigured `hardnegs`-named class showed as "active" even
+    though it never fires, and an explicitly `enabled=false` class could
+    still show as "active" via the empty-`[targets]` fallback branch.
+    """
     known = set(cfg.model.classes)
-    configured = {
-        cls for cls, target in cfg.targets.items()
-        if cls in known and cls != "_negative" and target.enabled
-    }
-    return configured or {c for c in cfg.model.classes if c != "_negative"}
+    roles = cfg.class_roles(list(known))
+    return {cls for cls, role in roles.items() if role == "target"}
 
 
 def _inference_mining_classes(cfg: Config, active_targets: set[str], enabled: bool) -> set[str]:
@@ -2144,6 +2167,8 @@ def _inference_settings_payload(
     mining_classes = _inference_mining_classes(runtime_cfg, active_targets, mining_default)
     classes = list(runtime_cfg.model.classes)
     thresholds = runtime_cfg.effective_thresholds(classes)
+    roles = runtime_cfg.class_roles(classes)
+    vetoes = runtime_cfg.class_vetoes(classes)
     return {
         "ok": True,
         "model": model,
@@ -2160,8 +2185,12 @@ def _inference_settings_payload(
                 "class": cls,
                 "enabled": cls in active_targets,
                 "mine": cls in runtime_cfg.mining_classes(),
+                "mine_threshold": runtime_cfg.mine_threshold(cls),
                 "threshold": thresholds.get(cls),
-                "negative": cls == "_negative",
+                # Kept for older frontend builds; prefer "role".
+                "negative": roles.get(cls) == "negative",
+                "role": roles.get(cls),
+                "veto_max": vetoes.get(cls),
             }
             for cls in classes
         ],
@@ -2533,7 +2562,11 @@ def make_handler(
             elif url.path == "/api/panel-totals":
                 self._handle_panel_totals()
             elif url.path == "/api/clips":
-                qs = parse_qs(url.query)
+                # keep_blank_values, because "origins=" (every subbucket
+                # unchecked) has to stay distinguishable from no origins= at
+                # all (no subbucket filter). Every other param here already
+                # falls back on an empty string.
+                qs = parse_qs(url.query, keep_blank_values=True)
                 self._handle_clips_page(
                     tab=(qs.get("tab", [""])[0] or "").strip(),
                     class_name=(qs.get("class", [""])[0] or ""),
@@ -2541,6 +2574,11 @@ def make_handler(
                     limit=(qs.get("limit", ["100"])[0] or "100"),
                     run_id=(qs.get("run_id", qs.get("run", [""]))[0] or "").strip() or None,
                     origin_class=(qs.get("origin_class", [""])[0] or "").strip(),
+                    # None when absent (every bucket) vs "" when present and
+                    # empty (the user unchecked them all) — different answers.
+                    origins=(qs["origins"][0] if "origins" in qs else None),
+                    group_axis=(qs.get("group_axis", [""])[0] or "").strip(),
+                    group_key=(qs.get("group_key", [""])[0] or ""),
                     query=(qs.get("query", qs.get("q", [""]))[0] or "").strip(),
                 )
             elif url.path == "/api/activity":
@@ -2613,6 +2651,8 @@ def make_handler(
                 self._handle_batch_eval_status((qs.get("job_id", [""])[0] or "").strip())
             elif url.path == "/api/advice":
                 self._handle_advice_get()
+            elif url.path == "/api/feature-scaling-drift":
+                self._handle_feature_scaling_drift_get()
             elif url.path == "/api/frozen-test-presets":
                 self._handle_frozen_test_presets_get()
             elif url.path == "/api/train/runs":
@@ -3878,10 +3918,20 @@ def make_handler(
                     frozen_test_snap = snap_doc.get("frozen_test") or {}
             except Exception:  # noqa: BLE001
                 frozen_test_snap = {}
+            from sed.data.compose import split_frozen_test_state
+
+            try:
+                split_state = split_frozen_test_state(layout)
+            except Exception:  # noqa: BLE001 — display-only
+                split_state = {"built": False, "clips": 0, "fraction": 0.0}
             self._send_json({
                 "ok": True,
                 "split_test_enabled": effective_split_test_enabled(cfg),
                 "split_test_fraction": effective_split_test_fraction(cfg),
+                # What the automatic holdout actually is right now, which is what
+                # decides whether the panel's one button builds, rebuilds, or
+                # returns the held-out clips.
+                "split_test_state": split_state,
                 "frozen_test_present": bool(frozen_test_snap.get("present")),
                 "frozen_test_source": frozen_test_snap.get("source", ""),
                 "frozen_test_total": int(frozen_test_snap.get("total", 0)),
@@ -3961,7 +4011,22 @@ def make_handler(
         # ---- Target-class editing ---------------------------------------
 
         def _handle_target_classes_get(self) -> None:
-            self._send_json({"ok": True, "classes": list(cfg.model.classes) if cfg else []})
+            from sed.data.compose import (
+                ensure_class_visuals,
+                load_dataset_selection,
+                write_dataset_selection,
+            )
+
+            classes = list(cfg.model.classes) if cfg else []
+            selection = load_dataset_selection(layout)
+            class_visuals, changed = ensure_class_visuals(selection, classes)
+            if changed:
+                write_dataset_selection(layout, selection)
+            self._send_json({
+                "ok": True,
+                "classes": classes,
+                "class_visuals": class_visuals,
+            })
 
         def _handle_target_classes_post(self) -> None:
             nonlocal cfg
@@ -3978,6 +4043,10 @@ def make_handler(
 
             def _valid(n: str) -> bool:
                 return bool(re.match(r"^[A-Za-z0-9_\-]+$", n))
+
+            if action == "set_target":
+                self._handle_set_target_fields(name, classes, body.get("fields"))
+                return
 
             if action == "add":
                 if not _valid(name):
@@ -4004,9 +4073,33 @@ def make_handler(
 
             try:
                 from sed.config import load_config, update_config_toml_values
-                update_config_toml_values(layout.config_toml, {"dataset": {"target_classes": classes}})
+                config_updates: dict[str, dict] = {"dataset": {"target_classes": classes}}
+                config_removals: dict[str, list[str]] = {}
+                # `[targets]` (role/enabled/threshold/veto_max/mine/mine_threshold)
+                # must follow a rename and disappear on remove, or every one of
+                # those settings silently desyncs from the renamed/removed class.
+                existing_target = cfg.targets.get(name)
+                if existing_target is not None:
+                    if action == "rename":
+                        # None fields must not be written — `_format_toml_value`
+                        # has no null representation and would serialise one as
+                        # the literal string "None", corrupting the entry.
+                        dumped = {
+                            k: v for k, v in existing_target.model_dump().items()
+                            if v is not None
+                        }
+                        config_updates["targets"] = {new_name: dumped}
+                        config_removals["targets"] = [name]
+                    elif action == "remove":
+                        config_removals["targets"] = [name]
+                update_config_toml_values(layout.config_toml, config_updates, removals=config_removals)
                 # Keep the dataset selection's per-class assignments in step.
-                from sed.data.compose import load_dataset_selection, write_dataset_selection
+                from sed.data.compose import (
+                    CLASS_VISUALS_KEY,
+                    ensure_class_visuals,
+                    load_dataset_selection,
+                    write_dataset_selection,
+                )
                 sel = load_dataset_selection(layout)
                 assigns = sel.get("assignments") or {}
                 if action == "rename" and name in assigns:
@@ -4014,11 +4107,61 @@ def make_handler(
                 if action == "remove":
                     assigns.pop(name, None)
                 sel["assignments"] = assigns
+                visuals = dict(sel.get(CLASS_VISUALS_KEY) or {})
+                if action == "rename" and name in visuals:
+                    visuals[new_name] = visuals.pop(name)
+                if action == "remove":
+                    visuals.pop(name, None)
+                sel[CLASS_VISUALS_KEY] = visuals
+                class_visuals, _ = ensure_class_visuals(sel, classes)
                 write_dataset_selection(layout, sel)
                 cfg = load_config(project_id)
             except Exception as exc:  # noqa: BLE001
                 self._send_json({"ok": False, "error": f"failed to update classes: {exc}"}, status=500); return
-            self._send_json({"ok": True, "classes": list(cfg.model.classes)})
+            self._send_json({
+                "ok": True,
+                "classes": list(cfg.model.classes),
+                "class_visuals": class_visuals,
+            })
+
+        def _handle_set_target_fields(self, name: str, known_classes: list[str], fields: object) -> None:
+            """POST `/api/target-classes {action: "set_target", name, fields}`.
+
+            Merges `fields` onto the class's existing `[targets]` entry (a
+            partial update — TOML writing replaces a key's whole value, so the
+            existing entry is read first and only the given fields change) and
+            validates the result before writing. This is the persistence side
+            of the role/mine/mine_threshold controls: nothing else in the UI
+            writes `[targets]`.
+            """
+            nonlocal cfg
+            if name not in known_classes:
+                self._send_json({"ok": False, "error": f"unknown class {name!r}"}, status=400); return
+            if not isinstance(fields, dict) or not fields:
+                self._send_json({"ok": False, "error": "fields must be a non-empty object"}, status=400); return
+            allowed = {"role", "enabled", "threshold", "veto_max", "mine", "mine_threshold", "channel", "value"}
+            unknown = sorted(set(fields) - allowed)
+            if unknown:
+                self._send_json({"ok": False, "error": f"unknown target field(s): {unknown}"}, status=400); return
+            try:
+                from sed.config import TargetCfg, load_config, update_config_toml_values
+
+                existing = cfg.targets.get(name)
+                merged = existing.model_dump() if existing is not None else {}
+                merged.update(fields)
+                merged = {k: v for k, v in merged.items() if v is not None}
+                TargetCfg.model_validate(merged)  # fail fast with a clear error before writing
+                update_config_toml_values(layout.config_toml, {"targets": {name: merged}})
+                cfg = load_config(project_id)
+            except Exception as exc:  # noqa: BLE001
+                self._send_json({"ok": False, "error": f"failed to update target {name!r}: {exc}"}, status=400); return
+            updated = cfg.targets.get(name)
+            self._send_json({
+                "ok": True,
+                "class": name,
+                "target": updated.model_dump() if updated is not None else None,
+                "role": cfg.class_roles([name]).get(name),
+            })
 
         # ---- Model tab: pluggable architectures -------------------------
 
@@ -4047,6 +4190,16 @@ def make_handler(
             payload.update({
                 "ok": True,
                 "active_recipe": recipe_from_config(cfg).to_payload() if cfg else None,
+                # Not part of the model recipe (it seeds weights, it does not
+                # change the architecture), but the Model tab's parent picker
+                # needs the saved rows to render the head-map editor pre-filled.
+                "transfer_head_map": (
+                    dict(getattr(cfg.training, "transfer_head_map", {}) or {}) if cfg else {}
+                ),
+                "target_classes": (
+                    [str(c) for c in (cfg.dataset.target_classes or cfg.model.classes or [])]
+                    if cfg else []
+                ),
                 "feature": ({
                     **cfg.features.model_dump(),
                     "sample_rate": cfg.model.sample_rate,
@@ -4281,6 +4434,19 @@ def make_handler(
                 parent_project_sel = str(body.get("parent_project") or "")
                 parent_run_sel = str(body.get("parent_run") or "")
                 adopt_parent_feature = bool(body.get("adopt_parent_feature"))
+                # Head map rows are part of the recipe decision: which parent
+                # class each of this run's classes warm-starts from. Only kept
+                # for parent initialization; any other mode clears them so a
+                # stale map cannot survive a switch back to scratch/upstream.
+                head_map_body = body.get("transfer_head_map")
+                head_map_sel: dict[str, str] = {}
+                if initialization == "parent" and isinstance(head_map_body, dict):
+                    head_map_sel = {
+                        str(child).strip(): str(parent).strip()
+                        for child, parent in head_map_body.items()
+                        if str(child).strip() and str(parent).strip()
+                        and str(child).strip() != str(parent).strip()
+                    }
                 parent_snapshot = None
                 if initialization == "parent":
                     # "From previous run": any completed run (any project, incl.
@@ -4298,6 +4464,16 @@ def make_handler(
                     parent_snapshot = load_config_snapshot(parent_config_path)
                     weight = None
                     weight_id = ""
+                    if head_map_sel:
+                        from sed.train.transfer import parent_classes as _parent_classes
+
+                        known = set(_parent_classes(parent_project_sel, parent_run_sel))
+                        unknown = sorted(set(head_map_sel.values()) - known) if known else []
+                        if unknown:
+                            raise ValueError(
+                                "classifier head map points at class(es) the parent run does "
+                                f"not have: {', '.join(unknown)}"
+                            )
                 if architecture.provider == "efficientat" and initialization == "upstream" and params:
                     raise ValueError(
                         "EfficientAT pretrained checkpoints use their published architecture defaults; "
@@ -4409,7 +4585,12 @@ def make_handler(
                     "parent_project": parent_project_sel if initialization == "parent" else "",
                     "parent_run": parent_run_sel if initialization == "parent" else "",
                 }
-                updates: dict = {"model": model_updates}
+                updates: dict = {
+                    "model": model_updates,
+                    # Always written, so leaving parent initialization clears a
+                    # map that no longer applies.
+                    "training": {"transfer_head_map": head_map_sel},
+                }
                 augmentation_defaults = _model_selection_augmentation_defaults(
                     cfg,
                     architecture_id=architecture.id,
@@ -4461,12 +4642,24 @@ def make_handler(
                     "channels": int(feature_channels(f)), "preset": f.preset,
                     "source": feature_source_for_config(cfg, project_id=project_id),
                 }
+            head_sources: dict = {}
+            if initialization == "parent" and cfg is not None:
+                from sed.train.transfer import parent_classes as _parent_classes
+                from sed.train.transfer import resolve_head_sources
+
+                head_sources = resolve_head_sources(
+                    _parent_classes(parent_project_sel, parent_run_sel),
+                    [str(c) for c in (cfg.dataset.target_classes or cfg.model.classes or [])],
+                    head_map_sel,
+                )
             self._send_json({"ok": True, "recipe": {
                 "architecture_id": architecture.id, "backbone": backbone, "weight_id": weight_id,
                 "params": params, "task": task, "initialization": initialization,
                 "parent_project": parent_project_sel if initialization == "parent" else "",
                 "parent_run": parent_run_sel if initialization == "parent" else "",
+                "transfer_head_map": head_map_sel,
             }, "probe": probe, "feature": feature_summary,
+                "head_sources": head_sources,
                 "compatibility": compatibility,
                 "preserved_fitted_linear_statistics": preserved_fitted_stats,
                 "augmentation_defaults": augmentation_defaults,
@@ -6164,7 +6357,34 @@ def make_handler(
                 shape = _dataset_shape(layout)
             except Exception:  # noqa: BLE001 — advisory input only
                 shape = {}
+            # Whether the clips still fit the active feature scale needs audio,
+            # which is too slow here — report the last explicit measurement, and
+            # nothing when the dataset or the scale has moved since.
+            from sed.data.feature_stats import load_cached_scaling_drift
+
+            cached_drift = load_cached_scaling_drift(cfg, layout)
+            if cached_drift:
+                shape["scaling_drift"] = cached_drift
             self._send_json({"ok": True, **config_advice(cfg, shape)})
+
+        def _handle_feature_scaling_drift_get(self) -> None:
+            """Measure this project's clips against the active scaling constants.
+
+            The counterpart to "Estimate from dataset": a fine-tune must NOT
+            refit its parent's constants, so the actionable question there is
+            whether the venue material still lands inside them.
+            """
+            if cfg is None:
+                self._send_json({"ok": False, "error": "missing config"}, status=400)
+                return
+            from sed.data.feature_stats import measure_scaling_drift
+
+            try:
+                result = measure_scaling_drift(cfg, layout)
+            except Exception as exc:  # noqa: BLE001
+                self._send_json({"ok": False, "error": str(exc)}, status=400)
+                return
+            self._send_json({"ok": True, "drift": result})
 
         def _handle_frozen_test_presets_get(self) -> None:
             """Named test sets plus the live one's fitness, for the workbench.
@@ -7235,8 +7455,10 @@ def make_handler(
                     added += 1
                 selection["updated_at"] = datetime.now(UTC).isoformat()
                 path = write_dataset_selection(layout, selection)
+                classes = self._adopt_definition_classes(selection, [class_name])
                 self._send_json({
                     "ok": True, "selection": str(path), "added": added,
+                    "target_classes": classes,
                     **self._selection_meta(selection),
                 })
                 return
@@ -7281,9 +7503,21 @@ def make_handler(
                 self._send_json({"ok": False, "error": "name is required"}, status=400)
                 return
             if action == "new":
+                from sed.data.compose import BLANK_DATASET_CLASSES
+                from sed.config import load_config
+
                 selection = new_dataset_selection(layout)
-                record_activity_event("New blank dataset", detail="source rules cleared", section="source_rules")
-                self._send_json({"ok": True, "selection": selection, **self._selection_meta(selection)})
+                # new_dataset_selection() just rewrote config.toml's class
+                # list; the server's cached cfg would otherwise keep reporting
+                # the previous definition's classes (same reload apply() does).
+                cfg = load_config(project_id)
+                record_activity_event("New blank dataset", detail="source rules and classes cleared", section="source_rules")
+                self._send_json({
+                    "ok": True,
+                    "selection": selection,
+                    "preset": {"classes": list(BLANK_DATASET_CLASSES)},
+                    **self._selection_meta(selection),
+                })
                 return
             if action == "save":
                 selection = load_dataset_selection(layout)
@@ -7364,12 +7598,16 @@ def make_handler(
             selection, auto_changed = ensure_auto_mined_negative_rules(
                 cfg, layout, selection, write=False
             )
+            from sed.data.compose import ensure_class_visuals
+            class_visuals, visuals_changed = ensure_class_visuals(
+                selection, list(cfg.model.classes) if cfg else []
+            )
             settings = selection.get("augmentation_settings")
             if not isinstance(settings, dict) or not settings:
                 settings = augmentation_settings_snapshot(cfg)
                 selection = dict(selection)
                 selection["augmentation_settings"] = settings
-            if auto_changed:
+            if auto_changed or visuals_changed:
                 write_dataset_selection(layout, selection)
             # Recompute display counts from disk so deletes/imports show through.
             try:
@@ -7384,6 +7622,7 @@ def make_handler(
             self._send_json({
                 "ok": True,
                 "selection": selection,
+                "class_visuals": class_visuals,
                 "path": str(selection_manifest_path(layout)),
                 "augmentation_settings": settings,
                 **self._selection_meta(selection),
@@ -7421,6 +7660,7 @@ def make_handler(
             self, tab: str, class_name: str, offset: str = "0",
             limit: str = "100", run_id: str | None = None,
             origin_class: str = "", query: str = "",
+            origins: str | None = None, group_axis: str = "", group_key: str = "",
         ) -> None:
             if cfg is None:
                 self._send(400, b"missing config")
@@ -7434,6 +7674,15 @@ def make_handler(
             except (TypeError, ValueError):
                 self._send_json({"ok": False, "error": "offset/limit must be integers"}, status=400)
                 return
+            # Subbucket / sub-group narrowing is resolved from the gathered
+            # source items, which only the three review tabs have.  Mined and
+            # pretraining build their cards straight from disk.
+            filterable = tab in {"dataset", "augmented", "frozen"}
+            selected_origins: set[str] | None = None
+            if filterable and origins is not None:
+                # An empty set here is not "no filter": it is the user having
+                # unchecked every subbucket, which must show nothing.
+                selected_origins = {part for part in origins.split("|") if part}
             try:
                 from sed.data.inspect import clips_page
                 query_label = f" · searching {query!r}" if query else ""
@@ -7445,7 +7694,10 @@ def make_handler(
                     cards, total = clips_page(
                         cfg, layout, tab, class_name, off, lim,
                         run_id=run_id,
-                        origin_class=origin_class if tab == "dataset" else "",
+                        origin_class=origin_class if filterable else "",
+                        origins=selected_origins,
+                        group_axis=group_axis if filterable else "",
+                        group_key=group_key if filterable else "",
                         query=query,
                         return_total=True,
                     )
@@ -7458,11 +7710,13 @@ def make_handler(
             self._send_json({
                 "ok": True, "tab": tab, "class": class_name,
                 "offset": off, "limit": lim, "origin_class": origin_class,
+                "origins": origins or "", "group_axis": group_axis, "group_key": group_key,
                 "query": query,
                 "total": total, "clips": cards,
             })
 
         def _handle_selection_rule(self) -> None:
+            nonlocal cfg
             length = int(self.headers.get("Content-Length", 0) or 0)
             try:
                 body = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
@@ -7480,9 +7734,15 @@ def make_handler(
             if action == "add" and not class_name:
                 self._send(400, b"class_name is required")
                 return
-            if cfg is not None and class_name and class_name not in set(cfg.model.classes):
-                self._send_json({"ok": False, "error": "class_name is not in target_classes"}, status=400)
-                return
+            # A rule's class is part of the dataset definition, and the
+            # definition owns the class space: assigning to a class the project
+            # does not list yet adds it rather than being rejected.
+            adopt = [
+                name for name in (
+                    class_name,
+                    str(body.get("new_class") or "").strip(),
+                ) if name and action in {"add", "update"}
+            ]
 
             selection = _ensure_ui_selection(load_dataset_selection(layout))
             assignments = selection.setdefault("assignments", {})
@@ -7506,9 +7766,6 @@ def make_handler(
                 rule_id = str(body.get("rule_id") or "").strip()
                 if not old_class or not new_class or not rule_id:
                     self._send_json({"ok": False, "error": "old_class, new_class and rule_id are required"}, status=400)
-                    return
-                if cfg is not None and new_class not in set(cfg.model.classes):
-                    self._send_json({"ok": False, "error": "new_class is not in target_classes"}, status=400)
                     return
                 source_rows = assignments.get(old_class, [])
                 if isinstance(source_rows, dict):
@@ -7574,6 +7831,14 @@ def make_handler(
 
             selection["updated_at"] = _now_iso()
             path = write_dataset_selection(layout, selection)
+            classes = self._adopt_definition_classes(selection, adopt)
+            # A rule can create a previously unseen target class.  Give it a
+            # durable display token in the same write path, without changing
+            # any compose-relevant selection content.
+            from sed.data.compose import ensure_class_visuals
+            class_visuals, visuals_changed = ensure_class_visuals(selection, classes)
+            if visuals_changed:
+                path = write_dataset_selection(layout, selection)
             record_activity_event(
                 f"Source rule {action}",
                 detail=f"{added or removed} rule(s)" if action in {"add", "remove", "clear", "update"} else "",
@@ -7585,8 +7850,32 @@ def make_handler(
                 "path": str(path),
                 "added": added,
                 "removed": removed,
+                "target_classes": classes,
+                "class_visuals": class_visuals,
                 **self._selection_meta(selection),
             })
+
+        def _adopt_definition_classes(
+            self, selection: dict, extra: list[str] | None = None
+        ) -> list[str]:
+            """Keep ``[dataset] target_classes`` equal to the definition's classes.
+
+            Returns the effective class list so a response can push it straight
+            into the UI's class chips and assign dropdown.
+            """
+            nonlocal cfg
+            from sed.data.compose import ensure_dataset_definition_classes
+
+            try:
+                added = ensure_dataset_definition_classes(layout, cfg, selection, extra)
+            except Exception:  # noqa: BLE001 — class adoption must not fail a rule edit
+                log.warning("could not adopt dataset-definition classes", exc_info=True)
+                added = None
+            if added:
+                from sed.config import load_config
+
+                cfg = load_config(project_id)
+            return [str(c) for c in (cfg.model.classes if cfg else [])]
 
         def _handle_augmentation_settings(self) -> None:
             length = int(self.headers.get("Content-Length", 0) or 0)
@@ -8414,10 +8703,13 @@ def make_handler(
                         "power": _float("pcen_power", 0.5),
                         "eps": _float("pcen_eps", 1e-6),
                     },
+                    compression=_first("compression", "").strip().lower() or None,
                     standardize=_bool("standardize", False),
                     standardize_mean=_float("standardize_mean", 0.0),
                     standardize_std=_float("standardize_std", 1.0),
                     scaling_method=_first("scaling_method", "none").strip().lower() or "none",
+                    scaling_scope=_first("scaling_scope", "global").strip().lower() or "global",
+                    scaling_source=_first("scaling_source", "dataset").strip().lower() or "dataset",
                     scaling_stats=_parse_scaling_stats_param(_first("scaling_stats", "")),
                 )
             except Exception as exc:  # noqa: BLE001 — bad params shouldn't 500 the lab
@@ -8536,7 +8828,10 @@ def make_handler(
                     standardize=_bool("standardize", False),
                     standardize_mean=_float("standardize_mean", 0.0),
                     standardize_std=_float("standardize_std", 1.0),
+                    compression=_first("compression", "").strip().lower() or None,
                     scaling_method=_first("scaling_method", "none").strip().lower() or "none",
+                    scaling_scope=_first("scaling_scope", "global").strip().lower() or "global",
+                    scaling_source=_first("scaling_source", "dataset").strip().lower() or "dataset",
                     scaling_stats=_parse_scaling_stats_param(_first("scaling_stats", "")),
                     overlay_path=overlay_path,
                     snr_db=_float("snr", 0.0),
@@ -8588,8 +8883,11 @@ def make_handler(
                 pcen_bias=_float("pcen_bias", 2.0),
                 pcen_power=_float("pcen_power", 0.5),
                 pcen_eps=_float("pcen_eps", 1e-6),
+                compression=_first("compression", "").strip().lower(),
                 scaling_method=_first("scaling_method", "zscore").strip().lower() or "zscore",
                 scaling_scope=_first("scaling_scope", "global").strip().lower() or "global",
+                scaling_source=_first("scaling_source", "dataset").strip().lower() or "dataset",
+                colormap=_first("colormap", "none").strip().lower() or "none",
             )
             with feature_stats_lock:
                 if feature_stats_job and str(feature_stats_job.get("state")) in {"starting", "running"}:

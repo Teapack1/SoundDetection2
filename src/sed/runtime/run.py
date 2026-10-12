@@ -140,13 +140,15 @@ def _build_live_table(
     classes_table.add_column("Value", justify="right")
     classes_table.add_column("Limit/State", justify="left")
 
-    neg_name = "_negative" if "_negative" in classes else None
-    negative_max = stats.get("negative_max")
+    # Every negative/suppressor class (not just `_negative`) that hard-vetoes
+    # the window, keyed by its own ceiling — see `Config.class_vetoes`.
+    vetoes = stats.get("vetoes") or {}
     thresholds = stats.get("class_thresholds", {})
 
     for cls in classes:
         prob = probs.get(cls, 0.0)
         is_active = cls in active_targets
+        veto_ceiling = vetoes.get(cls)
 
         if frozen and cls == state.freeze_class:
             cls_styled = f"[bold red]★ {cls}[/bold red]"
@@ -160,8 +162,8 @@ def _build_live_table(
         filled = max(0, min(bar_width, int(prob * bar_width)))
         empty = bar_width - filled
 
-        if cls == neg_name:
-            bar_color = "yellow" if (negative_max is not None and prob > float(negative_max)) else "dim yellow"
+        if veto_ceiling is not None:
+            bar_color = "yellow" if prob > float(veto_ceiling) else "dim yellow"
         elif is_active:
             threshold = thresholds.get(cls, 0.9)
             bar_color = "green" if prob >= threshold else "cyan"
@@ -170,9 +172,9 @@ def _build_live_table(
 
         bar_str = f"[{bar_color}]" + "█" * filled + "░" * empty + f"[/{bar_color}]"
 
-        if cls == neg_name:
-            limit = f"limit {float(negative_max):.2f}" if negative_max is not None else "observation"
-            state_text = "blocking" if negative_max is not None and prob > float(negative_max) else "clear"
+        if veto_ceiling is not None:
+            limit = f"limit {float(veto_ceiling):.2f}"
+            state_text = "blocking" if prob > float(veto_ceiling) else "clear"
         else:
             threshold = thresholds.get(cls)
             limit = f"threshold {float(threshold):.2f}" if threshold is not None else "threshold n/a"
@@ -500,28 +502,21 @@ def _active_requested_classes(cfg: Config, targets_override: list[str] | None) -
             log.warning("ignoring unknown --target classes: %s", unknown)
         return {c for c in targets_override if c in known}
 
-    configured = {
-        cls for cls, target in cfg.targets.items()
-        if cls in known and cls != "_negative" and target.enabled
-    }
-    if configured:
-        return configured
-    return {c for c in cfg.model.classes if c != "_negative"}
+    # One resolver decides which outputs may fire — including the suppressor
+    # default for classes with no [targets] entry, so a hard-negative class is
+    # never eligible just because the block is empty.
+    roles = cfg.class_roles(list(cfg.model.classes))
+    return {cls for cls, role in roles.items() if role == "target"}
 
 
 def _decision_status(
     stats: dict,
     smoothed: dict[str, float],
-    neg_name: str | None,
-    negative_max: float | None,
+    vetoes: dict[str, float],
 ) -> str:
     if stats.get("amplitude_gate"):
         return "below_audio_floor"
-    if (
-        neg_name is not None
-        and negative_max is not None
-        and smoothed.get(neg_name, 0.0) > float(negative_max)
-    ):
+    if any(smoothed.get(cls, 0.0) > float(ceiling) for cls, ceiling in vetoes.items()):
         return "blocked_negative"
     return "listening"
 
@@ -623,33 +618,35 @@ def _log_verbose_frame(
 
     arbiter = getattr(runtime, "arbiter", None)
     thresholds = {c: s.threshold for c, s in arbiter.smoothers.items()} if arbiter else {}
-    negative_max = getattr(arbiter, "negative_max", None)
-    neg_name = (
-        arbiter.classes[arbiter.neg_idx]
-        if arbiter is not None and arbiter.neg_idx is not None else None
-    )
+    # Every negative/suppressor class that hard-vetoes the window, keyed by its
+    # own ceiling; `negative_classes` are the ones that also never compete for
+    # the window (see `Config.class_roles`).
+    vetoes: dict[str, float] = getattr(arbiter, "vetoes", {}) if arbiter else {}
+    negative_classes: set[str] = getattr(arbiter, "negative_classes", set()) if arbiter else set()
 
     def _rank(c: str) -> tuple[int, str]:
-        return (0 if c in active_targets else (2 if c == neg_name else 1), c)
+        return (0 if c in active_targets else (2 if c in negative_classes else 1), c)
 
     ordered = sorted(classes, key=_rank)
 
     peak = stats.get("audio_peak_dbfs", -120.0)
     rms = stats.get("audio_rms_dbfs", -120.0)
-    status = _decision_status(stats, smoothed, neg_name, negative_max)
+    status = _decision_status(stats, smoothed, vetoes)
 
     cells = []
     for c in ordered:
         s = smoothed.get(c, 0.0)
-        if c == neg_name:
-            limit = f"/{float(negative_max):.2f}" if negative_max is not None else ""
+        ceiling = vetoes.get(c)
+        if c in negative_classes:
+            limit = f"/{float(ceiling):.2f}" if ceiling is not None else ""
             cells.append(f"negative={s:.2f}{limit}")
         elif c in active_targets:
             threshold = thresholds.get(c)
             limit = f"/{float(threshold):.2f}" if threshold is not None else ""
             cells.append(f"{c}={s:.2f}{limit}")
         else:
-            cells.append(f"{c}={s:.2f}")
+            limit = f"/{float(ceiling):.2f}" if ceiling is not None else ""
+            cells.append(f"{c}={s:.2f}{limit}")
 
     # Audio drops since the last frame (PortAudio input overflow).
     xruns = runtime.capture.stats.get("xruns", 0) if getattr(runtime, "capture", None) else 0

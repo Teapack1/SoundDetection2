@@ -2845,6 +2845,16 @@ def test_review_payload_only_shows_assigned_derived_in_augmented_tab(tmp_path, m
     assert card["masking_score_p25_db"] == 5.0
     assert card["masking_score_min_db"] == 2.0
 
+    # Paging the Augmented tab must use the same key its blocks are rendered
+    # under — the augmentation group, not the target class. Matching the target
+    # class here made every "Load More ... more on disk" request come back empty.
+    from sed.data.inspect import clips_page
+    cards, total = clips_page(
+        cfg, layout, "augmented", "riedel_wine × cutlery", 0, 10, return_total=True)
+    assert total >= 1 and len(cards) == total
+    assert clips_page(
+        cfg, layout, "augmented", "cheers_quiet", 0, 10, return_total=True)[1] == 0
+
 
 def test_review_payload_keeps_split_and_multichannel_under_assigned_target(tmp_path, monkeypatch):
     from sed import config as cfg_mod
@@ -3561,11 +3571,20 @@ def test_rendered_audio_features_support_fitted_linear_standardization():
         model_classes=["_negative", "glass"],
     )
 
-    # New choices expose the canonical train-only per-band z-score. Legacy
-    # global/min-max modes remain readable only when loaded from old configs.
+    # Two controls, one per axis: compression decides what the values mean,
+    # normalization only what range they arrive in.
+    assert 'id="feature-compression"' in html
+    assert 'id="feature-normalization"' not in html
+    assert "STAGE 1 — feature generation" in html
+    assert "STAGE 2 — value normalization" in html
+    for compression in ("log power — ln(power + 1e-5)", "dB — 10·log10(power)",
+                        "raw power — no compression", "PCEN — per-band adaptive gain"):
+        assert compression in html
     assert 'id="feature-scaling"' in html
-    assert "dataset-wide per-band z-score" in html
-    assert "legacy existing config" in html
+    assert "fitted z-score · per band (recommended)" in html
+    assert "fitted min–max · per band" in html
+    # Fixed contract constants are an option, not an invisible default.
+    assert "fixed constants — " in html
     assert 'id="feature-scaling_stats"' in html
     assert 'id="feature-scaling-summary"' in html
     assert 'id="feature-standardize_stats_resolved"' in html
@@ -3729,7 +3748,14 @@ def test_library_tab_renders_dataset_designer_controls(tmp_path):
     assert "recipe-target-class" not in html
     assert "No composed frozen test set was found yet" in html
     assert "split <code>test</code>" in html
-    assert "bucket-aware randomized test set" in html
+    # Test set panel: one toggle, one percentage, one button. No status prose.
+    assert 'id="library-splittest-enabled"' in html
+    assert 'id="library-splittest-fraction-pct"' in html
+    assert 'id="library-testset-build"' in html
+    assert 'id="library-testset-save"' not in html
+    assert 'id="library-testset-state"' not in html
+    assert 'id="library-testset-stale-notice"' not in html
+    assert 'id="library-testset-summary"' not in html
     assert "uv run sed dataset compose --project p" in html
     launch_panel = html.split("<h3>Launch</h3>", 1)[1].split("{# ===== Live ===== #}", 1)[0]
     assert "train-launch-panel" in launch_panel
@@ -3895,8 +3921,13 @@ def test_library_tab_renders_dataset_designer_controls(tmp_path):
     assert 'body[data-active-tab="augmented"]' in html
 
 
-def test_library_frozen_test_toggle_keeps_apply_action_available(tmp_path):
-    """Turning automatic split off must still permit applying its removal."""
+def test_library_frozen_test_panel_is_one_state_aware_button(tmp_path):
+    """The Test set panel is a single action whose label states what it will do.
+
+    Off with nothing built is a no-op; off with a built holdout offers to
+    return those clips; on offers build/rebuild at the typed percentage. No
+    separate status prose — the button label is the only state carrier.
+    """
     node = shutil.which("node")
     if node is None:
         pytest.skip("node is required to exercise rendered inspect JavaScript")
@@ -3911,9 +3942,14 @@ def test_library_frozen_test_toggle_keeps_apply_action_available(tmp_path):
 let composeRunning = false;
 let refreshRunning = false;
 const enabled = {{ checked: false }};
-const fraction = {{ disabled: false }};
+const fraction = {{ disabled: false, value: "10" }};
 const fractionField = {{ classList: {{ disabled: false, toggle(_name, value) {{ this.disabled = value; }} }} }};
-const build = {{ disabled: true, textContent: "Build frozen test set" }};
+const classes = new Set();
+const build = {{
+  disabled: true, textContent: "", dataset: {{}},
+  classList: {{ toggle(name, on) {{ if (on) classes.add(name); else classes.delete(name); }} }},
+  setAttribute() {{}},
+}};
 const elements = {{
   "library-splittest-enabled": enabled,
   "library-splittest-fraction-pct": fraction,
@@ -3924,14 +3960,36 @@ const document = {{ getElementById(id) {{ return elements[id] || null; }} }};
 function assert(ok, message) {{ if (!ok) throw new Error(message); }}
 {gating_js}
 
+// Off, nothing built: the default. There is nothing to apply.
+LIBRARY_TESTSET = {{ enabled: false, fraction: 0, built: false, builtClips: 0, loaded: true }};
 updateLibraryTestSetGating();
-assert(fraction.disabled, "disabled automatic split should disable only its percentage input");
-assert(!build.disabled, "disabled automatic split must keep the apply button enabled");
-assert(build.textContent.includes("return automatic holdout"), "apply button should describe the return-to-training action");
+assert(fraction.disabled, "the percentage input follows the toggle");
+assert(build.disabled, "off with nothing built has no action to offer");
+
+// Off, but a holdout exists: the one button returns those clips.
+LIBRARY_TESTSET = {{ enabled: true, fraction: 0.1, built: true, builtClips: 42, loaded: true }};
+updateLibraryTestSetGating();
+assert(!build.disabled, "a built holdout can always be removed");
+assert(build.textContent.includes("42") && build.textContent.includes("training pool"),
+       "the removal label names the clips it returns: " + build.textContent);
+assert(build.dataset.testsetAction === "remove", "off + built is the remove action");
+
+// On, already built: rebuild at the typed percentage.
 enabled.checked = true;
 updateLibraryTestSetGating();
-assert(!fraction.disabled, "enabled automatic split should enable its percentage input");
-assert(!build.disabled && build.textContent === "Build frozen test set", "enabled split should offer a build action");
+assert(!fraction.disabled, "enabling the toggle enables the percentage");
+assert(build.textContent === "Rebuild frozen test set (10%)", build.textContent);
+assert(build.dataset.testsetAction === "build");
+
+// On, typed percentage changes: the label follows it live.
+fraction.value = "25";
+updateLibraryTestSetGating();
+assert(build.textContent === "Rebuild frozen test set (25%)", build.textContent);
+
+// On, nothing built yet.
+LIBRARY_TESTSET.built = false;
+updateLibraryTestSetGating();
+assert(build.textContent === "Build frozen test set (25%)", build.textContent);
 """
     script_path = tmp_path / "library-frozen-test-gating.js"
     script_path.write_text(harness, encoding="utf-8")
@@ -4755,6 +4813,74 @@ assert(elements["val-fraction-preview"].textContent.includes("before grouping"),
 assert(elements["val-fraction-preview"].textContent.includes("Save to compute the exact split"), "typed fraction should explain how to refresh exact counts");
 """
     script_path = tmp_path / "train-validation-counts.js"
+    script_path.write_text(harness, encoding="utf-8")
+    subprocess.run([node, str(script_path)], check=True)
+
+
+def test_subgroup_dropdown_lists_every_axis_best_first_and_follows_the_summary(tmp_path):
+    """The rendered dropdown, exercised against the shapes real data produces.
+
+    It must offer every axis the server kept (they suit different corpora), lead
+    with the most informative one, and describe exactly the subbuckets the
+    Summary panel is letting through — the two controls share one inventory.
+    """
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node is required to exercise rendered inspect JavaScript")
+
+    from sed.data.inspect import _render_html
+
+    html = _render_html(project_id="p", class_summary={}, panels={}, interactive=True)
+    script = "\n".join(
+        part.split("</script>", 1)[0] for part in html.split("<script>")[1:]
+    )
+    start = script.index("const AXIS_LABELS = {")
+    end = script.index("function subgroupFilterHtml", start)
+    subgroup_js = script[start:end]
+    esc_start = script.index("function escapeHtml(str)")
+    esc_end = script.index("\nfunction ", esc_start + 1)
+    escape_js = script[esc_start:esc_end]
+
+    harness = f"""
+function assert(cond, msg) {{ if (!cond) throw new Error(msg); }}
+{escape_js}
+let EXCLUDED = new Set();
+function summaryExcludedSet() {{ return EXCLUDED; }}
+let SELECTED = null;
+function activeSubgroup() {{ return SELECTED; }}
+const CLIPS_DATA = {{ panel_subgroups: {{ dataset: {{ cheers: {{
+  "_cheers": {{
+    prefix: {{ champ_aug_01: 234, cheers_bim256: 500 }},
+    folder: {{ "_cheers/_champaigne-19-PNY-299": 234, "_cheers/_cheers": 500 }},
+  }},
+  "cheersRandom": {{ prefix: {{ rnd_a: 3, rnd_b: 4, rnd_c: 5 }} }},
+}} }} }} }};
+{subgroup_js}
+
+let html = subgroupOptionsHtml("dataset", "cheers");
+// Every axis is offered, and the finest browsable one leads.
+assert(html.indexOf("by name prefix (5)") < html.indexOf("by folder (2)"),
+       "the most informative axis should be listed first");
+assert(html.includes("all subgroups"), "an unfiltered option must exist");
+// Counts merge across the checked subbuckets.
+assert(html.includes("champ_aug_01 — 234"), "group label should carry its count");
+assert(html.includes("rnd_a — 3"), "a second subbucket's groups should merge in");
+// Folder labels drop the prefix every option shares, but the value stays whole
+// so it still matches server-side.
+assert(html.includes(">_champaigne-19-PNY-299 — 234<"), "shared folder prefix should be trimmed");
+assert(html.includes('["folder","_cheers/_champaigne-19-PNY-299"]'.replace(/"/g, "&quot;")),
+       "the option value must keep the full key");
+
+// Unchecking a subbucket in the Summary panel removes its groups from the list.
+EXCLUDED = new Set(["cheersRandom"]);
+html = subgroupOptionsHtml("dataset", "cheers");
+assert(!html.includes("rnd_a"), "an unchecked subbucket must not offer subgroups");
+assert(html.includes("by name prefix (2)"), "axis counts should follow the checked buckets");
+
+// A class nothing subdivides says so instead of offering a pointless option.
+assert(subgroupOptionsHtml("dataset", "attention") === '<option value="">no subgroups</option>');
+"""
+    script_path = tmp_path / "subgroup-dropdown.js"
     script_path.write_text(harness, encoding="utf-8")
     subprocess.run([node, str(script_path)], check=True)
 
@@ -6050,6 +6176,13 @@ def test_live_train_metrics_parser_maps_legacy_byol_accuracy_to_score(tmp_path):
 
 
 def test_dataset_bucket_filter_lists_and_pages_every_assigned_source_bucket(tmp_path, monkeypatch):
+    """Subbucket and sub-group narrowing both reach past the display cap.
+
+    Which subbuckets are previewed is the Summary panel's checkboxes, and which
+    part of them is the per-class ``subgroup:`` dropdown; the old per-class
+    ``view:`` select duplicated the first of those and is gone.  Both resolve on
+    the server, because a selection can lie entirely beyond the capped cards.
+    """
     _patch_project_and_library_dirs(tmp_path, monkeypatch)
     from sed.config import Config
     from sed.data.compose import write_dataset_selection
@@ -6064,7 +6197,13 @@ def test_dataset_bucket_filter_lists_and_pages_every_assigned_source_bucket(tmp_
         for idx in range(3):
             source = tmp_path / f"{bucket}_{idx}.wav"
             sf.write(str(source), np.zeros(32000, dtype=np.float32), 32000)
-            lib.import_clip(source, label=bucket, project_id="p")
+            clip = lib.import_clip(source, label=bucket, project_id="p")
+            # Two takes per bucket, the shape a recorder produces: one folder,
+            # several recording sessions inside it.
+            sidecar = (Path(lib.root) / clip.relpath).with_suffix(".json")
+            meta = json.loads(sidecar.read_text(encoding="utf-8"))
+            meta["session_id"] = f"{bucket}_take{idx // 2}"
+            sidecar.write_text(json.dumps(meta), encoding="utf-8")
 
     cfg = Config()
     cfg.model.classes = ["_negative", "cheers"]
@@ -6079,39 +6218,138 @@ def test_dataset_bucket_filter_lists_and_pages_every_assigned_source_bucket(tmp_
     })
 
     # The card payload is capped, but the filter inventory represents every
-    # assigned source bucket and its true count.
+    # assigned source bucket, its true count, and what is inside it.
     payload = review_data_payload(cfg, layout, max_per_class=2)
     assert len(payload["panels"]["cheers"]) == 2
     assert payload["dataset_origin_counts"]["cheers"] == {
         bucket: 3 for bucket in buckets
     }
+    stadium = payload["panel_subgroups"]["dataset"]["cheers"]["stadium_cheers"]
+    assert stadium["session"] == {"stadium_cheers_take0": 2, "stadium_cheers_take1": 1}
+    # One folder and one date across the bucket subdivide nothing, so those axes
+    # are left out rather than offered as a single pointless option.
+    assert set(stadium) == {"session"}
+
     html = _render_html(
         project_id="p",
         class_summary={},
         panels=payload["panels"],
         interactive=True,
         dataset_origin_counts=payload["dataset_origin_counts"],
+        panel_subgroups=payload["panel_subgroups"],
     )
-    assert "all subbuckets (3)" in html
-    for bucket in buckets:
-        assert f'<option value="{bucket}">{bucket}</option>' in html
+    # One subbucket control, in the Summary panel; the redundant per-class
+    # "view:" dropdown is gone and the sub-group picker took its place.
+    assert "origin-filter" not in html
+    assert "all subbuckets" not in html
+    assert html.count('class="summary-subbucket-check"') >= len(buckets)
+    for tab in ("dataset", "augmented", "frozen"):
+        assert f'class="subgroup-filter" data-tab="{tab}"' in html or (
+            f'data-tab="{tab}"' in html)
+    assert '"panel_subgroups"' in html
 
     httpd, port = _serve(cfg, layout, max_thumbs_per_class=2)
     try:
+        # One checked subbucket.
         page = _api_get(
             port,
-            "/api/clips?tab=dataset&class=cheers&origin_class=stadium_cheers&offset=0&limit=2",
+            "/api/clips?tab=dataset&class=cheers&origins=stadium_cheers&offset=0&limit=2",
         )
         assert page["total"] == 3
         assert len(page["clips"]) == 2
         assert {clip["origin_class"] for clip in page["clips"]} == {"stadium_cheers"}
 
+        # Several checked subbuckets are one request, not one per bucket.
+        page = _api_get(
+            port,
+            "/api/clips?tab=dataset&class=cheers"
+            "&origins=stadium_cheers%7Cbar_cheers&offset=0&limit=50",
+        )
+        assert page["total"] == 6
+        assert {clip["origin_class"] for clip in page["clips"]} == {
+            "stadium_cheers", "bar_cheers"}
+
+        # A sub-group lists every clip in it, including past the card cap.
+        page = _api_get(
+            port,
+            "/api/clips?tab=dataset&class=cheers&group_axis=session"
+            "&group_key=stadium_cheers_take0&offset=0&limit=50",
+        )
+        assert page["total"] == 2
+        assert {clip["origin_class"] for clip in page["clips"]} == {"stadium_cheers"}
+        assert {clip["session_id"] for clip in page["clips"]} == {"stadium_cheers_take0"}
+
+        # Unchecking every bucket shows nothing. An empty "origins" is a real
+        # selection, not the absence of one — omitting the parameter is.
+        assert _api_get(
+            port, "/api/clips?tab=dataset&class=cheers&origins=&offset=0&limit=50",
+        )["total"] == 0
+        assert _api_get(
+            port, "/api/clips?tab=dataset&class=cheers&offset=0&limit=50",
+        )["total"] == 9
+
+        # The legacy single-bucket spelling still resolves.
+        legacy = _api_get(
+            port,
+            "/api/clips?tab=dataset&class=cheers&origin_class=bar_cheers&offset=0&limit=50",
+        )
+        assert legacy["total"] == 3
+
         refreshed = _review_data_via_job(port, scopes=["dataset"])
         assert refreshed["dataset_origin_counts"]["cheers"] == {
             bucket: 3 for bucket in buckets
         }
+        # A scoped rescan carries only its own tab's sub-groups, so merging it
+        # in the browser cannot blank another tab's dropdowns.
+        assert set(refreshed["panel_subgroups"]) == {"dataset"}
     finally:
         httpd.shutdown()
+
+
+def test_frozen_test_tab_narrows_to_one_recording_session(tmp_path, monkeypatch):
+    """The Frozen test tab gets the same sub-group control as Dataset.
+
+    Its clips come from the composed ``test.csv`` rather than the library scan,
+    so the provenance the axes group by has to survive that round trip.
+    """
+    _patch_project_and_library_dirs(tmp_path, monkeypatch)
+    from sed.config import Config
+    from sed.data.compose import compose_dataset, write_dataset_selection
+    from sed.data.inspect import clips_page, review_data_payload
+    from sed.data.library import Library
+
+    layout = ProjectLayout("p")
+    layout.create()
+    lib = Library()
+    for idx in range(6):
+        source = tmp_path / f"held_{idx}.wav"
+        sf.write(str(source), np.zeros(32000, dtype=np.float32), 32000)
+        clip = lib.import_clip(source, label="heldout_glass", project_id="p")
+        sidecar = (Path(lib.root) / clip.relpath).with_suffix(".json")
+        meta = json.loads(sidecar.read_text(encoding="utf-8"))
+        meta["session_id"] = f"take{idx // 3}"
+        sidecar.write_text(json.dumps(meta), encoding="utf-8")
+
+    cfg = Config.model_validate({"dataset": {"target_classes": ["_negative", "cheers_loud"]}})
+    write_dataset_selection(layout, {
+        "ui_managed": True,
+        "assignments": {
+            "cheers_loud": [{
+                "labels": ["heldout_glass"], "project_ids": ["p"],
+                "source_bucket": "raw", "split": "test",
+            }],
+        },
+    })
+    compose_dataset(cfg, "p")
+
+    payload = review_data_payload(cfg, layout, max_per_class=2, scopes=["frozen"])
+    axes = payload["panel_subgroups"]["frozen"]["cheers_loud"]["heldout_glass"]
+    assert axes["session"] == {"take0": 3, "take1": 3}
+
+    cards, total = clips_page(
+        cfg, layout, "frozen", "cheers_loud", 0, 50,
+        group_axis="session", group_key="take1", return_total=True)
+    assert total == 3 and len(cards) == 3
 
 
 def test_assigned_preview_cache_builds_only_selected_clips_and_keeps_variants(tmp_path, monkeypatch):
@@ -6327,6 +6565,47 @@ def test_compose_start_build_split_test_flag_gates_the_carve(tmp_path, monkeypat
 
         after = _api_get(port, "/api/dataset/test-config")
         assert after["frozen_test_present"] is True
+    finally:
+        httpd.shutdown()
+
+
+def test_compose_start_build_split_test_off_clears_the_manifest(tmp_path, monkeypatch):
+    """The Library tab's "Return clips to the training pool" action must fully
+    reset the automatic holdout, not just leave it out of the composed
+    test.csv. Before this fix, frozen_test_split.json kept its old keys
+    forever once toggled off, so split_frozen_test_state() kept reporting
+    built=True (and the panel kept offering to "return" clips already
+    returned) even though nothing was held out anymore."""
+    cfg, layout = _setup_dataset_project(tmp_path, monkeypatch, n_glass=10)
+    cfg.dataset.split_test_enabled = True
+    cfg.dataset.split_test_fraction = 0.2
+    httpd, port = _serve(cfg, layout)
+    try:
+        built = _post_json(
+            f"http://127.0.0.1:{port}/api/compose/start",
+            {"build_split_test": True}, timeout=10.0,
+        )
+        job = _poll_compose_job(port, built["job"]["job_id"])
+        assert job["state"] == "finished", job.get("error")
+        assert (layout.dataset_dir / "frozen_test_split.json").exists()
+        state = _api_get(port, "/api/dataset/test-config")["split_test_state"]
+        assert state["built"] is True
+
+        _post_json(
+            f"http://127.0.0.1:{port}/api/dataset/split-config",
+            {"split_test_enabled": False}, timeout=10.0,
+        )
+        returned = _post_json(
+            f"http://127.0.0.1:{port}/api/compose/start",
+            {"build_split_test": True, "frozen_test_confirmation": True}, timeout=10.0,
+        )
+        job = _poll_compose_job(port, returned["job"]["job_id"])
+        assert job["state"] == "finished", job.get("error")
+        assert not (layout.dataset_dir / "frozen_test_split.json").exists()
+
+        after = _api_get(port, "/api/dataset/test-config")
+        assert after["split_test_state"]["built"] is False
+        assert after["split_test_state"]["clips"] == 0
     finally:
         httpd.shutdown()
 
@@ -8428,6 +8707,9 @@ def test_dataset_preset_endpoints_roundtrip(tmp_path, monkeypatch):
         # Rules exist, nothing composed -> the recompose flag is on.
         assert added["compose_state"]["stale"] is True
         assert added["preset_state"]["active"] == ""
+        # The dataset definition owns the class space: assigning to a class the
+        # project had not listed adds it rather than being rejected.
+        assert added["target_classes"] == ["_negative", "cheers_loud"]
 
         saved = _post_json(f"{base}/api/dataset-preset/save", {"name": "dataset 01"})
         assert saved["ok"] is True
@@ -8435,7 +8717,7 @@ def test_dataset_preset_endpoints_roundtrip(tmp_path, monkeypatch):
         # alongside the source rules.
         assert saved["preset"] == {
             "name": "dataset 01", "slug": "dataset-01", "rule_count": 1, "clip_count": 0,
-            "classes": ["_negative"],
+            "classes": ["_negative", "cheers_loud"],
         }
         assert saved["preset_state"]["active"] == "dataset-01"
         assert saved["preset_state"]["modified"] is False
@@ -8467,6 +8749,18 @@ def test_dataset_preset_endpoints_roundtrip(tmp_path, monkeypatch):
         assert deleted["ok"] is True
         assert deleted["preset_state"]["presets"] == []
         assert deleted["preset_state"]["active"] == ""
+
+        # "New blank dataset": rules clear AND the class list resets to the
+        # minimal ["_negative"] space — before this fix, classes were left
+        # stranded at whatever the last-loaded definition had, so the class
+        # chips and assign dropdown kept showing a dataset with no rules left.
+        blanked = _post_json(f"{base}/api/dataset-preset/new", {})
+        assert blanked["ok"] is True
+        assert blanked["selection"]["assignments"] == {}
+        assert blanked["preset"]["classes"] == ["_negative"]
+
+        from sed.config import load_config
+        assert load_config("p").dataset.target_classes == ["_negative"]
     finally:
         httpd.shutdown()
 
@@ -8503,7 +8797,7 @@ def test_library_tab_unifies_presets_classes_and_source_rules():
 
     # A preset restores the class list too, so the UI names the classes in the
     # dropdown and pushes them into the live class controls on load.
-    assert "rules only" in html_source
+    assert "no classes" in html_source
     assert "applyTargetClasses(presetClasses)" in html_source
 
     # Target classes are a first-class section next to the assign controls.
@@ -8539,21 +8833,25 @@ def test_dataset_ui_buttons_share_one_style_system():
     each carried its own one-off rule.
     """
     html_source = Path("src/sed/data/inspect.py").read_text(encoding="utf-8")
+    # The button system moved to the shared UI shell when the recording console
+    # started rendering it too. It is still one system; it just serves two pages.
+    button_css = Path("src/sed/data/ui_theme.py").read_text(encoding="utf-8")
 
     # The shared base declaration names every family it covers.
-    base = html_source.split("/* ==== One button system", 1)[1].split("}", 1)[0]
+    base = button_css.split("/* ==== One button system", 1)[1].split("}", 1)[0]
     for family in [
         ".section-action", "button.section-refresh", ".recipe-actions button",
         ".assign-bar button", ".tc-add-row button", ".preset-bar button",
         ".bucket-picker button", ".library-actions button", ".library-row-delete",
         ".compose-run",
+        ".btn",   # the UI-neutral entry point a second front-end uses
     ]:
         assert family in base, family
 
     # Size follows placement, not family.
-    assert ".section-head button.section-refresh" in html_source
+    assert ".section-head button.section-refresh" in button_css
 
-    # The one-off rules these replaced are gone.
+    # The one-off rules these replaced are gone from both files.
     for dead in [
         ".assign-bar button { border: 1px solid #cbd5e1;",
         ".preset-bar button { border: 1px solid #cbd5e1;",
@@ -8563,12 +8861,13 @@ def test_dataset_ui_buttons_share_one_style_system():
         "button.section-refresh.rescan-chip { min-height: 0;",
     ]:
         assert dead not in html_source, dead
+        assert dead not in button_css, dead
 
     # Both header rescan buttons render the same icon+label structure.
     header = html_source.split('id="library-corpus-rescan"', 1)[1].split("</button>", 1)[0]
     assert 'class="refresh-icon"' in header
     # Icon-only removes are one square, defined once for both families.
-    assert ".dd-x, .lib-row-x {" in html_source
+    assert ".dd-x, .lib-row-x {" in button_css
 
 
 def test_compose_bar_is_one_write_action_plus_read_only_actualize_chips():
@@ -8627,3 +8926,286 @@ def test_source_rule_edit_preserves_filters_it_has_no_control_for():
     assert 'if (!control(key)) continue;' in body
     assert 'if (control("project_ids"))' in body
     assert 'if (control("channel_index"))' in body
+
+
+def test_dataset_definition_legend_filters_the_rule_table(tmp_path):
+    """The four legend keys are the table's row filter, not decoration: a rule
+    can carry several kinds at once, so the filter is a union over a set."""
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node is required to exercise rendered inspect JavaScript")
+    from sed.data.inspect import _render_html
+
+    html = _render_html(project_id="p", class_summary={}, panels={}, interactive=True)
+    for kind in ("train", "test", "derived", "leak"):
+        assert f'data-dd-filter="{kind}"' in html
+
+    script = "\n".join(part.split("</script>", 1)[0] for part in html.split("<script>")[1:])
+    start = script.index("const DD_KIND_LABELS")
+    end = script.index("function renderDatasetDefLegend", start)
+    filter_js = script[start:end]
+    harness = f"""
+function ruleComparable(rule) {{ return rule.bucket; }}
+function assert(ok, message) {{ if (!ok) throw new Error(message); }}
+{filter_js}
+
+const splits = new Map([["a", new Set(["train", "test"])], ["b", new Set(["train"])]]);
+const leaking = {{ bucket: "a", split: "train" }};
+const plain = {{ bucket: "b", split: "train" }};
+const frozen = {{ bucket: "b", split: "test" }};
+const augmented = {{ bucket: "b", split: "train", source_bucket: "derived" }};
+
+assert([...sourceRuleKinds(leaking, splits)].sort().join() === "leak,train",
+       "a bucket in both pools is training AND leakage");
+assert([...sourceRuleKinds(frozen, splits)].join() === "test");
+assert([...sourceRuleKinds(augmented, splits)].sort().join() === "derived,train",
+       "an augmented bucket is still in whichever pool it feeds");
+
+// No selection shows everything.
+assert(sourceRuleMatchesKindFilter(sourceRuleKinds(plain, splits)));
+// One selection narrows to that kind.
+datasetDefKindFilter = new Set(["leak"]);
+assert(sourceRuleMatchesKindFilter(sourceRuleKinds(leaking, splits)));
+assert(!sourceRuleMatchesKindFilter(sourceRuleKinds(plain, splits)));
+// Several selections show the union, not the intersection.
+datasetDefKindFilter = new Set(["test", "derived"]);
+assert(sourceRuleMatchesKindFilter(sourceRuleKinds(frozen, splits)));
+assert(sourceRuleMatchesKindFilter(sourceRuleKinds(augmented, splits)));
+assert(!sourceRuleMatchesKindFilter(sourceRuleKinds(leaking, splits)));
+"""
+    script_path = tmp_path / "dataset-def-legend-filter.js"
+    script_path.write_text(harness, encoding="utf-8")
+    subprocess.run([node, str(script_path)], check=True)
+
+
+def test_dataset_definition_renders_pool_first_class_groups_and_identity_tokens(tmp_path):
+    """Exercise the rendered Dataset Definition grouping in JavaScript.
+
+    The source object deliberately starts in the opposite order.  The renderer
+    must follow configured target-class order inside Training, then place all
+    Frozen rows after it; colour identity stays separate from the pool names.
+    """
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node is required to exercise rendered inspect JavaScript")
+    from sed.data.inspect import _render_html
+
+    html = _render_html(project_id="p", class_summary={}, panels={}, interactive=True)
+    script = "\n".join(part.split("</script>", 1)[0] for part in html.split("<script>")[1:])
+    palette_start = script.index("const CLASS_TINT_PALETTE")
+    palette_end = script.index("function micChannels", palette_start)
+    palette_js = script[palette_start:palette_end]
+    grouping_start = script.index("const DD_KIND_LABELS")
+    grouping_end = script.index("// The always-visible summary strip", grouping_start)
+    grouping_js = script[grouping_start:grouping_end]
+    harness = f"""
+let MODEL_CLASSES = ["_negative", "attention", "cheers"];
+let selectionState = {{ assignments: {{
+  _negative: [
+    {{ id: "n-train", labels: ["ambience"], split: "train", count: 24, bucket: "n-train" }},
+  ],
+  cheers: [
+    {{ id: "c-train", labels: ["cheers"], split: "train", count: 12, bucket: "c-train" }},
+    {{ id: "c-test", labels: ["cheers"], split: "test", count: 4, bucket: "c-test" }},
+  ],
+  attention: [
+    {{ id: "a-train", labels: ["attention"], split: "train", count: 9, bucket: "a-train" }},
+    {{ id: "a-leak", labels: ["attention"], split: "test", count: 3, bucket: "a-train" }},
+  ],
+}} }};
+let selectionLoaded = true, selectionLoadError = "", sourceRuleQuery = "";
+const table = {{ innerHTML: "", querySelectorAll() {{ return []; }} }};
+const clear = {{ disabled: false }};
+const document = {{ getElementById(id) {{ return {{
+  "library-rule-table-body": table, "source-rules-clear": clear,
+}}[id] || null; }}, querySelectorAll() {{ return []; }} }};
+function escapeHtml(v) {{ return String(v || ""); }}
+function ruleComparable(rule) {{ return rule.bucket || rule.id; }}
+function sourceRuleHaystack(cls, rule) {{ return `${{cls}} ${{rule.bucket || ""}}`; }}
+function sourceRuleAudioLabel(rule) {{ return (rule.labels || []).join(","); }}
+function sourceRuleEditorHtml() {{
+  return {{ target: "<select></select>", split: "<span>pool</span>" }};
+}}
+function ruleMicValue() {{ return ""; }}
+function ruleSplitChannelValue() {{ return ""; }}
+function micLabelFromValue(v) {{ return v; }}
+function setSourceRulesStatus() {{}}
+function tcRenderChips() {{}}
+function renderDatasetDefLegend() {{}}
+function renderDatasetDefStats() {{}}
+function renderLibraryTable() {{}}
+function updateMutatingBusy() {{}}
+function removeSelectionRule() {{}}
+function updateSelectionRule() {{}}
+function assert(ok, message) {{ if (!ok) throw new Error(message); }}
+{palette_js}
+{grouping_js}
+renderDatasetDefLegend = () => {{}};
+renderDatasetDefStats = () => {{}};
+renderSelectionRules();
+const rendered = table.innerHTML;
+assert(rendered.indexOf("Training pool") < rendered.indexOf("Frozen test"),
+       "training pool must precede frozen test");
+assert(rendered.indexOf("<strong>attention</strong>") < rendered.indexOf("<strong>cheers</strong>"),
+       "configured class order must win over source object order");
+assert(rendered.includes("dd-leak") && rendered.includes(">leak<"),
+       "leakage remains an explicit warning treatment");
+assert(rendered.includes('data-class-token="slate"'),
+       "negative rows render with the neutral class token");
+
+datasetDefClassFilter = new Set(["attention"]);
+renderSelectionRules();
+assert(table.innerHTML.includes("<strong>attention</strong>"));
+assert(!table.innerHTML.includes("<strong>cheers</strong>"),
+       "class filter narrows grouped sections");
+
+const tokens = resolveClassVisuals({{}}, ["_negative", "attention", "cheers"]);
+assert(tokens._negative === "slate", "negative stays neutral");
+assert(tokens.attention !== tokens.cheers, "adjacent target classes receive unique tokens");
+assert(classTintStyle("_negative").includes("--negative-class-bg"),
+       "negative uses the theme-neutral background, never an event hue");
+"""
+    script_path = tmp_path / "dataset-definition-identity.js"
+    script_path.write_text(harness, encoding="utf-8")
+    subprocess.run([node, script_path], check=True)
+
+
+# --- Target-class role/mining editing (negative-role generalization) ------
+
+def _start_target_classes_server(tmp_path, monkeypatch, *, config_toml_body: str):
+    from sed import config as cfg_mod
+    from sed.config import Config
+    from sed.data.inspect_server import make_handler
+    from http.server import ThreadingHTTPServer
+
+    monkeypatch.setattr(cfg_mod, "PROJECTS_DIR", tmp_path)
+    layout = ProjectLayout("p")
+    layout.create()
+    layout.config_toml.write_text(config_toml_body, encoding="utf-8")
+    cfg = Config.model_validate(_read_toml_for_test(layout.config_toml))
+    port = _free_port()
+    handler = make_handler(
+        cfg=cfg, project_id="p",
+        render_html_callable=lambda: "<html>ok</html>",
+        layout=layout,
+    )
+    httpd = ThreadingHTTPServer(("127.0.0.1", port), handler)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    return httpd, layout, port
+
+
+def _read_toml_for_test(path):
+    from sed.config import _read_toml
+    return _read_toml(path)
+
+
+_BASE_TARGET_CLASSES_TOML = """
+[dataset]
+target_classes = ["_negative", "glass"]
+
+[model]
+classes = ["_negative", "glass"]
+"""
+
+
+def test_set_target_persists_role_and_mining_fields(tmp_path, monkeypatch):
+    """`set_target` merges onto (not replaces) an existing [targets] entry, and
+    the written config resolves the expected role/mine_threshold afterwards —
+    the persistence side of the Class roles & mining UI panel."""
+    from sed.config import load_config
+
+    httpd, layout, port = _start_target_classes_server(
+        tmp_path, monkeypatch, config_toml_body=_BASE_TARGET_CLASSES_TOML,
+    )
+    try:
+        d = _post_json(f"http://127.0.0.1:{port}/api/target-classes", {
+            "action": "set_target", "name": "glass",
+            "fields": {"role": "negative", "mine": True},
+        })
+        assert d["ok"] is True, d
+        assert d["role"] == "negative"
+
+        # A second, independent field update must not clobber the first.
+        d2 = _post_json(f"http://127.0.0.1:{port}/api/target-classes", {
+            "action": "set_target", "name": "glass",
+            "fields": {"mine_threshold": 0.3},
+        })
+        assert d2["ok"] is True, d2
+
+        cfg = load_config("p")
+        assert cfg.class_roles(["_negative", "glass"])["glass"] == "negative"
+        target = cfg.targets["glass"]
+        assert target.mine is True
+        assert target.mine_threshold == pytest.approx(0.3)
+        assert cfg.mine_threshold("glass") == pytest.approx(0.3)
+        # Setting role="negative" moved glass onto the shared veto ceiling.
+        assert cfg.class_threshold("glass") == pytest.approx(cfg.inference.negative_max)
+    finally:
+        httpd.shutdown()
+
+
+def test_set_target_rejects_unknown_class_and_unknown_field(tmp_path, monkeypatch):
+    httpd, layout, port = _start_target_classes_server(
+        tmp_path, monkeypatch, config_toml_body=_BASE_TARGET_CLASSES_TOML,
+    )
+    try:
+        status, body = _post_json_status(f"http://127.0.0.1:{port}/api/target-classes", {
+            "action": "set_target", "name": "not_a_class", "fields": {"role": "negative"},
+        })
+        assert status == 400
+        assert body["ok"] is False
+
+        status, body = _post_json_status(f"http://127.0.0.1:{port}/api/target-classes", {
+            "action": "set_target", "name": "glass", "fields": {"bogus_field": 1},
+        })
+        assert status == 400
+        assert body["ok"] is False
+
+        status, body = _post_json_status(f"http://127.0.0.1:{port}/api/target-classes", {
+            "action": "set_target", "name": "glass", "fields": {"role": "not_a_role"},
+        })
+        assert status == 400
+        assert body["ok"] is False
+    finally:
+        httpd.shutdown()
+
+
+def test_rename_and_remove_keep_targets_table_in_sync(tmp_path, monkeypatch):
+    """Renaming/removing a class must carry/drop its [targets] entry — before
+    this fix, `_handle_target_classes_post` only rewrote `dataset.target_classes`,
+    leaving role/enabled/threshold/veto_max/mine silently pointed at a class
+    name that no longer existed."""
+    from sed.config import load_config
+
+    toml_body = _BASE_TARGET_CLASSES_TOML + """
+[targets]
+glass = { role = "suppressor", mine = true, mine_threshold = 0.42 }
+"""
+    httpd, layout, port = _start_target_classes_server(
+        tmp_path, monkeypatch, config_toml_body=toml_body,
+    )
+    try:
+        d = _post_json(f"http://127.0.0.1:{port}/api/target-classes", {
+            "action": "rename", "name": "glass", "new_name": "cutlery",
+        })
+        assert d["ok"] is True, d
+        assert d["class_visuals"]["_negative"] == "slate"
+        assert d["class_visuals"]["cutlery"] == "blue"
+        assert "glass" not in d["class_visuals"]
+        cfg = load_config("p")
+        assert "glass" not in cfg.targets
+        assert "cutlery" in cfg.targets
+        assert cfg.targets["cutlery"].role == "suppressor"
+        assert cfg.targets["cutlery"].mine_threshold == pytest.approx(0.42)
+
+        d2 = _post_json(f"http://127.0.0.1:{port}/api/target-classes", {
+            "action": "remove", "name": "cutlery",
+        })
+        assert d2["ok"] is True, d2
+        assert d2["class_visuals"] == {"_negative": "slate"}
+        cfg2 = load_config("p")
+        assert "cutlery" not in cfg2.targets
+        assert "cutlery" not in cfg2.model.classes
+    finally:
+        httpd.shutdown()

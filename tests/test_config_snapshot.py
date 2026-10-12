@@ -289,7 +289,12 @@ def test_project_template_lists_negative_as_editable_class(tmp_path, monkeypatch
     assert "hop_ms = 300" not in text
     assert "smoothing_enabled = true" in text
     assert "inference_channels = [0]" in text
-    assert "recording_cooldown_ms = 1500" in text
+    # Read from the schema rather than pinned, so a default change updates the
+    # template and this test together instead of failing after the fact.
+    from sed.config import Config
+
+    assert f"recording_cooldown_ms = {Config().onset.recording_cooldown_ms}" in text
+    assert f"record_seconds = {Config().onset.record_seconds}" in text
     assert "cross_channel_merge_ms = 500" in text
     # The template's inline comment must list every mode the validator accepts,
     # or an operator cannot discover "best" (the mode that keeps a quiet
@@ -315,10 +320,11 @@ def test_project_template_lists_negative_as_editable_class(tmp_path, monkeypatch
     assert cfg.inference.min_dbfs is None
     assert cfg.audio.record_sample_rate == 48000
     assert cfg.onset.min_flux_db == -80
-    assert cfg.onset.record_seconds == 1.0
+    assert cfg.onset.record_seconds == Config().onset.record_seconds
     assert cfg.onset.randomize_preroll is True
-    assert cfg.onset.preroll_ms_range == (100, 700)
-    assert cfg.onset.recording_cooldown_ms == 1500
+    assert cfg.onset.preroll_ms_range == Config().onset.preroll_ms_range
+    assert cfg.onset.recording_cooldown_ms == Config().onset.recording_cooldown_ms
+    assert cfg.onset.preroll_ms == Config().onset.preroll_ms
     assert cfg.onset.cross_channel_merge_ms == 500
 
 
